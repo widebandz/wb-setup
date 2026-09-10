@@ -33,6 +33,7 @@ ROOT="${WB_SETUP_ROOT:-$HOME/srv/wb-setup}"
 VARS="$HOME/.sop-vars"
 BREW_LOG="/tmp/wb-bootstrap-brew.log"
 BREW_PID=""
+SUDO_KEEPALIVE=""
 
 DO_CLAUDE=1; DO_BREW=1; DO_FETCH=1; ASSUME_YES=0
 
@@ -113,7 +114,9 @@ if [ "$DO_CLAUDE" = "0" ]; then
 elif command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
   say "  = already installed"
 else
-  if curl -fsSL https://claude.ai/install.sh | bash >/tmp/wb-claude-install.log 2>&1; then
+  if { curl -fsSL https://claude.ai/install.sh 2>/tmp/wb-claude-install.log \
+       || { say "  ! could not reach claude.ai — the network may be blocking it"; false; }; } \
+       | bash >>/tmp/wb-claude-install.log 2>&1; then
     say "  + ~/.local/bin/claude"
   else
     say "  ! install failed — see /tmp/wb-claude-install.log"
@@ -143,14 +146,36 @@ elif command -v brew >/dev/null 2>&1 || [ -x /opt/homebrew/bin/brew ]; then
   say "  = already installed"
 else
   : > "$BREW_LOG"
-  # NONINTERACTIVE keeps the installer from waiting on a RETURN nobody is
-  # watching — this runs detached and its stdin is not a terminal.
-  ( NONINTERACTIVE=1 /bin/bash -c \
-      "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-      >>"$BREW_LOG" 2>&1 ) &
-  BREW_PID=$!
-  say "  → started (pid $BREW_PID), logging to $BREW_LOG"
-  say "    This is the download to work around, not wait on."
+
+  # Homebrew needs sudo. A detached job has no terminal, so it cannot prompt
+  # for the password — it just dies, and the first version of this script then
+  # reported success anyway. Prime the credential in the FOREGROUND (one
+  # prompt, visible to whoever is standing there), then keep it warm while the
+  # installer runs detached.
+  say "  macOS will ask for your password once — Homebrew needs it."
+  if sudo -v; then
+    ( while true; do sudo -n true 2>/dev/null; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) &
+    SUDO_KEEPALIVE=$!
+  else
+    say "  ! no sudo — Homebrew cannot install. Everything else still runs."
+    DO_BREW=0
+  fi
+
+  if [ "$DO_BREW" = "1" ]; then
+    # Download to a FILE first. Piped straight into bash, a 404 or a blocked
+    # network yields an empty string, `bash -c ""` exits 0, and the run reports
+    # a successful install of nothing.
+    if curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh \
+         -o /tmp/wb-brew-install.sh 2>>"$BREW_LOG"; then
+      ( NONINTERACTIVE=1 /bin/bash /tmp/wb-brew-install.sh >>"$BREW_LOG" 2>&1 ) &
+      BREW_PID=$!
+      say "  → started (pid $BREW_PID), logging to $BREW_LOG"
+      say "    This is the download to work around, not wait on."
+    else
+      say "  ! could not download the Homebrew installer — the network is blocking it"
+      say "    Try a phone hotspot. See TROUBLESHOOTING.md."
+    fi
+  fi
 fi
 
 # ── 3. the repo ──────────────────────────────────────────────────────────────
@@ -311,9 +336,18 @@ QUEUE
 if [ -n "$BREW_PID" ]; then
   say "  … waiting on Homebrew (pid $BREW_PID). tail -f $BREW_LOG to watch."
   wait "$BREW_PID"; brew_rc=$?
-  if [ "$brew_rc" = "0" ]; then say "  ✓ Homebrew installed"
-  else say "  ! Homebrew exited $brew_rc — see $BREW_LOG"; fi
+  # Check the BINARY, not the exit code. An installer can exit 0 having done
+  # nothing, which is exactly how a machine reached the end of this script with
+  # "✓ Homebrew installed" on screen and no brew on disk.
+  if [ -x /opt/homebrew/bin/brew ]; then
+    say "  ✓ Homebrew installed"
+  else
+    say "  ! Homebrew did NOT install (installer exited $brew_rc) — see $BREW_LOG"
+    say "    Run it in the foreground so it can prompt for your password:"
+    say "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  fi
 fi
+[ -n "${SUDO_KEEPALIVE:-}" ] && kill "$SUDO_KEEPALIVE" 2>/dev/null
 
 BREW_BIN=""
 [ -x /opt/homebrew/bin/brew ] && BREW_BIN=/opt/homebrew/bin/brew
