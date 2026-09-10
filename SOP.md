@@ -738,24 +738,27 @@ If both work, the build is complete.
 
 ---
 
-## Failure modes that cost a re-do
+## When something breaks
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| Message scanning returns nothing | Full Disk Access missing on the exact binary path | grant to `/opt/homebrew/bin/imsg`, not the wrapper |
-| Agent can't send texts | Automation grant never approved | Privacy → Automation → Terminal → Messages |
-| Playwright screenshots are black | Screen Recording not granted | Privacy → Screen Recording |
-| Loops die overnight | machine sleeps, or background items blocked | `pmset -a sleep 0`; allow background items |
-| Phone surface won't open | HTTP on tailnet, or bound to loopback | `tailscale serve --https`; bind `-H 0.0.0.0` |
-| Status line prints `\033[0;32m` literally | colors written as plain strings | use `$'\033[0;32m'` |
-| Status line blank | `jq` missing, or script not executable | `brew install jq`; `chmod +x` |
-| `command not found: claude` | `~/.local/bin` off PATH | add to `.zshrc`, reopen terminal |
-| `code not found` | shell command never installed | Cmd+Shift+P in VS Code |
-| Vercel deploy blocked | a second GitHub identity | re-auth `gh` as `$GH_USER` |
-| Migration "ran" but object missing | `db push` re-ran the ledger | apply individually; verify the object |
-| Env vars missing in prod | stale `.vercel/project.json` | re-link; prefer platform secrets |
-| Sessions gone after reboot | LaunchAgent not loaded | `launchctl` load the boot job |
-| Board works here, breaks on the next machine | `machine` pinned in `config.json` | leave it empty; resolve from Tailscale |
+`TROUBLESHOOTING.md`, in this repo. Two commands get you there:
+
+```bash
+bash doctor.sh          # what this machine actually is
+bash verify.sh          # what is wrong — each failure tagged [P0-FDA] etc.
+```
+
+Every failure carries a stable ID with a matching section in the guide:
+symptom, root-cause class, a command that confirms it, the fix, and how to
+prove it is fixed. `selftest.sh` asserts the IDs and the sections stay in
+sync in both directions, so the guide cannot rot without failing the suite.
+
+The guide also covers the two things a table of symptoms cannot: the six
+**root-cause classes** that generalise to failures nobody has written down
+yet, and **day-two operations** — what breaks weeks later, once the machine
+is running unattended and nobody is watching.
+
+This used to be a sixteen-row table here. It was one of three copies of the
+same knowledge, and three copies drift.
 
 ---
 

@@ -68,7 +68,7 @@ Before Homebrew lands, `bootstrap.sh` may use **only** `bash`, `curl`,
 A bare macOS has no `git` and no `python3` — `/usr/bin/git` and
 `/usr/bin/python3` are stubs that pop the Command Line Tools dialog and
 block. That is why this repo arrives as a tarball rather than a clone.
-`verify.sh` asserts the budget, because it is the constraint most likely
+`selftest.sh` asserts the budget, because it is the constraint most likely
 to regress the next time someone adds a step.
 
 `bash` is 3.2 on macOS. No associative arrays, no `mapfile`.
@@ -80,11 +80,13 @@ to regress the next time someone adds a step.
 ```
 bootstrap.sh       the one-liner target — bare-Mac safe
 install.sh         phases 5, 7, 8; needs brew, jq and an authed agent
-verify.sh          per-phase assertions; exit code = failure count
+verify.sh          per-phase assertions; every failure carries a [check ID]
+doctor.sh          full machine state, one pasteable block; never fixes
+TROUBLESHOOTING.md the six root-cause classes, every check ID, and day two
 selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup
-checklist.html     105-step interactive checklist; open it directly, no server
+checklist.html     108-step interactive checklist; open it directly, no server
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
 bin/               tm, tm-standard → copied to ~/bin
@@ -130,3 +132,18 @@ composes into a gate.
 A verifier that reports all green on a machine with known gaps is broken.
 If a fresh build prints nothing but `✓`, distrust the verifier before
 trusting the build.
+
+## When something breaks
+
+```bash
+bash doctor.sh > /tmp/doctor.txt    # paste this to the agent
+```
+
+Each `✗` from `verify.sh` carries a stable ID — `[P0-FDA]`, `[P8-EXIT]` —
+with a matching section in `TROUBLESHOOTING.md`. `selftest.sh` asserts the
+two stay in sync **both ways**: an ID with no section fails, and a section
+for a check that no longer exists fails too. The guide cannot rot quietly.
+
+`doctor.sh` reports resolved real paths, launchd exit codes, and drift
+between installed artifacts and the repo — the three things that are almost
+never in a description of the problem and almost always in the cause.

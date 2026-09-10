@@ -22,6 +22,10 @@ brew "supabase/tap/supabase"
 # Each of these has a fallback in tmux.conf, so a machine without them still
 # gets working keybinds — they just print a line saying what is missing.
 brew "lazygit"
+# selftest.sh runs shellcheck when it is present and silently skips when it is
+# not — which meant that rule had never actually run. Declaring it here makes
+# the check real on every machine built from this repo.
+brew "shellcheck"
 
 # ── casks ───────────────────────────────────────────────────────────────────
 # Tailscale is deliberately NOT here. The Mac App Store build does not ship the

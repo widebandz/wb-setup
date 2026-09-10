@@ -116,6 +116,10 @@ footer{margin-top:34px;border-top:1px solid var(--line);padding-top:14px;color:v
   </p>
   <p>A step that says <b>verify</b> is the point of the steps above it. Do not tick it because the
   command ran — tick it because the output said what it should say.</p>
+  <p><b>When a step fails:</b> run <code>bash doctor.sh</code> for full machine state, and
+  <code>bash verify.sh</code> for what is wrong. Every failure carries an ID like
+  <code>[P0-FDA]</code> with a matching section in <code>TROUBLESHOOTING.md</code> —
+  symptom, cause, fix, and how to prove it is fixed.</p>
   <p>When you finish, fill the Build Record at the end of <code>SOP.md</code> and commit it.
   A deviation is not a failure; an unrecorded one is what makes the next build different.</p>
 </footer>

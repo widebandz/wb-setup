@@ -7,9 +7,11 @@
 #   1. bootstrap.sh stays inside the bare-Mac tool budget
 #   2. the vendored status line is byte-identical to a working one
 #   3. no secrets, no operator identity, in a public repo
-#   4. every loop reads ~/.sop-vars instead of hardcoding
+#   4. no loop hardcodes identity
 #   5. every loop has a plist template
-#   6. shell syntax parses
+#   6. verify.sh IDs and TROUBLESHOOTING.md sections match, BOTH ways
+#   7. doctor.sh diagnoses and never mutates
+#   8. shell syntax parses
 #
 # Exit code is the number of failures.
 set -uo pipefail
@@ -111,9 +113,56 @@ for f in "$HERE"/loops/*; do
     || no "$b has no plist template — it would never run"
 done
 
-# ── 6. syntax ────────────────────────────────────────────────────────────────
-head_ "6 · syntax"
-for s in bootstrap.sh install.sh verify.sh selftest.sh; do
+# ── 6. the guide cannot drift ────────────────────────────────────────────────
+# verify.sh emits a stable ID per failure; TROUBLESHOOTING.md has a section per
+# ID. Checked BOTH ways on purpose. A one-way check (every ID has a section)
+# still lets the guide accumulate sections for checks that no longer exist,
+# which is the quieter half of drift: nobody notices documentation for a
+# failure that can no longer happen, and it slowly teaches the wrong thing.
+head_ "6 · verify IDs ↔ guide sections"
+if [ ! -f "$HERE/TROUBLESHOOTING.md" ]; then
+  no "TROUBLESHOOTING.md missing"
+else
+  # IDs raised by verify.sh: the first argument to every no() call.
+  ids="$(grep -oE '(^|\s)no [A-Z0-9]+-[A-Z]+' "$HERE/verify.sh" \
+         | awk '{print $NF}' | sort -u)"
+  # IDs documented in the guide: `## P0-FDA — …`
+  docs="$(grep -oE '^## [A-Z0-9]+-[A-Z]+' "$HERE/TROUBLESHOOTING.md" \
+         | awk '{print $2}' | sort -u)"
+  # A section may cover two related checks (P7-CONF / P7-TPM share one), so
+  # also accept IDs named in a combined heading.
+  docs="$(printf '%s\n%s\n' "$docs" \
+          "$(grep -oE '^## ([A-Z0-9]+-[A-Z]+ / )+[A-Z0-9]+-[A-Z]+' "$HERE/TROUBLESHOOTING.md" \
+             | sed 's/^## //;s| / |\n|g')" | grep . | sort -u)"
+
+  undocumented="$(comm -23 <(printf '%s\n' "$ids") <(printf '%s\n' "$docs"))"
+  orphaned="$(comm -13 <(printf '%s\n' "$ids") <(printf '%s\n' "$docs"))"
+
+  [ -z "$undocumented" ] \
+    && ok "every verify.sh ID has a guide section ($(printf '%s' "$ids" | grep -c .) IDs)" \
+    || { no "raised by verify.sh, absent from the guide:"; printf '      %s\n' $undocumented; }
+
+  [ -z "$orphaned" ] \
+    && ok "no guide section documents a check that no longer exists" \
+    || { no "documented but never raised:"; printf '      %s\n' $orphaned; }
+fi
+
+# ── 7. doctor.sh diagnoses, never fixes ──────────────────────────────────────
+# A diagnostic that repairs as it runs destroys the evidence of what was
+# broken. Enforced statically rather than by convention.
+head_ "7 · doctor.sh is read-only"
+if [ ! -f "$HERE/doctor.sh" ]; then
+  no "doctor.sh missing"
+else
+  mut="$(sed -e "s/'[^']*'//g" -e 's/#.*$//' "$HERE/doctor.sh" \
+        | grep -nE '(^|[;&|(]|\$\()[[:space:]]*(cp|mv|rm|install|launchctl (bootstrap|bootout|load|unload)|brew install|npm install|git clone|chmod|mkdir)[[:space:]]')"
+  [ -z "$mut" ] && ok "no mutating command in doctor.sh" \
+                || { no "doctor.sh mutates:"; printf '      %s\n' "$mut"; }
+fi
+
+# ── 8. syntax ────────────────────────────────────────────────────────────────
+head_ "8 · syntax"
+for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"
 done
@@ -127,7 +176,7 @@ for p in "$HERE"/loops/*; do
   fi
 done
 if command -v shellcheck >/dev/null 2>&1; then
-  for s in bootstrap.sh install.sh verify.sh selftest.sh; do
+  for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh; do
     shellcheck -S error "$HERE/$s" >/dev/null 2>&1 \
       && ok "shellcheck $s (errors)" \
       || no "shellcheck found errors in $s"
