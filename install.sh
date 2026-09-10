@@ -126,6 +126,11 @@ render "$HERE/templates/tmux.conf.tmpl" "$HOME/.config/tmux/tmux.conf"
 mkdir -p "$HOME/bin"
 place "$HERE/bin/tm"          "$HOME/bin/tm"          755
 place "$HERE/bin/tm-standard" "$HOME/bin/tm-standard" 755
+place "$HERE/dotfiles/shell.zsh" "$HOME/.config/wb-setup/shell.zsh"
+if ! grep -qs 'wb-setup/shell.zsh' "$HOME/.zshrc" 2>/dev/null; then
+  printf '\n# added by wb-setup\n[ -f ~/.config/wb-setup/shell.zsh ] && source ~/.config/wb-setup/shell.zsh\n' >> "$HOME/.zshrc"
+  echo "  + shell.zsh sourced from ~/.zshrc"
+fi
 if ! grep -qs 'HOME/bin' "$HOME/.zshrc" 2>/dev/null; then
   printf '\n# added by wb-setup — operator commands\nexport PATH="$HOME/bin:$PATH"\n' >> "$HOME/.zshrc"
   echo "  + ~/bin on PATH (~/.zshrc)"
