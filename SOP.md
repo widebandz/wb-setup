@@ -6,9 +6,7 @@ the checklist in one document.
 
 Nothing below is hardcoded to one person or one company. Every
 identity-shaped value is a variable, set once in §Variables and
-referenced everywhere after. A worked example — the reference build this
-SOP was extracted from — lives in Appendix A, clearly separated so it is
-never mistaken for the procedure.
+referenced everywhere after.
 
 **Last updated:** 2026-09-10
 **Requirements:** Apple silicon Mac (M-series), macOS 13.0+, an AI
@@ -785,40 +783,6 @@ _________________________________________________________________
 
 A deviation is not a failure. An **unrecorded** deviation is what makes
 the next build different from this one.
-
----
-
-## Appendix A — Reference implementation
-
-The build this SOP was extracted from, as a worked example. These are
-example values, not the procedure — substitute your own from §Variables.
-
-| Variable | Reference value |
-|---|---|
-| `ORG` | `wideband` → LaunchAgents `com.wideband.*` |
-| `GH_USER` | `widebandz` |
-| `GRAPH_PACK` | `wideband` |
-| Roots declared | the work repo, a reference codebase, a voice/middleware tree, `~/bin` |
-| Standing sessions | `main · prod · UI · media · messages · texts · terminal · tunnel · GHL · pillars · private · question · sop` |
-| Org-specific loops | deal-stage watcher, contract-signed watcher, follow-up chaser, three standup nudges, CRM reconciler |
-| Drill score | 46 reproducible / 80 unrecoverable — the unrecoverable side dominated by LaunchAgent definitions and tailnet endpoints |
-
-### Known gaps in the reference build
-
-Recorded because a SOP that only describes the happy path is a brochure.
-
-1. Global `~/.claude/CLAUDE.md` and `~/.claude/USER.md` do not exist yet.
-2. Project `CLAUDE.md` is 337 lines and `AGENTS.md` is 730 — both over
-   the 200-line cap in §5.5.
-3. **No MD editing surface for a non-technical operator.** `fleetdeck
-   edit` opens `services.json` in `$EDITOR`; it does not serve the five
-   MD files. A docs tile on the portal that reads and writes those paths
-   is a build item, not an install step.
-4. Two bonus repo URLs unrecorded — watch-youtube, instagram-transcript.
-5. One loop is loaded but last-exited non-zero — the exact case §Phase 8
-   warns about.
-6. `fleetdeck adopt` installs software and is correctly left off the
-   tailnet.
 
 ---
 
