@@ -81,7 +81,9 @@ to regress the next time someone adds a step.
 bootstrap.sh       the one-liner target — bare-Mac safe
 install.sh         phases 5, 7, 8; needs brew, jq and an authed agent
 verify.sh          per-phase assertions; exit code = failure count
+selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
+PREP.md            client-facing; send the day before setup
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
 dotfiles/          byte-identical artifacts, never regenerated
