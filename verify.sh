@@ -218,6 +218,25 @@ else
   fi
 fi
 
+# ── PATH ─────────────────────────────────────────────────────────────────────
+# A binary on disk that the shell cannot find reports "command not found",
+# which reads as "it did not install". Twice on the first live build we chased
+# an install that had already succeeded. The distinction is cheap to make and
+# nothing was making it.
+head_ "PATH"
+path_miss=""
+for pair in "claude:$HOME/.local/bin/claude" "fleetdeck:$HOME/bin/fleetdeck" \
+            "tm:$HOME/bin/tm" "brew:/opt/homebrew/bin/brew"; do
+  n="${pair%%:*}"; f="${pair#*:}"
+  [ -x "$f" ] || continue
+  command -v "$n" >/dev/null 2>&1 || path_miss="$path_miss $n"
+done
+if [ -z "$path_miss" ]; then
+  ok "every installed tool is reachable on PATH"
+else
+  no SHELL-PATH "installed but NOT on this shell's PATH:$path_miss — open a new terminal window"
+fi
+
 # ── phase 9 · fleetdeck ──────────────────────────────────────────────────────
 head_ "phase 9 · fleetdeck"
 if [ ! -x "$HOME/bin/fleetdeck" ]; then

@@ -232,6 +232,18 @@ tailscale serve --bg --https=<port> http://127.0.0.1:<port>
 **Proof:** the URL opens **on the phone** with a real padlock. Curl from the
 machine is not proof — that path can succeed while the phone's fails.
 
+**Ordering matters here.** fleetdeck creates its `serve` mapping during its
+own install, and only if the Tailscale CLI already exists. Install Tailscale
+*after* `install.sh` and the board is installed with no mapping — nothing is
+broken, but nothing is served either. Fix without re-running anything:
+
+```bash
+fleetdeck start && fleetdeck url
+```
+
+Enable HTTPS Certificates in the admin console **before** that, or `serve`
+has no certificate to issue and fails at TLS.
+
 ## P5-CLAUDE — claude not on PATH
 
 **Class:** environment.
@@ -432,6 +444,32 @@ is on *your* PATH. Compare against a working plist in
 
 **Proof:** the exit column reads `0` **and** the log shows a recent
 successful run. A job that has never fired is not fixed, it is untested.
+
+## SHELL-PATH — installed, but "command not found"
+
+**Class:** environment divergence, and the most expensive kind: it looks
+exactly like a failed install.
+
+`install.sh` adds `~/bin` and `~/.local/bin` to `.zshrc`. A terminal window
+opened **before** that line existed will never see them. The binary is on
+disk, working, and unreachable from that one window.
+
+```bash
+ls -l ~/bin/fleetdeck ~/bin/tm ~/.local/bin/claude 2>/dev/null
+```
+
+**Fix:** open a new terminal window. That is the whole fix.
+
+To use it without opening one:
+
+```bash
+~/bin/fleetdeck url          # full path always works
+source ~/.zshrc              # or reload the current shell
+```
+
+**Proof:** `command -v fleetdeck` prints a path. On the first live build
+this cost two rounds of debugging an install that had already succeeded —
+which is why `verify.sh` now separates "not installed" from "not on PATH".
 
 ## P9-FLEET — fleetdeck not installed
 

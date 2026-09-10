@@ -578,10 +578,25 @@ tmux fleet as a chat. Installed to `~/srv/fleetdeck`. The repo *is* the
 deployment — nothing is copied out except the launcher script and the
 plists.
 
+**`install.sh` does this for you.** It clones fleetdeck, writes
+`config.json` from `$BRAND` and `com.$ORG`, and runs its installer. There is
+nothing to decide — every value it needs is already in `~/.sop-vars`.
+
+```bash
+fleetdeck doctor && fleetdeck url
+```
+
+**Do Phase 4 first.** fleetdeck creates its `tailscale serve` mapping during
+its own install, and only if the Tailscale CLI already exists. Install
+Tailscale afterwards and the board runs with no mapping — reachable on the
+Mac, invisible to the phone. `fleetdeck start` fixes it without re-running
+anything, but nothing tells you it is needed, so the order is worth keeping.
+
+To install it by hand, or on a machine that skipped it:
+
 ```bash
 git clone https://github.com/widebandz/fleetdeck.git ~/srv/fleetdeck
 cd ~/srv/fleetdeck && ./install.sh
-fleetdeck status && fleetdeck url
 ```
 
 Four surfaces, ports from `config.json`: portal **8790** · chat **8783** ·
@@ -733,6 +748,29 @@ cd ~/app && npm test && npm run dev -- -H 0.0.0.0                   # app builds
 Then, from the **phone**: open the fleetdeck portal over the tailnet URL
 and confirm a real padlock. Then send yourself a text from the machine.
 If both work, the build is complete.
+
+---
+
+## What the first live build taught
+
+Run on a real client Mac 2026-09-10. Five things this document could not
+have predicted, all now folded in above:
+
+1. **`claude.ai` was blocked on their network** while Homebrew's CDN was
+   not. It returns a 404, not a timeout, so it reads as a bad URL rather
+   than a firewall. `bootstrap.sh` now falls back to the Homebrew cask.
+2. **Homebrew needs `sudo`,** and a backgrounded installer has no terminal
+   to prompt on. It died silently and the run reported success anyway.
+3. **An installer can exit 0 having done nothing.** Success is now judged by
+   whether the binary exists.
+4. **"Command not found" is usually PATH,** not a failed install — twice.
+   `verify.sh` now separates the two.
+5. **Order still matters between Phase 4 and Phase 9,** even though
+   `install.sh` automates both ends of it.
+
+None of these were caught by the structural verification, because the two
+steps that needed a genuinely bare machine were the two always run with
+`--no-brew --no-claude`. That is the honest limit of what testing proved.
 
 ---
 

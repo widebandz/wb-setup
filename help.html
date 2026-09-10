@@ -209,6 +209,9 @@ sudo chmod +x /opt/homebrew/bin/tailscale</code></pre>
 <p>First enable HTTPS certificates for the tailnet: admin console → Settings → Features → HTTPS Certificates. Without it <code>serve</code> has no certificate to issue and fails at TLS.</p>
 <pre><code>tailscale serve --bg --https=&lt;port&gt; http://127.0.0.1:&lt;port&gt;</code></pre>
 <p><strong>Proof:</strong> the URL opens <strong>on the phone</strong> with a real padlock. Curl from the machine is not proof — that path can succeed while the phone&#x27;s fails.</p>
+<p><strong>Ordering matters here.</strong> fleetdeck creates its <code>serve</code> mapping during its own install, and only if the Tailscale CLI already exists. Install Tailscale <em>after</em> <code>install.sh</code> and the board is installed with no mapping — nothing is broken, but nothing is served either. Fix without re-running anything:</p>
+<pre><code>fleetdeck start &amp;&amp; fleetdeck url</code></pre>
+<p>Enable HTTPS Certificates in the admin console <strong>before</strong> that, or <code>serve</code> has no certificate to issue and fails at TLS.</p>
 <h2 id="p5-claude-claude-not-on-path">P5-CLAUDE — claude not on PATH</h2>
 <p><strong>Class:</strong> environment.</p>
 <pre><code>echo &#x27;export PATH=&quot;$HOME/.local/bin:$PATH&quot;&#x27; &gt;&gt; ~/.zshrc</code></pre>
@@ -284,6 +287,15 @@ launchctl list | grep &quot;com.$ORG&quot;</code></pre>
 cat /tmp/com.$ORG.&lt;name&gt;.log</code></pre>
 <p>Almost always the plist&#x27;s <code>PATH</code> or <code>HOME</code> — the job cannot find a tool that is on <em>your</em> PATH. Compare against a working plist in <code>templates/launchagents/</code>.</p>
 <p><strong>Proof:</strong> the exit column reads <code>0</code> <strong>and</strong> the log shows a recent successful run. A job that has never fired is not fixed, it is untested.</p>
+<h2 id="shell-path-installed-but-command-not-found">SHELL-PATH — installed, but &quot;command not found&quot;</h2>
+<p><strong>Class:</strong> environment divergence, and the most expensive kind: it looks exactly like a failed install.</p>
+<p><code>install.sh</code> adds <code>~/bin</code> and <code>~/.local/bin</code> to <code>.zshrc</code>. A terminal window opened <strong>before</strong> that line existed will never see them. The binary is on disk, working, and unreachable from that one window.</p>
+<pre><code>ls -l ~/bin/fleetdeck ~/bin/tm ~/.local/bin/claude 2&gt;/dev/null</code></pre>
+<p><strong>Fix:</strong> open a new terminal window. That is the whole fix.</p>
+<p>To use it without opening one:</p>
+<pre><code>~/bin/fleetdeck url          # full path always works
+source ~/.zshrc              # or reload the current shell</code></pre>
+<p><strong>Proof:</strong> <code>command -v fleetdeck</code> prints a path. On the first live build this cost two rounds of debugging an install that had already succeeded — which is why <code>verify.sh</code> now separates &quot;not installed&quot; from &quot;not on PATH&quot;.</p>
 <h2 id="p9-fleet-fleetdeck-not-installed">P9-FLEET — fleetdeck not installed</h2>
 <p><strong>Class:</strong> ledger-vs-object.</p>
 <p><code>install.sh</code> clones and installs it, seeding <code>config.json</code> from <code>$BRAND</code> and <code>com.$ORG</code>. If it is missing, that step failed or was skipped.</p>

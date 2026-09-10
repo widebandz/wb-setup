@@ -240,4 +240,11 @@ else
 fi
 
 echo
+echo "──────────────────────────────────────────────────────────"
+echo "  OPEN A NEW TERMINAL WINDOW before using tm, fleetdeck or"
+echo "  claude. This one was started before they were on PATH, so"
+echo "  it will say 'command not found' for tools that are"
+echo "  installed and working."
+echo "──────────────────────────────────────────────────────────"
+echo
 exec bash "$HERE/verify.sh"

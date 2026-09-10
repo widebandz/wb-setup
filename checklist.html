@@ -234,12 +234,10 @@ const S = [
  ["op","Link the project and confirm the link is real — a stale .vercel/project.json points at an empty project with no env vars and no domain."],
 ]],
 ["M","fleetdeck — the board",[
- ["op","Clone it.","git clone https://github.com/widebandz/fleetdeck.git ~/srv/fleetdeck"],
- ["op","Set brand and label_prefix in config.json. Leave 'machine' EMPTY.","","Leaving machine empty is what lets it resolve from Tailscale at boot. Pinning it is how a build stops being portable."],
- ["op","Install.","cd ~/srv/fleetdeck && ./install.sh"],
- ["op","Verify all surfaces are up.","fleetdeck doctor"],
- ["op","Get the URL.","fleetdeck url"],
- ["client","Open the board on the phone and add it to the home screen."],
+ ["op","install.sh already cloned it and wrote config.json from your vars. Confirm.","~/bin/fleetdeck doctor"],
+ ["op","Check config.json left machine EMPTY.","jq -r .machine ~/srv/fleetdeck/config.json","Empty means it resolves from Tailscale at boot. A pinned value works here and breaks on the next machine."],
+ ["op","If Tailscale was installed AFTER install.sh, create the serve mapping now.","~/bin/fleetdeck start && ~/bin/fleetdeck url","fleetdeck only maps the port if the Tailscale CLI existed when it installed. No mapping means the board is invisible to the phone."],
+ ["client","Open the board on the phone and add it to the home screen.","","Real padlock, no warning. Curling it from the Mac is not proof — that path can succeed while the phone fails."],
 ]],
 ["N","tmux workspace — the standing sessions",[
  ["op","install.sh already placed tm, tm-standard and the session standard. Confirm.","ls -l ~/bin/tm ~/bin/tm-standard ~/.config/tmux-command-center/config/sessions.conf"],
