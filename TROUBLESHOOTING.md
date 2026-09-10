@@ -433,6 +433,45 @@ is on *your* PATH. Compare against a working plist in
 **Proof:** the exit column reads `0` **and** the log shows a recent
 successful run. A job that has never fired is not fixed, it is untested.
 
+## P9-FLEET — fleetdeck not installed
+
+**Class:** ledger-vs-object.
+
+`install.sh` clones and installs it, seeding `config.json` from `$BRAND` and
+`com.$ORG`. If it is missing, that step failed or was skipped.
+
+```bash
+bash install.sh                         # or NO_FLEETDECK=1 to skip on purpose
+cat /tmp/wb-fleetdeck-install.log
+```
+
+It needs `tmux` and `ttyd` on PATH — both are in the Brewfile — and it
+**refuses** to install from `~/Documents`, `~/Desktop` or `~/Downloads`,
+because launchd cannot read those without a Full Disk Access grant.
+
+Without Tailscale the board still installs; the portal simply stays
+loopback-only until the tailnet is up. That is not a failure.
+
+**Proof:** `fleetdeck doctor` reports every surface, and `fleetdeck url`
+prints an address that opens on the phone.
+
+## P9-PINNED — config.json pins a machine name
+
+**Class:** identity. The board works here and breaks on the next machine.
+
+`machine` must stay **empty** so fleetdeck resolves it from Tailscale at
+boot. A pinned value is how a build stops being portable — the same mistake
+as hardcoding a hostname in a loop.
+
+```bash
+jq '.machine = ""' ~/srv/fleetdeck/config.json > /tmp/fd.json \
+  && mv /tmp/fd.json ~/srv/fleetdeck/config.json
+cd ~/srv/fleetdeck && ./install.sh
+```
+
+**Proof:** `jq -r .machine ~/srv/fleetdeck/config.json` prints nothing, and
+`fleetdeck url` still returns the right host.
+
 ---
 
 # Part 3 — silent failures

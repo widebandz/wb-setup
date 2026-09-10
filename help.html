@@ -284,6 +284,21 @@ launchctl list | grep &quot;com.$ORG&quot;</code></pre>
 cat /tmp/com.$ORG.&lt;name&gt;.log</code></pre>
 <p>Almost always the plist&#x27;s <code>PATH</code> or <code>HOME</code> — the job cannot find a tool that is on <em>your</em> PATH. Compare against a working plist in <code>templates/launchagents/</code>.</p>
 <p><strong>Proof:</strong> the exit column reads <code>0</code> <strong>and</strong> the log shows a recent successful run. A job that has never fired is not fixed, it is untested.</p>
+<h2 id="p9-fleet-fleetdeck-not-installed">P9-FLEET — fleetdeck not installed</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<p><code>install.sh</code> clones and installs it, seeding <code>config.json</code> from <code>$BRAND</code> and <code>com.$ORG</code>. If it is missing, that step failed or was skipped.</p>
+<pre><code>bash install.sh                         # or NO_FLEETDECK=1 to skip on purpose
+cat /tmp/wb-fleetdeck-install.log</code></pre>
+<p>It needs <code>tmux</code> and <code>ttyd</code> on PATH — both are in the Brewfile — and it <strong>refuses</strong> to install from <code>~/Documents</code>, <code>~/Desktop</code> or <code>~/Downloads</code>, because launchd cannot read those without a Full Disk Access grant.</p>
+<p>Without Tailscale the board still installs; the portal simply stays loopback-only until the tailnet is up. That is not a failure.</p>
+<p><strong>Proof:</strong> <code>fleetdeck doctor</code> reports every surface, and <code>fleetdeck url</code> prints an address that opens on the phone.</p>
+<h2 id="p9-pinned-config-json-pins-a-machine-name">P9-PINNED — config.json pins a machine name</h2>
+<p><strong>Class:</strong> identity. The board works here and breaks on the next machine.</p>
+<p><code>machine</code> must stay <strong>empty</strong> so fleetdeck resolves it from Tailscale at boot. A pinned value is how a build stops being portable — the same mistake as hardcoding a hostname in a loop.</p>
+<pre><code>jq &#x27;.machine = &quot;&quot;&#x27; ~/srv/fleetdeck/config.json &gt; /tmp/fd.json \
+  &amp;&amp; mv /tmp/fd.json ~/srv/fleetdeck/config.json
+cd ~/srv/fleetdeck &amp;&amp; ./install.sh</code></pre>
+<p><strong>Proof:</strong> <code>jq -r .machine ~/srv/fleetdeck/config.json</code> prints nothing, and <code>fleetdeck url</code> still returns the right host.</p>
 <hr>
 <h1 id="part-3-silent-failures">Part 3 — silent failures</h1>
 <p>Nothing errors. Something is still wrong. These need their own detection because no exit code will ever tell you.</p>

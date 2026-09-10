@@ -79,7 +79,7 @@ to regress the next time someone adds a step.
 
 ```
 bootstrap.sh       the one-liner target — bare-Mac safe
-install.sh         phases 5, 7, 8; needs brew, jq and an authed agent
+install.sh         phases 5, 7, 8, 9; needs brew, jq and an authed agent
 verify.sh          per-phase assertions; every failure carries a [check ID]
 doctor.sh          full machine state, one pasteable block; never fixes
 TROUBLESHOOTING.md the six root-cause classes, every check ID, and day two

@@ -194,5 +194,50 @@ for src in "$HERE"/loops/*; do
   fi
 done
 
+# ── fleetdeck ────────────────────────────────────────────────────────────────
+# Every value it needs is already in ~/.sop-vars, so there is nothing here for
+# a human to decide. `machine` is deliberately left EMPTY — fleetdeck resolves
+# it from Tailscale at boot, and pinning it is how a board works on the machine
+# that built it and nowhere else.
+echo
+echo "fleetdeck"
+FD="$HOME/srv/fleetdeck"
+if [ "${NO_FLEETDECK:-0}" = "1" ]; then
+  echo "  ~ skipped (NO_FLEETDECK=1)"
+else
+  if [ -d "$FD/.git" ]; then
+    echo "  = $FD"
+  elif git clone -q https://github.com/widebandz/fleetdeck.git "$FD" 2>/dev/null; then
+    echo "  + $FD"
+  else
+    echo "  ! could not clone fleetdeck — skipping"
+  fi
+
+  if [ -d "$FD" ]; then
+    # Seed once, then it belongs to the operator — the same rule sessions.conf
+    # and ~/.sop-vars get. Re-running must not flatten a curated board.
+    if [ -f "$FD/config.json" ]; then
+      echo "  = config.json (operator's — left alone)"
+    elif [ -f "$FD/config.example.json" ]; then
+      if jq --arg b "$BRAND" --arg p "$PREFIX" \
+            '.brand=$b | .label_prefix=$p | .machine=""' \
+            "$FD/config.example.json" > "$FD/config.json" 2>/dev/null; then
+        echo "  + config.json (brand=$BRAND · prefix=$PREFIX · machine=auto)"
+      else
+        echo "  ! could not write config.json"
+      fi
+    fi
+
+    # fleetdeck's installer ends with `exec fleetdeck doctor`, so its exit code
+    # reports surface health rather than install success. Judge the object.
+    ( cd "$FD" && ./install.sh ) >/tmp/wb-fleetdeck-install.log 2>&1 || true
+    if [ -x "$HOME/bin/fleetdeck" ]; then
+      echo "  ✓ fleetdeck installed — fleetdeck url"
+    else
+      echo "  ! fleetdeck did not install — see /tmp/wb-fleetdeck-install.log"
+    fi
+  fi
+fi
+
 echo
 exec bash "$HERE/verify.sh"

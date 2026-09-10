@@ -408,8 +408,8 @@ cat <<EOF
         what is actually true on this machine, phase by phase
 
     bash $ROOT/install.sh
-        phase 5 (claude layer), 7 (tmux), 8 (loops) — once brew and auth are in
-        phases 6, 9 and 10 are still hands-on; the SOP has them
+        phases 5 (claude layer), 7 (tmux), 8 (loops), 9 (fleetdeck)
+        phases 6 and 10 are still hands-on; the SOP has them
 
   The agent's runbook is ~/.claude/SOP.md. Point it there:
 

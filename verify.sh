@@ -218,6 +218,19 @@ else
   fi
 fi
 
+# ── phase 9 · fleetdeck ──────────────────────────────────────────────────────
+head_ "phase 9 · fleetdeck"
+if [ ! -x "$HOME/bin/fleetdeck" ]; then
+  no P9-FLEET "fleetdeck not installed — the board and the tmux chat are unavailable"
+else
+  ok "fleetdeck installed"
+  if [ -f "$HOME/srv/fleetdeck/config.json" ] && command -v jq >/dev/null 2>&1; then
+    m="$(jq -r '.machine // ""' "$HOME/srv/fleetdeck/config.json" 2>/dev/null)"
+    [ -z "$m" ] && ok "config.json leaves machine empty (resolves from Tailscale)" \
+                || no P9-PINNED "config.json pins machine='$m' — the board will break on the next machine"
+  fi
+fi
+
 # ── summary ──────────────────────────────────────────────────────────────────
 printf '\n\033[1m%s\033[0m\n' "─────────────────────────────────────────"
 printf '  %d passed · %d failed · %d skipped\n\n' "$PASS" "$FAIL" "$SKIP"
