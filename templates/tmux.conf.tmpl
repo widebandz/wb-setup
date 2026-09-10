@@ -1,0 +1,112 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  tmux config — rendered by wb-setup install.sh to ~/.config/tmux/tmux.conf
+#  Edit the template in the repo, re-run install.sh. Editing the rendered
+#  copy works until the next install and then silently loses your change.
+# ═══════════════════════════════════════════════════════════════════════════
+
+#── Prefix ─────────────────────────────────────────────────────────────────────
+set -g prefix C-a            # main prefix
+bind C-a send-prefix         # press C-a twice to send a literal C-a
+set -g prefix2 C-b           # keep the default as a backup
+
+#── General behaviour ───────────────────────────────────────────────────────────
+set  -g mouse on
+set  -g history-limit 50000
+set  -sg escape-time 10
+set  -g  base-index 1
+setw -g  pane-base-index 1
+set  -g  renumber-windows on
+set  -g  set-clipboard on
+set  -g  focus-events on
+setw -g  mode-keys vi
+set  -g  detach-on-destroy off    # when a session ends, switch to another instead of dropping out
+
+#── Truecolor / terminal features ───────────────────────────────────────────────
+set  -g  default-terminal "tmux-256color"
+set  -ga terminal-overrides ",*256col*:Tc"
+set  -as terminal-features ",*:RGB"
+
+#── Splits & windows (keep current path) ─────────────────────────────────────────
+unbind '"'
+unbind %
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+bind c new-window      -c "#{pane_current_path}"
+
+#── Pane resize (navigation C-h/j/k/l comes from vim-tmux-navigator) ─────────────
+bind -r H resize-pane -L 5
+bind -r J resize-pane -D 5
+bind -r K resize-pane -U 5
+bind -r L resize-pane -R 5
+
+#── Copy-mode (vi) → macOS clipboard ─────────────────────────────────────────────
+bind -T copy-mode-vi v send -X begin-selection
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel "pbcopy"
+bind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-and-cancel "pbcopy"
+
+#── Scrollback via keyboard (external kbd over a mobile SSH client) ──────────────
+#   Some mobile terminals won't forward an external touchpad's scroll wheel, so
+#   PageUp drops into copy-mode and pages up like a wheel. Guarded by
+#   #{alternate_on} so full-screen apps (vim, less, htop) still get PageUp.
+#   Once in copy-mode the default vi keys page further: PageUp/PageDown, C-u/C-d,
+#   k/j, g/G — then q to exit.
+bind -n PageUp if-shell -F '#{alternate_on}' 'send-keys PageUp' 'copy-mode -u'
+
+#── Reload ───────────────────────────────────────────────────────────────────────
+bind r source-file ~/.config/tmux/tmux.conf \; display "  config reloaded"
+
+#── Command-center popups ────────────────────────────────────────────────────────
+#   Every popup binds to a command that may not exist on a fresh machine. Each
+#   one carries its own fallback so a missing tool prints a readable line and
+#   waits, instead of flashing an empty popup that reads as a broken keybind.
+bind T display-popup -E -w 80% -h 70% \
+        "tm 2>/dev/null || { echo 'tm not installed — session switcher unavailable'; read -r; }"
+bind G display-popup -E -w 60% -h 50% \
+        "tm devices --pick 2>/dev/null || { echo 'tm not installed — device picker unavailable'; read -r; }"
+bind S display-popup -E -w 80% -h 60% \
+        "tm-standard popup 2>/dev/null || { echo 'tm-standard not installed'; read -r; }"
+bind g display-popup -E -d "#{pane_current_path}" -w 90% -h 90% \
+        "lazygit 2>/dev/null || { echo 'lazygit not installed (brew install lazygit)'; read -r; }"
+
+#── Status bar (hand-rolled, Catppuccin-Mocha palette) ───────────────────────────
+#   #h on the right = the host the pane lives on, so you always know WHICH
+#   machine you're on after jumping between tailnet devices.
+set -g status on
+set -g status-interval 5
+set -g status-position top
+set -g status-justify left
+set -g status-style "bg=default,fg=#cdd6f4"
+
+# __MARK__ is the operator's mark reduced to one cell — a status line has one
+# row, so whatever glyph goes here has to read at that size. Set MARK in
+# ~/.sop-vars to change it; the default is a diamond.
+set -g status-left-length 44
+set -g status-left "#[fg=#00ffd1,bg=default,bold] __MARK__ #[fg=#1e1e2e,bg=#89b4fa,bold]  #S #[fg=#89b4fa,bg=default,nobold] "
+
+set -g status-right-length 90
+set -g status-right "#[fg=#a6e3a1,bg=default]#[fg=#1e1e2e,bg=#a6e3a1,bold]  #h #[fg=#f9e2af,bg=default,nobold] %a %d %b #[fg=#cba6f7]%H:%M "
+
+set -g window-status-format         "#[fg=#6c7086,bg=default] #I:#W "
+set -g window-status-current-format "#[fg=#1e1e2e,bg=#f5c2e7,bold] #I:#W "
+set -g window-status-separator ""
+
+set -g pane-border-style        "fg=#313244"
+set -g pane-active-border-style "fg=#89b4fa"
+set -g message-style            "bg=#f9e2af,fg=#1e1e2e,bold"
+
+#── Plugins (TPM) ─────────────────────────────────────────────────────────────────
+set -g @plugin 'tmux-plugins/tpm'
+set -g @plugin 'tmux-plugins/tmux-sensible'
+set -g @plugin 'christoomey/vim-tmux-navigator'
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+set -g @plugin 'tmux-plugins/tmux-yank'
+
+#── resurrect + continuum: auto-save and restore sessions across reboots ──────────
+set -g @resurrect-capture-pane-contents 'on'
+set -g @resurrect-strategy-nvim 'session'
+set -g @continuum-restore   'on'
+set -g @continuum-save-interval '15'
+
+# Keep this line last.
+run '~/.config/tmux/plugins/tpm/tpm'

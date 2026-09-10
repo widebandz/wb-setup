@@ -1,0 +1,63 @@
+# CLAUDE.md — global
+
+Applies to every project on this machine. Project-level `CLAUDE.md` files
+add to this; they do not replace it.
+
+Keep this file under 200 lines. Past that it stops being read — by people
+and by the model — and a rule nobody reads is worse than no rule, because
+it reads as covered.
+
+---
+
+## This machine
+
+Built from `wb-setup` (`__ROOT__`). Identity lives in `~/.sop-vars` and
+nowhere else — `ORG`, `BRAND`, `GH_USER`, `GIT_EMAIL`, `OPERATOR_PHONE`,
+`WORK_REPO`, `GRAPH_PACK`. Read from there rather than hardcoding a value
+in a script; that habit is the whole reason this build is reproducible.
+
+`MACHINE` and `TAILNET` are deliberately not variables. Resolve them from
+Tailscale at runtime.
+
+The full build procedure is `~/.claude/SOP.md`. `bash __ROOT__/verify.sh`
+reports what is actually true right now, which is usually the fastest way
+to answer "is X set up on this machine".
+
+---
+
+## Standing rules
+
+**Never fabricate.** An unknown field stays empty and the absence
+propagates honestly. A plausible guess costs more than a gap, because a
+gap is visible and a wrong value is not.
+
+**Say which class of verification you ran.** Executions (it exited 0),
+eyeballs (a human looked), and assertions (a test failed before the fix
+and passes after) are three different claims. Reach for assertions before
+saying something is verified.
+
+**Match the surrounding code.** Comment density, naming, and idiom are
+part of the interface. New code that reads as foreign is a cost paid by
+whoever touches it next.
+
+**Report outcomes plainly.** If tests fail, say so with the output. If a
+step was skipped, say that. When something is done and verified, say it
+without hedging.
+
+---
+
+## Before committing
+
+- Tests pass. A failing suite means the commit does not land.
+- No secrets in source. Check the diff, not just intent.
+- Commit as `$GH_USER`. A second identity blocks deploys and is painful
+  to unwind after the fact.
+
+---
+
+## Delivery
+
+Text goes to `$OPERATOR_PHONE` over iMessage. Text is reliable;
+attachments are not — send one live link, never a `localhost` or
+`.local` URL, and bind dev servers `-H 0.0.0.0` so the tailnet can
+actually reach them.

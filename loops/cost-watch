@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""cost-watch — daily Claude Code usage brief, texted to the operator.
+
+Reads ~/.claude/projects/**/*.jsonl transcripts, sums token usage per model per
+day, and reports yesterday's volume against a 7-day norm. The point is the
+norm, not the total: a runaway loop is invisible in an absolute number and
+obvious as a multiple of what the last week looked like.
+
+The dollar figure is deliberately demoted to the last line and labelled an API
+list-price EQUIVALENT. On a subscription it is covered, not billed, and
+presenting it as a bill is a lie that compounds daily.
+
+Covers Claude Code only — not other providers, not standalone API scripts.
+
+stdlib only, on purpose: this runs from launchd where PATH is minimal and a
+missing dependency surfaces as a job that silently never reports.
+
+Identity comes from ~/.sop-vars. Scheduled once a day as com.$ORG.cost-watch.
+"""
+import json, os, glob, re, datetime, subprocess, sys
+
+VARS = os.path.expanduser("~/.sop-vars")
+ROOT = os.path.expanduser("~/.claude/projects")
+IMSG = "/opt/homebrew/bin/imsg"
+
+# List price per MILLION tokens: input / output / cache-write / cache-read.
+# Update when pricing moves; a stale table makes the equivalent wrong in a
+# direction nobody notices, because the number is plausible either way.
+PRICING = {
+    "opus":   (15.0, 75.0, 18.75, 1.50),
+    "sonnet": (3.0,  15.0, 3.75,  0.30),
+    "haiku":  (1.0,   5.0, 1.25,  0.10),
+}
+
+
+def sop_var(name, default=""):
+    """Read one export from ~/.sop-vars without sourcing it.
+
+    Sourcing would mean running the file, and this runs unattended from
+    launchd — a shell file that executes is a shell file that can do anything.
+    """
+    try:
+        with open(VARS, errors="ignore") as fh:
+            body = fh.read()
+    except OSError:
+        return default
+    m = re.search(r'^\s*export\s+%s=["\']?([^"\'\n]*)' % re.escape(name), body, re.M)
+    return m.group(1).strip() if m else default
+
+
+def family(model):
+    m = (model or "").lower()
+    for fam in PRICING:
+        if fam in m:
+            return fam
+    return "sonnet"
+
+
+def line_cost_tokens(model, u):
+    inp = u.get("input_tokens", 0)
+    out = u.get("output_tokens", 0)
+    cw  = u.get("cache_creation_input_tokens", 0)
+    cr  = u.get("cache_read_input_tokens", 0)
+    pin, pout, pcw, pcr = PRICING[family(model)]
+    cost = (inp * pin + out * pout + cw * pcw + cr * pcr) / 1_000_000
+    return cost, (inp + out + cw + cr)
+
+
+def human(n):
+    if n >= 1e9: return "%.1fB" % (n / 1e9)
+    if n >= 1e6: return "%.1fM" % (n / 1e6)
+    if n >= 1e3: return "%.0fK" % (n / 1e3)
+    return str(int(n))
+
+
+def dollars(x):
+    return "${:,.0f}".format(x) if x >= 100 else "${:.2f}".format(x)
+
+
+def send(text, phone):
+    if not os.path.exists(IMSG):
+        print("cost-watch: %s not installed — printing instead\n%s" % (IMSG, text))
+        return
+    subprocess.run([IMSG, "send", "--to", phone, "--text", text], timeout=60)
+
+
+def main():
+    phone = sop_var("OPERATOR_PHONE")
+    if not phone:
+        # Fail loudly. A usage watcher that quietly sends nowhere is worse than
+        # one that is obviously not installed.
+        print("cost-watch: OPERATOR_PHONE not set in %s — nothing to send" % VARS,
+              file=sys.stderr)
+        return 1
+
+    today = datetime.date.today()
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=8)).timestamp()
+
+    cost_day, tok_day, tok_day_fam = {}, {}, {}
+    for path in glob.glob(os.path.join(ROOT, "**", "*.jsonl"), recursive=True):
+        try:
+            if os.path.getmtime(path) < cutoff:
+                continue
+            fh = open(path, errors="ignore")
+        except OSError:
+            continue
+        with fh:
+            for raw in fh:
+                # Cheap string test before the JSON parse — these transcripts run
+                # to hundreds of megabytes and most lines are not assistant turns.
+                if '"usage"' not in raw or '"assistant"' not in raw:
+                    continue
+                try:
+                    o = json.loads(raw)
+                except Exception:
+                    continue
+                if o.get("type") != "assistant":
+                    continue
+                msg = o.get("message", {})
+                u, ts = msg.get("usage"), o.get("timestamp", "")
+                if not u or not ts:
+                    continue
+                day = ts[:10]
+                fam = family(msg.get("model"))
+                c, t = line_cost_tokens(msg.get("model"), u)
+                cost_day[day] = cost_day.get(day, 0) + c
+                tok_day[day] = tok_day.get(day, 0) + t
+                tok_day_fam.setdefault(day, {})[fam] = tok_day_fam.setdefault(day, {}).get(fam, 0) + t
+
+    y = (today - datetime.timedelta(days=1)).isoformat()
+    y_tok, y_cost = tok_day.get(y, 0), cost_day.get(y, 0)
+
+    if y_tok == 0:
+        send("🧾 Claude Code: no usage recorded yesterday.", phone)
+        print("sent: no usage")
+        return 0
+
+    window = [(today - datetime.timedelta(days=d)).isoformat() for d in range(1, 8)]
+    avg_tok = sum(tok_day.get(d, 0) for d in window) / 7
+
+    fams = tok_day_fam.get(y, {})
+    total = sum(fams.values()) or 1
+    top_fam, top_tok = max(fams.items(), key=lambda kv: kv[1])
+    model_label = "%s-heavy" % top_fam if top_tok / total >= 0.6 else "mixed models"
+
+    if avg_tok > 0:
+        r = y_tok / avg_tok
+        if r > 2:
+            trend = "%.1f× your 7-day norm ⚠️" % r
+        elif r >= 1.25:
+            trend = "%.1f× your 7-day norm" % r
+        else:
+            trend = "in line with your norm"
+    else:
+        trend = ""
+
+    line2 = " · ".join(x for x in ["~%s tokens" % human(y_tok), model_label, trend] if x)
+    line3 = "At API list price ≈ %s — covered by your plan." % dollars(y_cost)
+    text = "🧾 Claude Code usage — yesterday (%s)\n%s\n%s" % (y, line2, line3)
+
+    send(text, phone)
+    print("sent:\n" + text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

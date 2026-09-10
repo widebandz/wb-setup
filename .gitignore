@@ -1,0 +1,5 @@
+# Operator data. Identity is seeded from vars.example and then belongs to the
+# machine, not to the repo — the same rule fleetdeck applies to config.json.
+.sop-vars
+__pycache__/
+*.pyc

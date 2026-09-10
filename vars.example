@@ -1,0 +1,34 @@
+# wb-setup variables — copied to ~/.sop-vars by bootstrap.sh and sourced from
+# .zshrc. Every script in this repo reads identity from here and nothing else,
+# which is the property that makes a build reproducible on someone else's Mac.
+#
+# Edit and re-run install.sh to apply a change.
+
+# Reverse-domain slug. Names every LaunchAgent: com.$ORG.<job>
+export ORG="acme"
+
+# Shown on the fleetdeck board, uppercased in the UI. Keep it short.
+export BRAND="fleetdeck"
+
+# One cell in the tmux status line. A status line has one row, so pick a glyph
+# that reads at that size.
+export MARK="◈"
+
+# The ONLY GitHub identity on this machine. A second account is the single most
+# common cause of a blocked deploy, and it is painful to unwind after the fact.
+export GH_USER="acme-eng"
+export GIT_EMAIL="ops@acme.com"
+
+# Where the machine texts its briefs. E.164, with the country code.
+export OPERATOR_PHONE="+15551234567"
+
+# The app this machine builds.
+export WORK_REPO="git@github.com:acme-eng/app.git"
+
+# Which corpus the knowledge graph indexes.
+export GRAPH_PACK="acme"
+
+# NOT set here, on purpose: MACHINE and TAILNET. Tools resolve them from
+# Tailscale at runtime. Pinning them is how a build stops being portable — see
+# the "board works here, breaks on the next machine" row in the SOP's failure
+# modes table.
