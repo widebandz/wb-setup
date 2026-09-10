@@ -160,8 +160,30 @@ else
                 || { no "doctor.sh mutates:"; printf '      %s\n' "$mut"; }
 fi
 
-# ── 8. syntax ────────────────────────────────────────────────────────────────
-head_ "8 · syntax"
+# ── 8. help.html is generated, not hand-edited ───────────────────────────────
+# The client page embeds the guide, which would be a fourth copy of the failure
+# knowledge if it were maintained by hand. Regenerate to a temp file and compare:
+# a stale help.html fails here rather than quietly shipping advice that no
+# longer matches TROUBLESHOOTING.md.
+head_ "8 · help.html is current"
+if [ ! -f "$HERE/help.html" ]; then
+  no "help.html missing — run: python3 render-help.py"
+elif ! command -v python3 >/dev/null 2>&1; then
+  ok "help.html present (no python3 to re-render and compare)"
+else
+  tmp="$(mktemp)"
+  if python3 "$HERE/render-help.py" "$tmp" >/dev/null 2>&1; then
+    cmp -s "$tmp" "$HERE/help.html" \
+      && ok "help.html matches TROUBLESHOOTING.md" \
+      || no "help.html is STALE — run: python3 render-help.py"
+  else
+    no "render-help.py failed to run"
+  fi
+  rm -f "$tmp"
+fi
+
+# ── 9. syntax ────────────────────────────────────────────────────────────────
+head_ "9 · syntax"
 for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"

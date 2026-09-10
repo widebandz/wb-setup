@@ -83,6 +83,8 @@ install.sh         phases 5, 7, 8; needs brew, jq and an authed agent
 verify.sh          per-phase assertions; every failure carries a [check ID]
 doctor.sh          full machine state, one pasteable block; never fixes
 TROUBLESHOOTING.md the six root-cause classes, every check ID, and day two
+help.html          GENERATED client page — plain-language + the full guide
+render-help.py     builds help.html; selftest fails if it is stale
 selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup

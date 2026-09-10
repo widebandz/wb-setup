@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Something isn't working — help</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0c0d;--panel:#101315;--panel2:#14181a;--line:#1e2427;
+--tx:#c6cfd4;--hi:#f2f5f6;--dim:#8b979d;--acc:#3fd0c9;--warn:#e0a95c}
+*{box-sizing:border-box}
+body{margin:0;padding:28px 18px 110px;background:var(--bg);color:var(--tx);
+font:16px/1.6 -apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;
+max-width:820px;margin-inline:auto;-webkit-text-size-adjust:100%}
+h1{font-size:1.6rem;letter-spacing:-.02em;margin:0 0 6px;color:var(--hi)}
+.lede{color:var(--dim);font-size:14.5px;margin:0 0 26px}
+h2{font-size:1.06rem;color:var(--hi);margin:2.4em 0 .7em;padding-top:1.1em;border-top:1px solid var(--line)}
+h3{font-size:.97rem;color:#e6ebed;margin:1.7em 0 .5em}
+strong{color:var(--hi)}
+a{color:var(--acc)}
+code{font:12.5px/1.5 ui-monospace,'SF Mono',Menlo,monospace;background:#14181a;
+color:#8fe3dd;padding:.15em .42em;border-radius:4px;word-break:break-word}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+padding:13px 14px;overflow-x:auto}
+pre code{background:none;padding:0;color:#aebcc2;font-size:12px;white-space:pre}
+table{width:100%;border-collapse:collapse;margin:1.1em 0;font-size:13.5px;display:block;overflow-x:auto}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+hr{border:0;border-top:1px solid var(--line);margin:2.2em 0}
+ul,ol{padding-left:21px}li{margin:.3em 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden}
+.card summary{cursor:pointer;padding:13px 15px;display:flex;gap:11px;align-items:baseline;list-style:none}
+.card summary::-webkit-details-marker{display:none}
+.card[open] summary{border-bottom:1px solid var(--line)}
+.qn{font:600 11px ui-monospace,Menlo,monospace;color:var(--acc);flex:0 0 auto}
+.qt{color:var(--hi);font-weight:550;font-size:14.5px}
+.cb{padding:13px 15px}.cb p{margin:0 0 10px;font-size:14.5px}
+.then{color:var(--dim);font-size:13.5px!important;margin-bottom:0!important}
+.cmd{display:flex;gap:8px;align-items:flex-start;background:var(--panel2);
+border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:0 0 11px}
+.cmd code{flex:1;background:none;padding:0}
+.cp{background:none;border:0;color:#5d686d;cursor:pointer;
+font:600 10px ui-monospace,Menlo,monospace;flex:0 0 auto}
+.cp:hover{color:var(--acc)}
+.note{background:#141010;border:1px solid #33231b;border-left:3px solid var(--warn);
+border-radius:8px;padding:13px 15px;margin:18px 0;font-size:14px;color:#c9a874}
+.agent{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+.agent pre{background:var(--panel2);margin:11px 0 0}
+details.guide{margin-top:14px}
+details.guide>summary{cursor:pointer;color:var(--acc);font-size:14px;padding:11px 0}
+.guidebody{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.guidebody h1{font-size:1.2rem;margin-top:1.4em}
+.guidebody h2{font-size:1rem}.guidebody h3{font-size:.92rem}
+footer{margin-top:38px;border-top:1px solid var(--line);padding-top:15px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+
+<h1>Something isn't working</h1>
+<p class="lede">Find what you're seeing below. Most of these need one command,
+and the answer is usually in the file it produces.</p>
+
+<div class="note"><strong>You will not break anything here.</strong> Every command
+on this page only reads — none of them change, install, or delete a thing. If a
+fix needs a password or a System Settings toggle, that is our job, not yours.</div>
+
+<details class="card"><summary><span class="qn">1</span><span class="qt">My morning text didn&#x27;t arrive</span></summary><div class="cb"><p>The machine sends a usage summary each morning. If it stopped, the job behind it is either failing or never fired — those look identical from the outside, which is why the command below reports both.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Send /tmp/doctor.txt. The answer is in it.</p></div></details>
+<details class="card"><summary><span class="qn">2</span><span class="qt">I can&#x27;t reach it from my phone</span></summary><div class="cb"><p>The machine is reachable over a private network. If one page fails, that page is down. If EVERY page fails at once, the machine has usually dropped off the network entirely — often an expired key, which happens on a schedule and is not something you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Note whether ONE thing broke or EVERYTHING did — that single detail usually identifies the cause.</p></div></details>
+<details class="card"><summary><span class="qn">3</span><span class="qt">Claude won&#x27;t start, or says command not found</span></summary><div class="cb"><p>Almost always the terminal has not picked up its location yet. This is the one thing worth trying yourself.</p><div class="cmd"><code>open -a Terminal</code><button class="cp" data-c="open -a Terminal">copy</button></div><p class="then"><strong>Then:</strong> Close every terminal window, open a fresh one, and try again. If it still fails, send the doctor file.</p></div></details>
+<details class="card"><summary><span class="qn">4</span><span class="qt">My work sessions disappeared</span></summary><div class="cb"><p>Your named sessions are written down and can be rebuilt. The layout inside them may not come back, but the sessions themselves will.</p><div class="cmd"><code>tm-standard apply</code><button class="cp" data-c="tm-standard apply">copy</button></div><p class="then"><strong>Then:</strong> Safe to run — it only creates what is missing and never closes anything you have open.</p></div></details>
+<details class="card"><summary><span class="qn">5</span><span class="qt">Something says permission denied</span></summary><div class="cb"><p>macOS permissions occasionally need re-granting, particularly after a system update. These live in System Settings and are worth doing together rather than alone — one wrong toggle is hard to spot later.</p><p class="then"><strong>Then:</strong> Don&#x27;t work through Settings on your own. Send the doctor file and we will do it on a call.</p></div></details>
+<details class="card"><summary><span class="qn">6</span><span class="qt">It worked for weeks and now it doesn&#x27;t</span></summary><div class="cb"><p>Usually something expired or an update moved a file — a login token, a network key, a system upgrade resetting a permission. Nothing you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Mention roughly when it last worked. That narrows it faster than anything else.</p></div></details>
+<details class="card"><summary><span class="qn">7</span><span class="qt">I don&#x27;t know what&#x27;s wrong</span></summary><div class="cb"><p>Fine — this is the right place to start. The command below collects everything about the machine&#x27;s state in one file.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Send it with a sentence about what you were doing.</p></div></details>
+
+<h2>Working with your AI assistant</h2>
+<p>If you have Claude Code on this machine, it can diagnose and often fix this
+by itself. Copy the text below into it, filling in the first line.</p>
+
+<div class="agent">
+  <button class="cp" id="cpp" style="font-size:11px">copy this prompt</button>
+  <pre><code id="prompt">This machine was built with wb-setup. Something is wrong:
+&lt;describe what you are seeing, and roughly when it last worked&gt;
+
+Please:
+1. Run: bash ~/srv/wb-setup/doctor.sh
+2. Run: bash ~/srv/wb-setup/verify.sh
+3. Read ~/srv/wb-setup/TROUBLESHOOTING.md. Every failure is tagged with an
+   ID like [P0-FDA]; each ID has a section with the cause, the fix, and how
+   to prove it is fixed.
+4. Work the failures in phase order. Fix what you can.
+5. STOP and tell me if a fix needs a macOS permission dialog, a password,
+   or a paid account — those need a human and I will do them with you.
+
+Report what you changed and how you proved it worked.</code></pre>
+</div>
+
+<p style="margin-top:16px">It will stop and ask you before anything that needs a
+password or a permission dialog. Those genuinely require a person — it is not
+being cautious for the sake of it.</p>
+
+<h2>When to just call</h2>
+<ul>
+  <li>Anything involving a password, a payment, or a System Settings toggle</li>
+  <li>Everything stopped at once, rather than one thing</li>
+  <li>You have sent the doctor file and it is still not right</li>
+  <li>You would rather not — that is a good enough reason</li>
+</ul>
+
+<details class="guide">
+  <summary>Show the full technical guide (for an engineer or an agent)</summary>
+  <div class="guidebody"><h1 id="troubleshooting">Troubleshooting</h1>
+<h2 id="how-to-use-this">How to use this</h2>
+<pre><code>bash doctor.sh          # what the machine actually is
+bash verify.sh          # what is wrong, each failure tagged [P0-FDA] etc.</code></pre>
+<p>Every <code>✗</code> from <code>verify.sh</code> carries an ID. Find that ID in <strong>Part 2</strong> below. Each entry names the symptom, the class it belongs to, a command that confirms the diagnosis, the fix, and — the half usually missing — how to prove it is actually fixed.</p>
+<p>If nothing errored but something is wrong anyway, go to <strong>Part 3</strong>. If the machine worked for weeks and then stopped, go to <strong>Part 4</strong>.</p>
+<p><strong>Read Part 1 once.</strong> Six classes cover nearly every failure in this build, including the ones nobody has written down yet. A symptom table can only help with failures someone already hit; knowing the class lets you diagnose a new one.</p>
+<hr>
+<h1 id="part-1-the-six-classes">Part 1 — the six classes</h1>
+<h2 id="1-grant-path">1. Grant-path</h2>
+<p>macOS attributes a TCC permission to a binary&#x27;s <strong>resolved real path</strong>, not to its name and not to the symlink you invoked. Three consequences that account for most &quot;I granted it and it still doesn&#x27;t work&quot;:</p>
+<ul><li>- <strong>A symlink holds a different grant than its target.</strong> Granting Full Disk</li></ul>
+<p>Access to <code>/opt/homebrew/bin/foo</code> when that is a symlink grants it to whatever the link resolves to at that moment.</p>
+<ul><li>- <strong><code>brew upgrade</code> moves the real path.</strong> A formula upgrade changes</li></ul>
+<p><code>…/Cellar/python/3.13/…</code> to <code>…/3.14/…</code>, and every grant attached to the old path is now attached to a binary that no longer exists. This has already happened once on the reference machine and silently voided a project&#x27;s grants.</p>
+<ul><li>- <strong>A grant never applies to an already-running process.</strong> Granting Full</li></ul>
+<p>Disk Access to Terminal does nothing for the Terminal you granted it from. Quit it completely and reopen.</p>
+<p><code>doctor.sh</code> prints resolved real paths for exactly this reason. When a grant looks given but behaves as if it is not, compare what you granted against what the tools section reports.</p>
+<h2 id="2-environment-divergence">2. Environment divergence</h2>
+<p>It works when you type it and fails when launchd runs it. launchd gives a job almost nothing: no <code>~/bin</code>, no <code>/opt/homebrew/bin</code>, often no <code>HOME</code>.</p>
+<p>Every plist in <code>templates/launchagents/</code> therefore sets <code>PATH</code> and <code>HOME</code> explicitly. A loop that runs by hand and fails on schedule is this class until proven otherwise — check the plist&#x27;s <code>EnvironmentVariables</code> before anything else.</p>
+<p>The reverse also bites: a script that hardcodes <code>/Users/studio</code> works on one machine and nowhere else. <code>selftest.sh</code> asserts no loop contains an identity literal.</p>
+<h2 id="3-identity">3. Identity</h2>
+<p>The build assumes exactly one of each identity. Two accounts is the failure.</p>
+<ul><li>- A second GitHub account blocks deploys, and it is painful to unwind after</li></ul>
+<p>commits exist under both.</p>
+<ul><li>- <code>git config user.name</code> and <code>gh auth</code> are <strong>separate</strong> and can disagree —</li></ul>
+<p><code>doctor.sh</code> prints both because they routinely do.</p>
+<ul><li>- A hardcoded phone number or hostname makes a script unportable. Identity</li></ul>
+<p>belongs in <code>~/.sop-vars</code> and nowhere else.</p>
+<h2 id="4-reachability">4. Reachability</h2>
+<p>Four distinct things all present as &quot;I can&#x27;t reach it&quot;:</p>
+<ul><li>- <strong>Bound to loopback.</strong> A dev server on <code>127.0.0.1</code> is invisible to the</li></ul>
+<p>tailnet proxy. Bind <code>-H 0.0.0.0</code>.</p>
+<ul><li>- <strong>HTTP on a tailnet port.</strong> Safari&#x27;s HTTPS-First fails the handshake</li></ul>
+<p>before anything answers. <code>tailscale serve --https</code>.</p>
+<ul><li>- <strong>HTTPS certificates not enabled</strong> for the tailnet in the admin console.</li></ul>
+<p><code>serve</code> then has no certificate to issue and every surface fails at TLS.</p>
+<ul><li>- <strong>The check itself is wrong.</strong> <code>sshd</code> is socket-activated and its socket</li></ul>
+<p>belongs to root, so an unprivileged <code>lsof -iTCP:22</code> shows nothing even when Remote Login is on. Read <code>launchctl print-disabled system</code> instead.</p>
+<h2 id="5-ledger-vs-object">5. Ledger-vs-object</h2>
+<p>The record says it happened. The thing is not there. Always verify the object, never the record:</p>
+<ul><li>- <code>supabase db push</code> re-runs the whole migration ledger. The ledger will say</li></ul>
+<p>a migration ran; check that the <strong>table or column exists</strong>.</p>
+<ul><li>- A LaunchAgent can be <em>loaded</em> and <em>failing</em>. <code>launchctl list</code> shows it;</li></ul>
+<p>the second column is the last exit code, and non-zero means a broken loop that looks installed.</p>
+<ul><li>- A stale <code>.vercel/project.json</code> points at a real project with no env vars</li></ul>
+<p>and no domain. The link exists; it is the wrong link.</p>
+<ul><li>- <strong>&quot;Installed&quot; is not &quot;has fired once.&quot;</strong> A scheduled job is not working</li></ul>
+<p>until it has actually run and produced output.</p>
+<h2 id="6-bare-machine-assumptions">6. Bare-machine assumptions</h2>
+<p>Things true on a built machine and false on a fresh one:</p>
+<ul><li>- <code>/usr/bin/git</code> and <code>/usr/bin/python3</code> are <strong>Command Line Tools stubs</strong>.</li></ul>
+<p>Invoking either on a bare Mac pops the CLT installer dialog and blocks. This is why <code>bootstrap.sh</code> fetches a tarball rather than cloning.</p>
+<ul><li>- <code>/bin/bash</code> is <strong>3.2</strong>. No associative arrays, no <code>mapfile</code>.</li><li>- A script downloaded in a browser is <strong>quarantined</strong> by Gatekeeper. Piping</li></ul>
+<p><code>curl</code> to <code>bash</code> is not, which is why the installer is a URL and not a download.</p>
+<ul><li>- The Mac App Store Tailscale <strong>ships no CLI</strong>. Only the standalone app does.</li></ul>
+<hr>
+<h1 id="part-2-failures-by-check-id">Part 2 — failures by check ID</h1>
+<h2 id="p0-fda-full-disk-access">P0-FDA — Full Disk Access</h2>
+<p><strong>Class:</strong> grant-path. Message scanning silently returns nothing.</p>
+<pre><code>sqlite3 ~/Library/Messages/chat.db &quot;select count(*) from message;&quot;</code></pre>
+<p>A number means granted. An error means not.</p>
+<p><strong>Fix:</strong> Settings → Privacy &amp; Security → Full Disk Access → add Terminal. Then <strong>quit Terminal completely and reopen it</strong> — the grant does not apply to the running process. If the messaging tool is what fails, grant to its <em>real binary path</em> (<code>/opt/homebrew/bin/imsg</code>), not to a wrapper.</p>
+<p><strong>Proof:</strong> the <code>sqlite3</code> command above returns a count in a <em>new</em> terminal.</p>
+<h2 id="p0-ssh-remote-login-is-off">P0-SSH — Remote Login is off</h2>
+<p><strong>Class:</strong> reachability.</p>
+<pre><code>launchctl print-disabled system | grep sshd</code></pre>
+<p><strong>Fix:</strong> Settings → General → Sharing → Remote Login → on.</p>
+<p><strong>Proof:</strong> the command prints <code>&quot;com.openssh.sshd&quot; =&gt; enabled</code>. Do not check <code>lsof -iTCP:22</code> — see class 4; it shows an unprivileged user nothing either way.</p>
+<h2 id="p0-sleep-the-machine-sleeps">P0-SLEEP — the machine sleeps</h2>
+<p><strong>Class:</strong> ledger-vs-object. Scheduled loops miss their window and there is no error anywhere, because a job that never ran cannot fail.</p>
+<pre><code>sudo pmset -a sleep 0 disksleep 0</code></pre>
+<p><strong>Proof:</strong> <code>pmset -g | grep &#x27;^ *sleep&#x27;</code> reports <code>0</code>. Re-check after any macOS update — see Part 4.</p>
+<h2 id="p3-cli-a-core-tool-is-missing">P3-CLI — a core tool is missing</h2>
+<p><strong>Class:</strong> bare-machine.</p>
+<pre><code>brew bundle --file=Brewfile</code></pre>
+<p><strong>Proof:</strong> <code>bash verify.sh</code> no longer reports it. If <code>brew</code> itself is missing, the Homebrew step of <code>bootstrap.sh</code> failed — read <code>/tmp/wb-bootstrap-brew.log</code>.</p>
+<h2 id="p3-ghauth-gh-is-not-authenticated">P3-GHAUTH — gh is not authenticated</h2>
+<p><strong>Class:</strong> identity.</p>
+<pre><code>gh auth login          # HTTPS · browser</code></pre>
+<p><strong>Proof:</strong> <code>gh api user -q .login</code> prints the expected username.</p>
+<h2 id="p3-ghuser-gh-is-the-wrong-account">P3-GHUSER — gh is the wrong account</h2>
+<p><strong>Class:</strong> identity. <strong>Stop and fix this now.</strong> It blocks deploys, and unwinding it after commits exist under both accounts is far worse than fixing it here.</p>
+<pre><code>gh auth logout &amp;&amp; gh auth login
+git config --global user.name  &quot;$GH_USER&quot;
+git config --global user.email &quot;$GIT_EMAIL&quot;</code></pre>
+<p><code>gh</code> and <code>git config</code> are separate identities and can disagree. Set both.</p>
+<p><strong>Proof:</strong> <code>gh api user -q .login</code> and <code>git config --global user.name</code> agree with <code>$GH_USER</code> in <code>~/.sop-vars</code>.</p>
+<h2 id="p4-tscli-no-tailscale-cli">P4-TSCLI — no Tailscale CLI</h2>
+<p><strong>Class:</strong> bare-machine. Almost always the App Store build, which ships no CLI.</p>
+<p>Install the standalone app from tailscale.com/download, then link it:</p>
+<pre><code>printf &#x27;#!/bin/sh\nexec &quot;/Applications/Tailscale.app/Contents/MacOS/Tailscale&quot; &quot;$@&quot;\n&#x27; \
+  | sudo tee /opt/homebrew/bin/tailscale &gt;/dev/null
+sudo chmod +x /opt/homebrew/bin/tailscale</code></pre>
+<p>A <strong>wrapper</strong>, not <code>ln -s</code>. The app binary derives its bundle identifier from <code>argv[0]</code>, so a symlink to it crashes; <code>exec</code> on the real path does not.</p>
+<p><strong>Proof:</strong> <code>tailscale status</code> answers.</p>
+<h2 id="p4-tsserve-no-serve-mappings">P4-TSSERVE — no serve mappings</h2>
+<p><strong>Class:</strong> reachability. Phone surfaces are unreachable.</p>
+<p>First enable HTTPS certificates for the tailnet: admin console → Settings → Features → HTTPS Certificates. Without it <code>serve</code> has no certificate to issue and fails at TLS.</p>
+<pre><code>tailscale serve --bg --https=&lt;port&gt; http://127.0.0.1:&lt;port&gt;</code></pre>
+<p><strong>Proof:</strong> the URL opens <strong>on the phone</strong> with a real padlock. Curl from the machine is not proof — that path can succeed while the phone&#x27;s fails.</p>
+<h2 id="p5-claude-claude-not-on-path">P5-CLAUDE — claude not on PATH</h2>
+<p><strong>Class:</strong> environment.</p>
+<pre><code>echo &#x27;export PATH=&quot;$HOME/.local/bin:$PATH&quot;&#x27; &gt;&gt; ~/.zshrc</code></pre>
+<p>Then open a <strong>new</strong> terminal. The most common cause is checking in the same shell the installer ran in.</p>
+<p><strong>Proof:</strong> <code>claude --version</code> in a new tab.</p>
+<h2 id="p5-sl-the-status-line-script-is-missing">P5-SL — the status line script is missing</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<pre><code>bash install.sh</code></pre>
+<p><strong>Proof:</strong> <code>ls -l ~/.claude/statusline-command.sh</code>. It does <strong>not</strong> need the <code>+x</code> bit — <code>settings.json</code> invokes it as <code>bash &lt;path&gt;</code>.</p>
+<h2 id="p5-slcolor-colors-print-literally">P5-SLCOLOR — colors print literally</h2>
+<p><strong>Class:</strong> none — a code bug, and a subtle one.</p>
+<p>The status line shows <code>\033[0;32m</code> as text. The colors must be <code>$&#x27;...&#x27;</code> strings holding real ESC bytes. Written <code>&quot;\033[0;32m&quot;</code> they print literally, because <code>printf</code> only expands escapes in its <strong>format</strong> string and these arrive as <code>%s</code> arguments.</p>
+<p><strong>Fix:</strong> re-run <code>install.sh</code> to restore the vendored copy.</p>
+<p><strong>Proof:</strong> <code>grep &quot;\$&#x27;&quot; ~/.claude/statusline-command.sh</code> matches.</p>
+<h2 id="p5-sljq-jq-missing-status-line-blank">P5-SLJQ — jq missing, status line blank</h2>
+<p><strong>Class:</strong> bare-machine. The script parses its JSON input with <code>jq</code>; without it, every field is empty and the line renders blank rather than erroring.</p>
+<pre><code>brew install jq</code></pre>
+<p><strong>Proof:</strong> a new <code>claude</code> session shows a context percentage.</p>
+<h2 id="p5-settings-settings-json-missing-or-not-wired">P5-SETTINGS — settings.json missing or not wired</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<pre><code>bash install.sh</code></pre>
+<p><code>install.sh</code> <strong>merges</strong> into an existing <code>settings.json</code> rather than replacing it, so your MCP servers and permissions survive. If the file is not valid JSON it refuses and says so — fix the JSON first.</p>
+<p><strong>Proof:</strong> <code>jq -e &#x27;.statusLine.command&#x27; ~/.claude/settings.json</code>.</p>
+<h2 id="p5-md-a-required-md-file-is-missing">P5-MD — a required MD file is missing</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<p><code>~/.claude/CLAUDE.md</code> is placed by <code>bootstrap.sh</code> and <code>install.sh</code>. <code>~/.claude/USER.md</code> is <strong>not automated</strong> — it is judgment, and writing it is a step in the checklist. Until it exists this check fails, correctly.</p>
+<p><strong>Proof:</strong> both files exist and <code>verify.sh</code> reports their line counts.</p>
+<h2 id="p5-mdcap-an-md-file-is-over-200-lines">P5-MDCAP — an MD file is over 200 lines</h2>
+<p><strong>Class:</strong> none — a discipline check.</p>
+<p>Past 200 lines these files stop being read, by people and by the model, which makes an over-long file worse than a missing one: it reads as covered.</p>
+<p><strong>Fix:</strong> cut it. Move detail into a skill or a linked doc.</p>
+<p><strong>Proof:</strong> <code>wc -l</code> on each is ≤ 200.</p>
+<h2 id="p5-mcp-no-mcp-servers-connected">P5-MCP — no MCP servers connected</h2>
+<p><strong>Class:</strong> identity, usually — an expired OAuth grant.</p>
+<pre><code>claude mcp list</code></pre>
+<p><strong>Fix:</strong> re-authenticate the server that shows a failure. Note that interactively-authenticated servers are absent in headless runs by design.</p>
+<p><strong>Proof:</strong> <code>claude mcp list</code> shows <code>✔ Connected</code>.</p>
+<h2 id="p7-conf-p7-tpm-tmux-config-or-plugins-missing">P7-CONF / P7-TPM — tmux config or plugins missing</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<pre><code>bash install.sh</code></pre>
+<p>Then, inside tmux, press <strong>prefix + I</strong> once (Ctrl-a, then Shift-i) to fetch the plugin set. <code>install.sh</code> clones tpm but cannot press the key for you.</p>
+<p><strong>Proof:</strong> <code>ls ~/.config/tmux/plugins/</code> shows more than <code>tpm</code>.</p>
+<h2 id="p7-tm-tm-or-tm-standard-missing">P7-TM — tm or tm-standard missing</h2>
+<p><strong>Class:</strong> ledger-vs-object. Three tmux keybindings (T, G, S) depend on these; without them each popup prints a &quot;not installed&quot; message rather than failing silently.</p>
+<pre><code>bash install.sh</code></pre>
+<p>They are <strong>copied</strong> to <code>~/bin</code>, not symlinked into the Homebrew prefix — brew can clobber that path, and see class 1.</p>
+<p><strong>Proof:</strong> <code>tm ls</code> lists your sessions.</p>
+<h2 id="p7-std-no-session-standard">P7-STD — no session standard</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<pre><code>bash install.sh                       # seeds it if absent, never overwrites</code></pre>
+<p>If you already curated one elsewhere, <code>install.sh</code> leaves it alone by design.</p>
+<p><strong>Proof:</strong> <code>cat ~/.config/tmux-command-center/config/sessions.conf</code>.</p>
+<h2 id="p7-sess-standard-sessions-are-not-running">P7-SESS — standard sessions are not running</h2>
+<p><strong>Class:</strong> ledger-vs-object. The standard lists sessions; the server is not running them. Counting sessions would pass this; checking names does not.</p>
+<pre><code>tm-standard          # drift: ok · ~ elsewhere · -- missing
+tm-standard apply    # create what is missing; never kills a live session</code></pre>
+<p>If they are missing <strong>after a reboot</strong>, the <code>tmux-boot</code> agent is not loaded — that is P8-LOAD, not this.</p>
+<p><strong>Proof:</strong> <code>tm-standard</code> shows <code>ok</code> for every row.</p>
+<h2 id="p8-load-no-agents-loaded">P8-LOAD — no agents loaded</h2>
+<p><strong>Class:</strong> ledger-vs-object.</p>
+<pre><code>bash install.sh
+launchctl list | grep &quot;com.$ORG&quot;</code></pre>
+<p>If loading fails, background items may be blocked: Settings → General → Login Items &amp; Extensions.</p>
+<p><strong>Proof:</strong> the agents appear, and after a reboot they are still there.</p>
+<h2 id="p8-exit-an-agent-is-loaded-but-failing">P8-EXIT — an agent is loaded but failing</h2>
+<p><strong>Class:</strong> environment, usually. <strong>This is the most important failure in the build</strong>, because everything looks installed and nothing is delivering.</p>
+<pre><code>launchctl list | grep &quot;com.$ORG&quot; | awk &#x27;$2!=0&#x27;
+cat /tmp/com.$ORG.&lt;name&gt;.log</code></pre>
+<p>Almost always the plist&#x27;s <code>PATH</code> or <code>HOME</code> — the job cannot find a tool that is on <em>your</em> PATH. Compare against a working plist in <code>templates/launchagents/</code>.</p>
+<p><strong>Proof:</strong> the exit column reads <code>0</code> <strong>and</strong> the log shows a recent successful run. A job that has never fired is not fixed, it is untested.</p>
+<hr>
+<h1 id="part-3-silent-failures">Part 3 — silent failures</h1>
+<p>Nothing errors. Something is still wrong. These need their own detection because no exit code will ever tell you.</p>
+<table><thead><tr><th>What you see</th><th>What it is</th><th>How to confirm</th></tr></thead><tbody><tr><td>Playwright screenshots are <strong>black</strong></td><td>Screen Recording not granted</td><td>grant it, retake one, look at it</td></tr><tr><td>Status line <strong>blank</strong></td><td><code>jq</code> missing</td><td><code>command -v jq</code></td></tr><tr><td>Status line shows <code>\033[…]</code></td><td>colors not <code>$&#x27;...&#x27;</code></td><td><code>grep &quot;\$&#x27;&quot; ~/.claude/statusline-command.sh</code></td></tr><tr><td>Migration &quot;ran&quot;, column absent</td><td><code>db push</code> re-ran the ledger</td><td>query the <strong>object</strong>, not the ledger</td></tr><tr><td>Prod has no env vars</td><td>stale <code>.vercel/project.json</code></td><td>check the project name in the dashboard</td></tr><tr><td>Loop installed, nothing arrives</td><td>loaded but exiting non-zero</td><td>`launchctl list \</td><td>awk &#x27;$2!=0&#x27;`</td></tr><tr><td>Board works here, not on the next machine</td><td><code>machine</code> pinned in <code>config.json</code></td><td>leave it empty; resolve from Tailscale</td></tr><tr><td>Phone can&#x27;t open a surface that curls fine</td><td>HTTP, or loopback bind</td><td>test <strong>from the phone</strong>, always</td></tr></tbody></table>
+<p>The pattern: <strong>an absence never raises.</strong> A job that never ran, a grant that was never given, a field that was never filled — none of them produce an error, and all of them look like success from a distance. Anything that matters gets an assertion, not an assumption.</p>
+<hr>
+<h1 id="part-4-day-two">Part 4 — day two</h1>
+<p>It worked for weeks and then stopped. These are the causes, roughly in order of how often they bite.</p>
+<h2 id="brew-upgrade-voided-a-tcc-grant"><code>brew upgrade</code> voided a TCC grant</h2>
+<p><strong>Class 1.</strong> A formula upgrade changes the resolved real path, and the grant was attached to the old one. Nothing announces this. Symptoms appear as a permission that was working and now is not.</p>
+<pre><code>bash doctor.sh | sed -n &#x27;/tools (resolved/,/permissions/p&#x27;</code></pre>
+<p>Re-grant against the new real path.</p>
+<h2 id="a-macos-major-upgrade-reset-permissions">A macOS major upgrade reset permissions</h2>
+<p><strong>Class 1.</strong> Major upgrades re-prompt for, and sometimes clear, TCC grants, and can reset <code>pmset</code>. After any major upgrade, re-run the whole of Phase 0 rather than assuming.</p>
+<pre><code>bash verify.sh | grep -E &#x27;P0-&#x27;</code></pre>
+<h2 id="a-loop-stopped-firing">A loop stopped firing</h2>
+<p><strong>Class 5.</strong> Three distinct causes with the same symptom:</p>
+<ul><li>- non-zero exit — <code>launchctl list | awk &#x27;$2!=0&#x27;</code></li><li>- launchd throttling after repeated fast failures — check <code>ThrottleInterval</code></li></ul>
+<p>and the log for a crash loop</p>
+<ul><li>- the machine slept through the scheduled time — <code>pmset -g</code></li></ul>
+<p>A calendar job that missed its window does <strong>not</strong> run late. It waits for the next one.</p>
+<h2 id="tailscale-node-key-expired">Tailscale node key expired</h2>
+<p><strong>Class 4.</strong> Node keys expire (commonly ~180 days) and the machine drops off the tailnet. Every phone surface goes dark at once, which is the tell — a single broken surface is not this.</p>
+<pre><code>tailscale status          # shows the expiry / logged-out state</code></pre>
+<p>Re-authenticate, and consider disabling key expiry for a server that must stay reachable.</p>
+<h2 id="logs-filled-the-disk">Logs filled the disk</h2>
+<p>Only <code>healthcheck</code> self-caps today, at 2000 lines. Everything else in <code>/tmp/com.$ORG.*.log</code> grows without bound.</p>
+<pre><code>bash doctor.sh | sed -n &#x27;/── machine/,/── identity/p&#x27;   # disk free
+du -sh /tmp/com.*.log</code></pre>
+<p>This is a <strong>real gap in the build</strong>, not user error — log rotation for every loop is on the list.</p>
+<h2 id="credentials-expired">Credentials expired</h2>
+<p>Anthropic subscription, Supabase keys, Vercel token, MCP OAuth grants. Each fails in its own way and none of them announce it in advance.</p>
+<pre><code>claude mcp list
+gh auth status</code></pre>
+<h2 id="the-resurrect-directory-was-wiped">The resurrect directory was wiped</h2>
+<p><strong>Class 5.</strong> Window and pane layout is gone, sessions do not come back as they were. This is exactly what <code>sessions.conf</code> is the safety net for: resurrect carries the transient detail, the standard carries the names and roots.</p>
+<pre><code>tm-standard apply</code></pre>
+<h2 id="something-changed-and-nobody-wrote-it-down">Something changed and nobody wrote it down</h2>
+<p>Run <code>doctor.sh</code> and read the <strong>drift</strong> section. It compares every verbatim artifact against the repo copy. <code>DIFFERS from repo</code> means someone edited the installed copy — which works until the next <code>install.sh</code> silently reverts it. Move the change into the repo and re-install.</p>
+<hr>
+<h2 id="when-none-of-this-helps">When none of this helps</h2>
+<pre><code>bash doctor.sh &gt; /tmp/doctor.txt</code></pre>
+<p>Paste that file to the agent, or to whoever is helping. It carries the resolved real paths, the launchd exit codes, and the drift report — the three things that are almost never in a description of the problem and almost always in the cause.</p></div>
+</details>
+
+<footer>
+  <p>The full guide is also <code>TROUBLESHOOTING.md</code> in the
+  <code>wb-setup</code> folder on this machine. This page is generated from it,
+  so the two cannot disagree.</p>
+</footer>
+
+<script>
+document.addEventListener('click', function(e){
+  var b = e.target.closest('.cp'); if(!b) return;
+  var t = b.id === 'cpp' ? document.getElementById('prompt').textContent : b.dataset.c;
+  navigator.clipboard.writeText(t);
+  var o = b.textContent; b.textContent = 'copied';
+  setTimeout(function(){ b.textContent = o; }, 1200);
+});
+</script>
+</body>
+</html>
