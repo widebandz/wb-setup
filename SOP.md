@@ -465,23 +465,64 @@ npm run dev:https             # required for mic/camera surfaces
 ## Phase 7 — tmux workspace
 
 The machine has to survive a reboot without anyone rebuilding context by
-hand.
+hand. `install.sh` places all of this; nothing here is written by hand.
 
 ```
-~/.config/tmux/tmux.conf        session config
-~/.config/tmux/tmux-boot.sh     builds the standing sessions
-~/.config/tmux/tmux-save.sh     snapshots state every 15 min
-~/.config/tmux/healthcheck.sh   watches the sessions every 5 min
-~/.config/tmux/plugins/         tpm · resurrect · continuum · sensible · yank
+~/.config/tmux/tmux.conf                          session config
+~/.config/tmux/plugins/                           tpm · resurrect · continuum · sensible · yank
+~/.config/tmux-command-center/config/sessions.conf   THE SESSION STANDARD
+~/bin/tm                                          switcher + tailnet device hops
+~/bin/tm-standard                                 save · apply · drift report
+com.$ORG.tmux-boot                                brings the standard up at login
+com.$ORG.healthcheck                              ssh · tailscale · tmux, every 5 min
 ```
 
-**Standing sessions: one per concern, never one per task.** Name them for
-the thing that persists — the app, production, the UI, messages, the
-tunnel, each long-running workstream. A session per task means the set
-churns daily and `tmux-boot.sh` goes stale within a week.
+The config lives in `~/.config`, **not `~/Documents`**. Documents is
+TCC-protected, `tmux-boot` runs from launchd, and launchd cannot read
+Documents without a Full Disk Access grant. A command centre installed
+there works on the machine that happens to hold the grant and fails on
+every other one.
 
-**Verify:** reboot. The sessions come back on their own. If you have to
-run `tmux-boot.sh` by hand, the LaunchAgent is not loaded.
+### The standard
+
+`sessions.conf` is `<name> = <root>`, and `tm-standard apply` creates any
+that are not running. It never kills or moves a live session, which is
+what makes it safe at login and safe to re-run by hand.
+
+```
+main         = ~          baseline — what the phone attaches to
+website      = ~/app      the work repo
+research     = ~          scoped reading and answers
+messages     = ~          the iMessage channel and inbound
+experiment   = ~          scratch — anything that might be thrown away
+```
+
+**One session per concern, never one per task.** These five are still
+true next month. A session per task means the set churns daily and the
+standard is stale inside a week.
+
+Only names and roots are standard. Windows, panes, and whatever runs in
+them are transient — tmux-resurrect carries those across reboots, and
+continuum saves every 15 minutes from `tmux.conf`. `sessions.conf` is
+what survives a wiped resurrect directory or a new Mac.
+
+```bash
+tm ls               every running session
+tm-standard         drift — ok · ~ running elsewhere · -- missing
+tm-standard apply   create what is missing
+tm-standard save    fold live sessions back into the standard
+```
+
+**Verify:** reboot. All five come back on their own.
+
+```bash
+tmux ls && tm-standard && tail -n 5 ~/.config/tmux/health.log
+```
+
+If you had to run `tm-standard apply` by hand, the `tmux-boot` agent is
+not loaded. Checking the count alone is not enough — a standard listing
+five sessions against a server running none is exactly the failure this
+phase exists to prevent, so check the *names*, which `tm-standard` does.
 
 ---
 

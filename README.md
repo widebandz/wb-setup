@@ -87,11 +87,17 @@ PREP.md            client-facing; send the day before setup
 checklist.html     105-step interactive checklist; open it directly, no server
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
-dotfiles/          byte-identical artifacts, never regenerated
+bin/               tm, tm-standard → copied to ~/bin
+dotfiles/          byte-identical artifacts: statusline, shell.zsh
 templates/         __TOKEN__ files rendered by install.sh
-loops/             portable LaunchAgent jobs; read ~/.sop-vars only
+loops/             LaunchAgent jobs — cost-watch, tmux-boot, healthcheck
 interview/         the judgment layer (not yet written)
 ```
+
+Loops carry no hardcoded identity. `cost-watch` reads `~/.sop-vars`;
+`tmux-boot` and `healthcheck` need no identity at all. `selftest.sh`
+asserts that property rather than asserting every loop reads the file —
+those are different claims, and only the first one is the invariant.
 
 **Deterministic things are files. Judgment is a prompt.** The status line
 is a file because it is solved and has two non-obvious failure modes an
