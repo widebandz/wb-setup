@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Operator build — checklist</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0c0d;--panel:#101315;--panel2:#14181a;--line:#1e2427;
+--tx:#c6cfd4;--hi:#f2f5f6;--dim:#8b979d;--acc:#3fd0c9;--warn:#e0a95c;--ok:#7fd88f}
+*{box-sizing:border-box}
+body{margin:0;padding:0 16px 120px;background:var(--bg);color:var(--tx);
+font:15px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;
+max-width:880px;margin-inline:auto;-webkit-text-size-adjust:100%}
+
+header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--bg) 72%,transparent);
+padding:20px 0 12px;margin-bottom:4px}
+h1{font-size:1.32rem;letter-spacing:-.02em;margin:0 0 2px;color:var(--hi)}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 12px}
+
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:11px}
+.meta input{background:var(--panel);border:1px solid var(--line);border-radius:7px;
+padding:7px 9px;color:var(--hi);font:inherit;font-size:12.5px;width:100%}
+.meta input::placeholder{color:#5d686d}
+.meta input:focus{outline:none;border-color:var(--acc)}
+
+.bar{height:5px;background:var(--panel);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .25s}
+.stats{display:flex;justify-content:space-between;align-items:center;margin-top:7px;gap:10px;flex-wrap:wrap}
+.count{font:600 12px ui-monospace,Menlo,monospace;color:var(--dim)}
+.count b{color:var(--acc)}
+.tools{display:flex;gap:6px}
+button.t{background:var(--panel);border:1px solid var(--line);color:var(--dim);
+border-radius:6px;padding:5px 9px;font:inherit;font-size:11.5px;cursor:pointer}
+button.t:hover{color:var(--hi);border-color:#2c3439}
+button.t.on{color:var(--acc);border-color:var(--acc)}
+
+section{margin:22px 0 0;border-top:1px solid var(--line);padding-top:16px}
+.sh{display:flex;align-items:baseline;gap:9px;cursor:pointer;user-select:none}
+.sh h2{font-size:.83rem;text-transform:uppercase;letter-spacing:.08em;color:var(--hi);margin:0;font-weight:650}
+.sh .c{font:600 11px ui-monospace,Menlo,monospace;color:var(--dim);margin-left:auto}
+.sh .tw{color:var(--dim);font-size:11.5px;font-weight:400;text-transform:none;letter-spacing:0}
+section.done .sh h2{color:var(--dim)}
+.steps{margin-top:9px}
+section.collapsed .steps{display:none}
+
+.step{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.step:last-child{border-bottom:0}
+.step input{appearance:none;flex:0 0 17px;height:17px;margin-top:2px;border:1px solid #39434a;
+border-radius:5px;background:var(--panel);cursor:pointer;position:relative}
+.step input:checked{background:var(--acc);border-color:var(--acc)}
+.step input:checked::after{content:'';position:absolute;left:5px;top:1.5px;width:4px;height:9px;
+border:solid #06201f;border-width:0 2px 2px 0;transform:rotate(42deg)}
+.body{flex:1;min-width:0}
+.line{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.n{font:600 10.5px ui-monospace,Menlo,monospace;color:#4e585e;flex:0 0 auto}
+.tx{color:var(--tx)}
+.step.checked .tx,.step.checked .n{color:#5d686d;text-decoration:line-through;text-decoration-color:#333c41}
+.who{font:600 9.5px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.05em;
+padding:1px 5px;border-radius:4px;flex:0 0 auto}
+.w-op{background:#12312f;color:#5fd6cd}
+.w-client{background:#2e2440;color:#c2a0f0}
+.w-mac{background:#1b2a3d;color:#79aef2}
+.w-agent{background:#3a2f18;color:#e0a95c}
+.cmd{display:flex;gap:7px;align-items:flex-start;margin-top:6px;background:var(--panel2);
+border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+.cmd code{flex:1;font:12px/1.5 ui-monospace,'SF Mono',Menlo,monospace;color:#8fe3dd;
+white-space:pre-wrap;word-break:break-word}
+.cp{background:none;border:0;color:#5d686d;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;
+padding:1px 3px;flex:0 0 auto}
+.cp:hover{color:var(--acc)}
+.note{margin-top:5px;font-size:12.5px;color:var(--dim);border-left:2px solid #2a3237;padding-left:9px}
+.note.warn{border-left-color:var(--warn);color:#c9a874}
+.step.checked .cmd,.step.checked .note{opacity:.4}
+
+body.hideDone .step.checked{display:none}
+body.hideDone section.done{display:none}
+
+footer{margin-top:34px;border-top:1px solid var(--line);padding-top:14px;color:var(--dim);font-size:12.5px}
+@media(max-width:620px){.meta{grid-template-columns:1fr}}
+@media print{
+  body{background:#fff;color:#000;padding:0}
+  header{position:static}.tools,.cp{display:none}
+  .step input{border-color:#888}section{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Operator build — checklist</h1>
+  <p class="sub">Bare M-chip Mac → a working operator machine. Work top to bottom. Progress saves in this browser.</p>
+  <div class="meta">
+    <input id="m-machine"  placeholder="Machine (e.g. northside-studio)">
+    <input id="m-operator" placeholder="Built by">
+    <input id="m-date"     placeholder="Date" type="date">
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="stats">
+    <span class="count"><b id="done">0</b> / <span id="total">0</span> &nbsp;·&nbsp; <span id="pct">0%</span></span>
+    <span class="tools">
+      <button class="t" id="tg">Hide done</button>
+      <button class="t" id="pr">Print</button>
+      <button class="t" id="rs">Reset</button>
+    </span>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<footer>
+  <p><b>Who does what:</b>
+    <span class="who w-op">op</span> the person running the build ·
+    <span class="who w-client">client</span> needs their hands or their phone ·
+    <span class="who w-mac">mac</span> the machine, unattended ·
+    <span class="who w-agent">agent</span> Claude Code, once it is live
+  </p>
+  <p>A step that says <b>verify</b> is the point of the steps above it. Do not tick it because the
+  command ran — tick it because the output said what it should say.</p>
+  <p>When you finish, fill the Build Record at the end of <code>SOP.md</code> and commit it.
+  A deviation is not a failure; an unrecorded one is what makes the next build different.</p>
+</footer>
+
+<script>
+const S = [
+["A","Day −1 — before you go, off the new machine",[
+ ["op","Push the wb-setup repo. One time, ever — until this exists the installer URL 404s.","gh repo create widebandz/wb-setup --public --source ~/srv/wb-setup --push"],
+ ["op","Send the client PREP.md (the day-before sheet)."],
+ ["client","Client creates the six accounts, in order: email → Apple ID → Anthropic → GitHub → Tailscale → Vercel/Supabase.","","GitHub before Tailscale/Vercel/Supabase — those three sign in with it, and doing them first creates duplicate identities you then have to reconcile."],
+ ["op","Collect the four answers: company short name, GitHub username, commit email, phone for briefs."],
+ ["op","Confirm: not MDM-managed, client is an admin, and whether they are migrating from an old Mac.","","Any of the three changes the plan. A managed Mac can block the permissions this build needs — find out now, not three hours in."],
+]],
+["B","Unbox and Setup Assistant",[
+ ["client","Plug into power. It will be downloading for a while."],
+ ["client","Setup Assistant: language, region, wifi."],
+ ["client","Sign in with the Apple ID (or skip and do it in section E)."],
+ ["client","Create the admin account.","","The short username is baked into every config path and plist from here on. Pick something you would want to read in a config file."],
+ ["op","Migration Assistant — skip it unless you planned for it.","","A migrated machine arrives with old dotfiles and PATH entries that conflict quietly. If they must migrate, do it first and completely, then start section C."],
+ ["op","Verify: the account is an admin.","id -Gn | tr ' ' '\\n' | grep -qx admin && echo ADMIN || echo 'NOT ADMIN — stop here'"],
+]],
+["C","Bootstrap — the one touch",[
+ ["op","Open Terminal (Spotlight → Terminal)."],
+ ["op","Run the installer.","curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash"],
+ ["op","Answer: org slug — lowercase, one word. Names every background job com.<org>.*"],
+ ["op","Answer: brand — the name on the board."],
+ ["op","Answer: mark — one character for the tmux status line."],
+ ["op","Answer: GitHub username. The ONLY one this machine will use."],
+ ["op","Answer: git commit email."],
+ ["op","Answer: phone for daily briefs, E.164 with country code."],
+ ["op","Answer: work repo git URL."],
+ ["op","Answer: knowledge-graph pack name."],
+ ["op","Verify: identity written.","cat ~/.sop-vars"],
+ ["mac","Claude Code installs — seconds, no dependencies."],
+ ["mac","Homebrew starts downloading in the background. Nothing waits on it.","tail -f /tmp/wb-bootstrap-brew.log"],
+]],
+["D","Permissions — while the download runs",[
+ ["op","Every one of these is a dialog. A missed grant fails silently several phases later, which is the most expensive failure in this build.","","Do these now. They need no network and no Homebrew."],
+ ["client","Remote Login ON — Settings → General → Sharing."],
+ ["client","Full Disk Access → add Terminal. Settings → Privacy & Security → Full Disk Access."],
+ ["op","Quit Terminal completely and reopen it.","","Full Disk Access does not apply to a running process. If you skip this, the next check fails and looks like the grant did not work."],
+ ["op","Verify: Full Disk Access is live.","sqlite3 ~/Library/Messages/chat.db 'select count(*) from message;'","A number means granted. An error means not."],
+ ["client","Accessibility → add Terminal."],
+ ["client","Screen Recording → add Terminal.","","Without this, Playwright screenshots come back black — and nothing else complains."],
+ ["op","Provoke the Automation dialog, then click OK.","osascript -e 'tell application \"Messages\" to get name'","This makes macOS show the prompt now rather than making anyone hunt for it."],
+ ["client","Login Items & Extensions → allow background items.","","Without it, no LaunchAgent survives a reboot."],
+ ["client","Messages.app → Settings → sign in to iMessage."],
+ ["op","Disable sleep so scheduled jobs do not miss their window.","sudo pmset -a sleep 0 disksleep 0"],
+ ["op","Verify: sleep is 0.","pmset -g | grep -E '^ *sleep'"],
+]],
+["E","Accounts on the device — skip any already done on Day −1",[
+ ["client","Apple ID / iCloud signed in."],
+ ["client","Email — send yourself one message and confirm it arrives.","","Everything else verifies through email. A machine that cannot receive a code stalls here."],
+ ["client","Sign in to GitHub in the browser — as the username from section C."],
+ ["client","Sign in to Anthropic (Pro/Max subscription, or an API key)."],
+ ["client","Sign in to Tailscale."],
+ ["client","Sign in to Vercel and Supabase — both via GitHub."],
+]],
+["F","The agent goes live",[
+ ["op","Verify Claude Code installed.","claude --version","'command not found' means ~/.local/bin is not on PATH — open a new Terminal tab first."],
+ ["op","Authenticate. A browser opens.","claude"],
+ ["op","Verify: the agent answers and the status line shows a context percentage."],
+ ["agent","Hand the agent its runbook.","Read ~/.claude/SOP.md and run verify.sh. Work the phases that fail, in order, stopping at anything that needs me."],
+ ["op","Run the first honest report. A wall of ✗ is correct on a fresh machine — it is a to-do list in phase order.","bash ~/srv/wb-setup/verify.sh"],
+]],
+["G","Homebrew and the core CLIs",[
+ ["mac","Wait for Homebrew to finish, then brew bundle runs on its own."],
+ ["op","Verify the toolchain.","node -v && npm -v && git --version && jq --version && tmux -V"],
+ ["op","Authenticate GitHub CLI.","gh auth login"],
+ ["op","Verify: gh is the right identity. Any other account here blocks deploys later.","gh api user -q .login"],
+ ["op","Set the git identity.","source ~/.sop-vars && git config --global user.name \"$GH_USER\" && git config --global user.email \"$GIT_EMAIL\""],
+]],
+["H","Tailscale and HTTPS",[
+ ["op","Download the STANDALONE app from tailscale.com/download.","","Not the Mac App Store build — it does not ship the CLI, and every phone surface depends on the CLI."],
+ ["op","Install it and sign in."],
+ ["op","Link the CLI onto PATH.","printf '#!/bin/sh\\nexec \"/Applications/Tailscale.app/Contents/MacOS/Tailscale\" \"$@\"\\n' | sudo tee /opt/homebrew/bin/tailscale >/dev/null && sudo chmod +x /opt/homebrew/bin/tailscale"],
+ ["op","Verify the CLI answers.","tailscale status | head -3"],
+ ["op","Tailnet admin console → Settings → Features → HTTPS Certificates → ON.","","Without this, tailscale serve has no certificate to issue and every phone surface fails at TLS."],
+ ["op","Serve a test port.","tailscale serve --bg --https=8790 http://127.0.0.1:8790 && tailscale serve status"],
+ ["client","Open that URL on the phone. Confirm a real padlock, no warning.","","This is the check that proves the whole phone side works."],
+]],
+["I","Editor",[
+ ["op","VS Code arrives with brew bundle. Confirm it opens."],
+ ["op","In VS Code: Cmd+Shift+P → 'Shell Command: Install code command in PATH'.","","The step everyone skips."],
+ ["op","Verify.","code --version"],
+ ["client","Full Disk Access → add VS Code (now that it exists)."],
+]],
+["J","install.sh — the Claude layer, tmux, and the loops",[
+ ["op","Run the installer.","bash ~/srv/wb-setup/install.sh"],
+ ["op","Verify: status line, runbook, global MD and settings are placed.","ls -l ~/.claude/statusline-command.sh ~/.claude/SOP.md ~/.claude/CLAUDE.md ~/.claude/settings.json"],
+ ["op","Verify: tmux config and tpm.","ls ~/.config/tmux/tmux.conf ~/.config/tmux/plugins/tpm"],
+ ["op","Start tmux and press prefix + I once to fetch the plugins.","tmux new -s main","Prefix is Ctrl-a. So: Ctrl-a then Shift-i."],
+ ["op","Verify: the cost-watch agent is loaded and last exited clean.","source ~/.sop-vars && launchctl list | grep \"com.$ORG\""],
+ ["op","Re-run the report and watch the ✗ count drop.","bash ~/srv/wb-setup/verify.sh"],
+]],
+["K","The MD surface",[
+ ["op","Write ~/.claude/USER.md — who this operator is, how they want to be worked with, what must never happen without asking.","","Not yet automated. This is judgment, so it is an interview rather than a template."],
+ ["op","Verify: every MD file is at or under 200 lines.","wc -l ~/.claude/CLAUDE.md ~/.claude/USER.md","Past 200 lines they stop being read — by people and by the model — which is worse than absent, because it reads as covered."],
+]],
+["L","The web stack",[
+ ["op","Clone the work repo.","source ~/.sop-vars && git clone \"$WORK_REPO\" ~/app && cd ~/app"],
+ ["op","Install dependencies.","cd ~/app && npm install"],
+ ["op","Seed the environment file.","cd ~/app && cp .env.example .env.local"],
+ ["op","Fill the Supabase URL and anon key."],
+ ["op","Fill the Supabase service role key."],
+ ["op","Fill the site URL and any remaining keys the app reads."],
+ ["op","Apply migrations INDIVIDUALLY, in order.","","Never 'supabase db push' against a project with an existing ledger — it re-runs everything."],
+ ["op","Verify the OBJECT exists, not that the ledger says it ran."],
+ ["op","Run the test suite.","cd ~/app && npm test"],
+ ["op","Start the dev server bound for the tailnet.","cd ~/app && npm run dev -- -H 0.0.0.0","Bind 0.0.0.0, never localhost — a loopback bind is invisible to the tailnet proxy."],
+ ["op","Authenticate Vercel.","vercel login"],
+ ["op","Link the project and confirm the link is real — a stale .vercel/project.json points at an empty project with no env vars and no domain."],
+]],
+["M","fleetdeck — the board",[
+ ["op","Clone it.","git clone https://github.com/widebandz/fleetdeck.git ~/srv/fleetdeck"],
+ ["op","Set brand and label_prefix in config.json. Leave 'machine' EMPTY.","","Leaving machine empty is what lets it resolve from Tailscale at boot. Pinning it is how a build stops being portable."],
+ ["op","Install.","cd ~/srv/fleetdeck && ./install.sh"],
+ ["op","Verify all surfaces are up.","fleetdeck doctor"],
+ ["op","Get the URL.","fleetdeck url"],
+ ["client","Open the board on the phone and add it to the home screen."],
+]],
+["N","tmux workspace",[
+ ["op","Decide the standing sessions with the operator — one per concern, never one per task.","","A session per task means the set churns daily and the boot script is stale within a week."],
+ ["op","Write tmux-boot.sh with those sessions."],
+ ["op","Load the boot, save and healthcheck LaunchAgents."],
+ ["op","Reboot the machine."],
+ ["op","Verify: the sessions came back on their own.","tmux ls","If you had to run tmux-boot.sh by hand, the agent is not loaded."],
+]],
+["O","Knowledge graph — optional, needs repo access",[
+ ["op","Clone the graph engine (private — needs gh auth from section G).","gh repo clone <org>/<graph-engine> ~/graph"],
+ ["op","Install and declare the roots in packs/<pack>/roots.yaml.","cd ~/graph && npm install","A load-bearing tree that is not declared is invisible to every question the graph can answer."],
+ ["op","Build the index.","cd ~/graph && npm run graph -- build && npm run graph -- status"],
+ ["op","Run the reconstitution drill.","cd ~/graph && npm run drill"],
+ ["op","Record the score: how many artifacts are reproducible vs unrecoverable.","","A fresh build scores badly by definition. Every loop moved into a repo with its plist committed beside it moves one artifact across."],
+]],
+["P","Handoff",[
+ ["op","Run the full report. Everything that is not optional should be green.","bash ~/srv/wb-setup/verify.sh"],
+ ["op","Fill the Build Record at the end of SOP.md: machine, operator, date, drill score."],
+ ["op","Write down every deviation from this checklist, and why."],
+ ["op","Commit the build record."],
+ ["op","Send the operator a test text from the machine to confirm the channel works."],
+ ["op","Next morning: confirm the daily usage brief arrived.","","This is the real end of the build. Until a scheduled job has actually fired once, it is installed, not working."],
+]],
+];
+
+const KEY='wb-checklist-v1';
+let state=JSON.parse(localStorage.getItem(KEY)||'{"done":{},"meta":{}}');
+const save=()=>localStorage.setItem(KEY,JSON.stringify(state));
+const app=document.getElementById('app');
+let total=0;
+
+S.forEach(([sid,stitle,steps])=>{
+  const sec=document.createElement('section'); sec.dataset.sid=sid;
+  const h=document.createElement('div'); h.className='sh';
+  const parts=stitle.split(' — ');
+  h.innerHTML='<h2>'+parts[0]+(parts[1]?' <span class="tw">'+parts[1]+'</span>':'')+'</h2><span class="c"></span>';
+  sec.appendChild(h);
+  const wrap=document.createElement('div'); wrap.className='steps';
+
+  steps.forEach((st,i)=>{
+    const [who,text,cmd,note]=st;
+    const id=sid+'-'+i; total++;
+    const d=document.createElement('div'); d.className='step'; d.dataset.id=id;
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!state.done[id];
+    if(cb.checked) d.classList.add('checked');
+    const body=document.createElement('div'); body.className='body';
+    const line=document.createElement('div'); line.className='line';
+    const n=document.createElement('span'); n.className='n'; n.textContent=String(total).padStart(3,'0');
+    const w=document.createElement('span'); w.className='who w-'+who; w.textContent=who;
+    const tx=document.createElement('span'); tx.className='tx'; tx.textContent=text;
+    line.append(n,w,tx); body.appendChild(line);
+    if(cmd){
+      const c=document.createElement('div'); c.className='cmd';
+      const code=document.createElement('code'); code.textContent=cmd;
+      const b=document.createElement('button'); b.className='cp'; b.textContent='copy';
+      b.onclick=e=>{e.stopPropagation();navigator.clipboard.writeText(cmd);
+        b.textContent='copied';setTimeout(()=>b.textContent='copy',1100);};
+      c.append(code,b); body.appendChild(c);
+    }
+    if(note){
+      const nt=document.createElement('div');
+      nt.className='note'+(/never|not the|without|stop|fails|skip/i.test(note)?' warn':'');
+      nt.textContent=note; body.appendChild(nt);
+    }
+    cb.onchange=()=>{ if(cb.checked){state.done[id]=1;d.classList.add('checked');}
+      else{delete state.done[id];d.classList.remove('checked');} save(); refresh(); };
+    d.append(cb,body); wrap.appendChild(d);
+  });
+
+  sec.appendChild(wrap);
+  h.onclick=e=>{ if(e.target.tagName!=='BUTTON') sec.classList.toggle('collapsed'); };
+  app.appendChild(sec);
+});
+
+document.getElementById('total').textContent=total;
+
+function refresh(){
+  let done=0;
+  document.querySelectorAll('section').forEach(sec=>{
+    const st=[...sec.querySelectorAll('.step')];
+    const d=st.filter(s=>s.classList.contains('checked')).length;
+    done+=d;
+    sec.querySelector('.sh .c').textContent=d+'/'+st.length;
+    sec.classList.toggle('done', d===st.length && st.length>0);
+  });
+  document.getElementById('done').textContent=done;
+  const p=total?Math.round(done/total*100):0;
+  document.getElementById('pct').textContent=p+'%';
+  document.getElementById('bar').style.width=p+'%';
+}
+
+['machine','operator','date'].forEach(k=>{
+  const el=document.getElementById('m-'+k);
+  el.value=state.meta[k]||'';
+  el.oninput=()=>{state.meta[k]=el.value;save();};
+});
+
+document.getElementById('tg').onclick=e=>{
+  document.body.classList.toggle('hideDone');
+  e.target.classList.toggle('on');
+  e.target.textContent=document.body.classList.contains('hideDone')?'Show all':'Hide done';
+};
+document.getElementById('pr').onclick=()=>window.print();
+document.getElementById('rs').onclick=()=>{
+  if(!confirm('Clear every tick on this machine? The build record fields stay.')) return;
+  state.done={}; save();
+  document.querySelectorAll('.step input').forEach(c=>{c.checked=false;c.closest('.step').classList.remove('checked');});
+  refresh();
+};
+
+refresh();
+</script>
+</body>
+</html>

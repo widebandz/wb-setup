@@ -84,6 +84,7 @@ verify.sh          per-phase assertions; exit code = failure count
 selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup
+checklist.html     105-step interactive checklist; open it directly, no server
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
 dotfiles/          byte-identical artifacts, never regenerated
