@@ -245,6 +245,24 @@ shell the installer ran in.
 
 **Proof:** `claude --version` in a new tab.
 
+**If it was never installed at all** — the installer 404s or times out — the
+network is blocking `claude.ai`. A filtered corporate, school, or DNS-level
+network does this, and it returns a 404 rather than a timeout, so it reads as
+a bad URL. Confirm from a phone hotspot.
+
+Homebrew's CDN is often reachable when `claude.ai` is not, so there is a
+second route to the same tool:
+
+```bash
+brew install --cask claude-code
+```
+
+Then open a **new** terminal window — the cask links into
+`/opt/homebrew/bin`, and a window that was already open will not see it.
+`bootstrap.sh` now attempts this automatically once Homebrew exists.
+
+Observed on a real client machine, 2026-09-10.
+
 ## P5-SL — the status line script is missing
 
 **Class:** ledger-vs-object.

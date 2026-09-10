@@ -214,6 +214,11 @@ sudo chmod +x /opt/homebrew/bin/tailscale</code></pre>
 <pre><code>echo &#x27;export PATH=&quot;$HOME/.local/bin:$PATH&quot;&#x27; &gt;&gt; ~/.zshrc</code></pre>
 <p>Then open a <strong>new</strong> terminal. The most common cause is checking in the same shell the installer ran in.</p>
 <p><strong>Proof:</strong> <code>claude --version</code> in a new tab.</p>
+<p><strong>If it was never installed at all</strong> — the installer 404s or times out — the network is blocking <code>claude.ai</code>. A filtered corporate, school, or DNS-level network does this, and it returns a 404 rather than a timeout, so it reads as a bad URL. Confirm from a phone hotspot.</p>
+<p>Homebrew&#x27;s CDN is often reachable when <code>claude.ai</code> is not, so there is a second route to the same tool:</p>
+<pre><code>brew install --cask claude-code</code></pre>
+<p>Then open a <strong>new</strong> terminal window — the cask links into <code>/opt/homebrew/bin</code>, and a window that was already open will not see it. <code>bootstrap.sh</code> now attempts this automatically once Homebrew exists.</p>
+<p>Observed on a real client machine, 2026-09-10.</p>
 <h2 id="p5-sl-the-status-line-script-is-missing">P5-SL — the status line script is missing</h2>
 <p><strong>Class:</strong> ledger-vs-object.</p>
 <pre><code>bash install.sh</code></pre>

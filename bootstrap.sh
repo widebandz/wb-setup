@@ -367,6 +367,33 @@ if [ -n "$BREW_BIN" ]; then
   fi
 fi
 
+# ── Claude Code, second attempt ──────────────────────────────────────────────
+# Step 1 runs before Homebrew exists, by design — the native installer has no
+# dependencies and the whole ordering rests on that. But on a filtered network
+# (corporate, school, or filtered DNS) claude.ai can be blocked while the
+# Homebrew CDN is not, and step 1 then fails with a 404 that looks like a bad
+# URL. Observed on a real client machine, 2026-09-10.
+#
+# By this point Homebrew exists, so there is a second route. Same tool.
+if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
+  if [ -n "$BREW_BIN" ]; then
+    step "Claude Code — retry via Homebrew"
+    say "  the direct installer did not succeed; trying the cask"
+    if brew install --cask claude-code >>"$BREW_LOG" 2>&1; then
+      say "  ✓ installed via Homebrew"
+      say "    Open a NEW terminal window before running claude."
+    else
+      say "  ! that failed too — see $BREW_LOG"
+      say "    Try a phone hotspot, then: brew install --cask claude-code"
+    fi
+  else
+    step "Claude Code — not installed"
+    say "  No Homebrew to fall back to. On a working network, either of:"
+    say "    curl -fsSL https://claude.ai/install.sh | bash"
+    say "    brew install --cask claude-code"
+  fi
+fi
+
 # ── handoff ──────────────────────────────────────────────────────────────────
 cat <<EOF
 

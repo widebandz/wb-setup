@@ -90,6 +90,11 @@ not us.
   This changes the order of the day — a migrated machine arrives with old
   settings that can quietly conflict with the new ones, and we would
   rather plan for it than discover it.
+- **The network is filtered** — a corporate, school, or guest network, or
+  one with content filtering on the router. Some of these block the sites the
+  setup downloads from, and it fails in a way that looks like our mistake
+  rather than the network. If you can, have a phone hotspot available as a
+  backup on the day.
 - **The Mac is managed by an IT department** or enrolled in device
   management. Managed machines often block the permissions this setup
   needs, and that is better to find out now than three hours in.
