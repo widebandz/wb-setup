@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>__PREFIX__.tmux-boot</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>__ROOT__/loops/tmux-boot</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- launchd's default PATH has neither ~/bin nor the Homebrew prefix,
+		     and this job shells out to tmux and tm-standard. -->
+		<key>PATH</key>
+		<string>__HOME__/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>TM_CONFIG_DIR</key>
+		<string>__HOME__/.config/tmux-command-center</string>
+	</dict>
+	<!-- RunAtLoad only. This brings the server up once at login; it is not a
+	     keepalive, because tmux is supposed to outlive it. KeepAlive here would
+	     relaunch the boot script in a loop against a server already running. -->
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/__PREFIX__.tmux-boot.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/__PREFIX__.tmux-boot.log</string>
+</dict>
+</plist>

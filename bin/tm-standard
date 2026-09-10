@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  tm-standard — the tmux session standard
+#  Freezes the current session layout (names + project roots) into a
+#  declarative file so any future boot, reinstall, or machine reproduces it.
+#  Vendored into wb-setup. Config: ~/.config/tmux-command-center
+#
+#    tm-standard            show live sessions vs the standard (drift report)
+#    tm-standard save       rewrite the standard from what's running now
+#    tm-standard apply      create every standard session that's missing
+#    tm-standard edit       open the standard in $EDITOR
+#
+#  The standard records session NAME + project ROOT only. Windows, panes and
+#  whatever happens to be running inside them are transient — tmux-resurrect
+#  handles restoring those between reboots; this file is the thing that
+#  survives a wiped resurrect dir, a fresh install, or a new Mac.
+# ═══════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+CONFIG_DIR="${TM_CONFIG_DIR:-$HOME/.config/tmux-command-center}"
+SESSIONS_CONF="$CONFIG_DIR/config/sessions.conf"
+STATE_DIR="$CONFIG_DIR/state"
+RESURRECT_LAST="$HOME/.local/share/tmux/resurrect/last"
+QUIET=0
+
+msg() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
+
+# ── Path helpers: store paths as ~/… so the standard is portable ─────────────────
+tilde() {
+  case "$1" in
+    "$HOME") printf '~\n' ;;
+    "$HOME"/*) printf '~%s\n' "${1#"$HOME"}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+untilde() {
+  case "$1" in
+    "~") printf '%s\n' "$HOME" ;;
+    "~/"*) printf '%s%s\n' "$HOME" "${1#\~}" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+# ── Live state ──────────────────────────────────────────────────────────────────
+live_sessions() { tmux list-sessions -F '#{session_name}' 2>/dev/null || true; }
+
+# Best-guess project root for a live session: the directory most of its panes sit
+# in. `/` is ignored (that's a shell that wandered off), and $HOME is the floor.
+session_root() {
+  local s="$1" root=""
+  root="$(tmux list-panes -s -t "=$s" -F '#{pane_current_path}' 2>/dev/null \
+          | grep -vx '/' | sort | uniq -c | sort -rn \
+          | awk 'NR==1 { $1=""; sub(/^ +/, ""); print }')"
+  [ -z "$root" ] && root="$(tmux display-message -p -t "=$s" '#{session_path}' 2>/dev/null || true)"
+  case "$root" in ""|"/") root="$HOME" ;; esac
+  printf '%s\n' "$root"
+}
+
+# ── The standard file ───────────────────────────────────────────────────────────
+# Emits: <name>\t<expanded dir>   (comments and blank lines stripped)
+read_standard() {
+  [ -f "$SESSIONS_CONF" ] || return 0
+  while IFS= read -r line; do
+    line="${line%%#*}"                                  # strip trailing comment
+    [ -z "${line// /}" ] && continue
+    case "$line" in *=*) ;; *) continue ;; esac
+    local name="${line%%=*}" dir="${line#*=}"
+    name="$(printf '%s' "$name" | awk '{$1=$1};1')"
+    dir="$(printf '%s' "$dir" | awk '{$1=$1};1')"
+    [ -z "$name" ] && continue
+    printf '%s\t%s\n' "$name" "$(untilde "$dir")"
+  done < "$SESSIONS_CONF"
+}
+
+standard_names() { read_standard | cut -f1; }
+standard_dir()   { read_standard | awk -F'\t' -v n="$1" '$1==n {print $2; exit}'; }
+
+# Curated "# note" text already written next to a session, so `save` never eats it.
+old_note() {
+  [ -f "$SESSIONS_CONF" ] || return 0
+  awk -F'#' -v n="$1" '
+    /^[[:space:]]*#/ { next }
+    {
+      split($1, kv, "=")
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", kv[1])
+      if (kv[1] == n && NF > 1) { sub(/^[^#]*#[[:space:]]*/, "", $0); print; exit }
+    }' "$SESSIONS_CONF"
+}
+
+# ── save ────────────────────────────────────────────────────────────────────────
+cmd_save() {
+  local sessions; sessions="$(live_sessions)"
+  if [ -z "$sessions" ]; then
+    echo "tm-standard: no live tmux sessions to save" >&2; exit 1
+  fi
+
+  mkdir -p "$(dirname "$SESSIONS_CONF")" "$STATE_DIR"
+  [ -f "$SESSIONS_CONF" ] && cp "$SESSIONS_CONF" "$STATE_DIR/sessions.conf.prev"
+
+  local stamp; stamp="$(date '+%Y-%m-%d %H:%M %Z')"
+  local tmp; tmp="$(mktemp)"
+  {
+    echo "# sessions.conf — the tmux session standard"
+    echo "#"
+    echo "#   Captured from the live server on $stamp by \`tm-standard save\`."
+    echo "#   Format:  <session-name> = <project root>   # optional note"
+    echo "#"
+    echo "#   \`tm-standard apply\` creates any of these that aren't running."
+    echo "#   It never kills or moves a live session, so it's safe to re-run and"
+    echo "#   safe to call at login (tmux-boot.sh does exactly that)."
+    echo "#"
+    echo "#   Only names and roots are standard. Windows/panes and whatever is"
+    echo "#   running in them are transient — tmux-resurrect carries those across"
+    echo "#   reboots; this file is what survives a wiped resurrect dir or a new Mac."
+    echo
+    while IFS= read -r s; do
+      [ -z "$s" ] && continue
+      local root note
+      root="$(tilde "$(session_root "$s")")"
+      note="$(old_note "$s")"
+      if [ -n "$note" ]; then
+        printf '%-12s = %-32s # %s\n' "$s" "$root" "$note"
+      else
+        printf '%-12s = %s\n' "$s" "$root"
+      fi
+    done <<< "$sessions"
+  } > "$tmp"
+  mv "$tmp" "$SESSIONS_CONF"
+
+  local n; n="$(printf '%s\n' "$sessions" | grep -c .)"
+  msg "  saved $n sessions → $SESSIONS_CONF"
+
+  # Pin a full-fidelity resurrect snapshot alongside it. Resurrect rotates its
+  # own saves; this copy is frozen at the moment the standard was set, so the
+  # exact window/pane layout stays recoverable even after rotation.
+  if [ -e "$RESURRECT_LAST" ]; then
+    cp -L "$RESURRECT_LAST" "$STATE_DIR/standard-resurrect.txt"
+    msg "  pinned resurrect snapshot → $STATE_DIR/standard-resurrect.txt"
+  fi
+}
+
+# ── apply ───────────────────────────────────────────────────────────────────────
+cmd_apply() {
+  if [ ! -f "$SESSIONS_CONF" ]; then
+    echo "tm-standard: no standard yet — run \`tm-standard save\` first" >&2; exit 1
+  fi
+  tmux start-server
+  local created=0 skipped=0
+  while IFS=$'\t' read -r name dir; do
+    [ -z "$name" ] && continue
+    [ -d "$dir" ] || dir="$HOME"          # project moved/renamed → don't fail the boot
+    if tmux has-session -t "=$name" 2>/dev/null; then
+      skipped=$((skipped + 1))
+    else
+      tmux new-session -ds "$name" -c "$dir"
+      created=$((created + 1))
+      msg "  + $name  ($(tilde "$dir"))"
+    fi
+  done < <(read_standard)
+  msg "  applied: $created created, $skipped already running"
+}
+
+# ── status (default) ────────────────────────────────────────────────────────────
+cmd_status() {
+  if [ ! -f "$SESSIONS_CONF" ]; then
+    echo "no standard yet — run \`tm-standard save\` to set one from the live server"
+    exit 0
+  fi
+  local live; live="$(live_sessions)"
+  echo "standard: $SESSIONS_CONF"
+  echo
+  printf '  %-4s %-12s %-34s %s\n' "" "SESSION" "STANDARD ROOT" "LIVE"
+  while IFS=$'\t' read -r name dir; do
+    [ -z "$name" ] && continue
+    if printf '%s\n' "$live" | grep -qx "$name"; then
+      local now; now="$(tilde "$(session_root "$name")")"
+      if [ "$now" = "$(tilde "$dir")" ]; then
+        printf '  %-4s %-12s %-34s %s\n' "ok" "$name" "$(tilde "$dir")" "running"
+      else
+        printf '  %-4s %-12s %-34s %s\n' "~" "$name" "$(tilde "$dir")" "running, now in $now"
+      fi
+    else
+      printf '  %-4s %-12s %-34s %s\n' "--" "$name" "$(tilde "$dir")" "not running  (tm-standard apply)"
+    fi
+  done < <(read_standard)
+
+  # Live sessions nobody wrote down yet.
+  local extra=""
+  while IFS= read -r s; do
+    [ -z "$s" ] && continue
+    standard_names | grep -qx "$s" || extra+="  ++   $s  (live, not in the standard)"$'\n'
+  done <<< "$live"
+  if [ -n "$extra" ]; then
+    echo
+    printf '%s' "$extra"
+    echo "  → \`tm-standard save\` to fold them in"
+  fi
+}
+
+# ── popup (what C-a S runs) ─────────────────────────────────────────────────────
+cmd_popup() {
+  cmd_status
+  echo
+  printf '  [enter] close    [a] apply    [s] save  '
+  local k; read -r k || k=""
+  case "$k" in
+    a|A) echo; cmd_apply; printf '\n  [enter] close  '; read -r _ || true ;;
+    s|S) echo; cmd_save;  printf '\n  [enter] close  '; read -r _ || true ;;
+  esac
+}
+
+usage() {
+  sed -n '2,17p' "$0" | sed 's/^#\{1,\} \{0,1\}//'
+}
+
+main() {
+  local args=()
+  for a in "$@"; do
+    case "$a" in
+      -q|--quiet) QUIET=1 ;;
+      *) args+=("$a") ;;
+    esac
+  done
+  set -- "${args[@]+"${args[@]}"}"
+  case "${1:-status}" in
+    save)              cmd_save ;;
+    apply)             cmd_apply ;;
+    status|ls|diff)    cmd_status ;;
+    popup)             cmd_popup ;;
+    edit)              "${EDITOR:-vi}" "$SESSIONS_CONF" ;;
+    help|-h|--help)    usage ;;
+    *) echo "tm-standard: unknown command '$1'" >&2; usage; exit 1 ;;
+  esac
+}
+main "$@"

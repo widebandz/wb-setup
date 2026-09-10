@@ -1,0 +1,49 @@
+#!/bin/bash
+# tmux-boot — bring the standing sessions up at login.
+#
+# Starts a headless tmux server so every session is alive and attachable from
+# any device, without opening a GUI window. Nothing here creates a window you
+# have to look at; the point is that SSH from the phone lands on a server that
+# is already up.
+#
+# Order matters and the sleeps are not padding:
+#
+#   start-server sources tmux.conf → tpm → continuum, and continuum then
+#   restores the last saved environment. Reconciling against the standard
+#   before that finishes would create an empty session that shadows the one
+#   continuum is about to restore. So: start, guarantee a baseline, wait for
+#   the restore, and only then fill in what is still missing.
+#
+# `tm-standard apply` only CREATES. It never kills or moves a live session,
+# which is what makes this safe to run at every login and safe to re-run by
+# hand.
+#
+# Portable on purpose: HOME comes from launchd, and the tools are looked up on
+# PATH rather than pinned to one machine's Homebrew prefix.
+set -uo pipefail
+
+export PATH="$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+TMUX_BIN="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
+TM_STANDARD="$(command -v tm-standard || echo "$HOME/bin/tm-standard")"
+
+[ -x "$TMUX_BIN" ] || { echo "tmux-boot: no tmux on PATH" >&2; exit 1; }
+
+"$TMUX_BIN" start-server
+sleep 1
+
+# A baseline session for the phone to attach to, before anything else runs.
+"$TMUX_BIN" has-session -t main 2>/dev/null || "$TMUX_BIN" new-session -d -s main
+
+# Let continuum finish restoring before reconciling.
+sleep 8
+
+# The safety net for what continuum cannot cover: a wiped resurrect directory,
+# a fresh install, or a new Mac.
+if [ -x "$TM_STANDARD" ]; then
+  "$TM_STANDARD" apply --quiet 2>/dev/null || true
+else
+  echo "tmux-boot: tm-standard not found — only 'main' was created" >&2
+fi
+
+"$TMUX_BIN" ls 2>/dev/null

@@ -1,0 +1,48 @@
+#!/bin/bash
+# healthcheck — one line, every five minutes: can you actually reach this box?
+#
+# Three links have to hold for the phone to get a session: sshd accepting
+# connections, Tailscale up, and the tmux server alive. When you cannot connect,
+# the useful question is WHICH of the three failed, and that is only answerable
+# if something was writing it down before the failure.
+#
+#   tail -n 30 ~/.config/tmux/health.log
+#
+# Deliberately does not alert. It is a flight recorder, not a pager — the
+# watchdog and the daily brief are what escalate.
+set -uo pipefail
+
+export PATH="$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+LOG="$HOME/.config/tmux/health.log"
+mkdir -p "$(dirname "$LOG")"
+
+# 1. sshd — is port 22 accepting connections right now? Not "is it enabled".
+if nc -z -w2 127.0.0.1 22 >/dev/null 2>&1; then ssh="UP"; else ssh="DOWN"; fi
+
+# 2. Tailscale — connected, and at what tailnet address? The .app binary only
+#    works when invoked at its real path (it derives its bundle identifier from
+#    argv[0]), so prefer that over whatever is on PATH.
+TS_APP="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+if [ -x "$TS_APP" ]; then TS_BIN="$TS_APP"; else TS_BIN="$(command -v tailscale || true)"; fi
+if [ -n "$TS_BIN" ] && TS_IP4="$("$TS_BIN" ip -4 2>/dev/null)" && [ -n "$TS_IP4" ]; then
+  ts="UP"
+else
+  ts="DOWN"; TS_IP4="-"
+fi
+
+# 3. tmux server, and how many sessions are standing.
+if tmux has-session 2>/dev/null; then
+  tmx="UP"; sess="$(tmux ls 2>/dev/null | wc -l | tr -d ' ')"
+else
+  tmx="DOWN"; sess=0
+fi
+
+printf '%s ssh=%s ts=%s ip=%s tmux=%s sessions=%s\n' \
+  "$(date '+%Y-%m-%d %H:%M:%S')" "$ssh" "$ts" "$TS_IP4" "$tmx" "$sess" >> "$LOG"
+
+# Keep the log bounded. A flight recorder that fills the disk is a fault, not a
+# feature.
+if [ "$(wc -l < "$LOG" 2>/dev/null || echo 0)" -gt 2000 ]; then
+  tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi

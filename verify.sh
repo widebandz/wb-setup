@@ -166,9 +166,30 @@ fi
 head_ "phase 7 · tmux"
 [ -f "$HOME/.config/tmux/tmux.conf" ] && ok "tmux.conf placed" || no "~/.config/tmux/tmux.conf missing"
 [ -d "$HOME/.config/tmux/plugins/tpm" ] && ok "tpm installed" || no "tpm missing — plugins will not load"
-if command -v tmux >/dev/null 2>&1; then
-  n="$(tmux ls 2>/dev/null | wc -l | tr -d ' ')"
-  [ "${n:-0}" -gt 0 ] && ok "$n standing sessions" || no "no tmux sessions — boot job may not be loaded"
+for c in tm tm-standard; do
+  [ -x "$HOME/bin/$c" ] && ok "$c installed" || no "~/bin/$c missing — three tmux keybindings depend on it"
+done
+
+SESSIONS="$HOME/.config/tmux-command-center/config/sessions.conf"
+if [ ! -f "$SESSIONS" ]; then
+  no "no session standard at $SESSIONS"
+elif command -v tmux >/dev/null 2>&1; then
+  # Check the standard is actually STANDING, not merely written down. A config
+  # listing five sessions and a server running none is the failure this catches.
+  live="$(tmux ls -F '#{session_name}' 2>/dev/null)"
+  missing=""
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    case "$line" in *=*) ;; *) continue ;; esac
+    nm="$(printf '%s' "${line%%=*}" | tr -d '[:space:]')"
+    [ -z "$nm" ] && continue
+    printf '%s\n' "$live" | grep -qx "$nm" || missing="$missing $nm"
+  done < "$SESSIONS"
+  if [ -z "$missing" ]; then
+    ok "every standard session is running ($(printf '%s' "$live" | grep -c .) live)"
+  else
+    no "standard sessions not running:$missing  → tm-standard apply"
+  fi
 fi
 
 # ── phase 8 · loops ──────────────────────────────────────────────────────────

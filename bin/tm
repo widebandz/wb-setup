@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════════
+#  tm — tmux Command Center
+#  Local session superpowers + one-key hops across your Tailscale tailnet.
+#  Vendored into wb-setup. Config: ~/.config/tmux-command-center
+# ═══════════════════════════════════════════════════════════════════════════
+set -euo pipefail
+
+CONFIG_DIR="${TM_CONFIG_DIR:-$HOME/.config/tmux-command-center}"
+DEVICES_CONF="$CONFIG_DIR/config/devices.conf"
+REMOTE_SESSION="${TM_REMOTE_SESSION:-main}"
+DEFAULT_SSH_USER="${TM_SSH_USER:-$USER}"
+
+# ── Locate the Tailscale CLI ────────────────────────────────────────────────────
+#   The .app bundle binary only works when invoked at its REAL path (it derives
+#   its bundle identifier from argv[0]); a symlink to it crashes. So call the
+#   real path first, and only fall back to a genuine standalone `tailscale`.
+TS_APP="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+ts() {
+  if [ -x "$TS_APP" ]; then
+    "$TS_APP" "$@"
+  elif command -v tailscale >/dev/null 2>&1; then
+    command tailscale "$@"
+  else
+    echo "tm: tailscale CLI not found" >&2; return 1
+  fi
+}
+
+# ── tmux helpers ───────────────────────────────────────────────────────────────
+in_tmux() { [ -n "${TMUX:-}" ]; }
+
+go() {  # attach-or-switch to an existing session name
+  if in_tmux; then tmux switch-client -t "$1"; else tmux attach -t "$1"; fi
+}
+
+ensure() {  # create-or-attach a session $1 rooted at dir $2 (optional)
+  local name="$1" dir="${2:-$HOME}"
+  name="${name//[.:]/_}"            # tmux dislikes . and : in session names
+  tmux has-session -t "=$name" 2>/dev/null || tmux new-session -ds "$name" -c "$dir"
+  go "$name"
+}
+
+# ── Tailnet device table ─────────────────────────────────────────────────────────
+# Emits:  <hostname>\t<ip>\t<online|offline>\t<os>   (excludes this machine)
+devices_raw() {
+  local selfip; selfip="$(ts ip -4 2>/dev/null | head -1)"   # rename-proof: exclude self by IP
+  ts status 2>/dev/null | awk -v selfip="$selfip" '
+    NF>=4 {
+      ip=$1; host=$2; os=$4; rest=$0
+      sub(/^([^ ]+ +){4}/, "", rest)        # everything after the os column = status
+      state=(rest ~ /offline/) ? "offline" : "online"
+      if (ip != selfip) printf "%s\t%s\t%s\t%s\n", host, ip, state, os
+    }'
+}
+
+# OSes we can ssh into (skip phones/tablets when jumping)
+sshable() { case "$1" in macOS|linux|windows|freebsd) return 0;; *) return 1;; esac; }
+
+device_ip() { devices_raw | awk -F'\t' -v h="$1" '$1==h {print $2; exit}'; }
+is_device() { [ -n "$(device_ip "$1")" ]; }
+
+ssh_user_for() {  # look up an override in devices.conf, else the default
+  local dev="$1" u=""
+  if [ -f "$DEVICES_CONF" ]; then
+    u="$(awk -F'=' -v d="$dev" '
+      /^[[:space:]]*#/ {next}
+      { gsub(/[[:space:]]/,"",$1); gsub(/[[:space:]]/,"",$2) }
+      $1==d {print $2; exit}' "$DEVICES_CONF")"
+  fi
+  echo "${u:-$DEFAULT_SSH_USER}"
+}
+
+# ── Remote jump: ssh (default) or mosh, then attach-or-create remote session ──────
+jump() {
+  local dev="$1" use_mosh="${2:-}"
+  local ip user target rcmd
+  ip="$(device_ip "$dev")"
+  [ -n "$ip" ] || { echo "tm: '$dev' is not a tailnet device (try: tm devices)" >&2; return 1; }
+  user="$(ssh_user_for "$dev")"
+  target="${user}@${ip}"
+  rcmd="tmux new -A -s ${REMOTE_SESSION}"
+  echo "→ $dev ($target)  session:${REMOTE_SESSION}  via ${use_mosh:+mosh}${use_mosh:-ssh}"
+  if [ -n "$use_mosh" ]; then
+    command -v mosh >/dev/null 2>&1 || { echo "tm: mosh not installed (brew install mosh)"; return 1; }
+    mosh "$target" -- "$rcmd"
+  else
+    ssh -t "$target" "exec \$SHELL -l -c '$rcmd'"
+  fi
+}
+
+# ── fzf pickers ──────────────────────────────────────────────────────────────────
+have() { command -v "$1" >/dev/null 2>&1; }
+
+pick_devices() {
+  local sel
+  sel="$(devices_raw | awk -F'\t' '$3=="online" && $4 ~ /^(macOS|linux|windows|freebsd)$/{printf "  %s\n",$1}' \
+        | fzf --prompt='jump to device ▸ ' --height=100% --reverse)" || return 0
+  [ -n "$sel" ] && jump "${sel##* }"
+}
+
+pick_all() {
+  # Build one list: live sessions, recent project dirs, online devices.
+  local list="" s d
+  while IFS= read -r s; do [ -n "$s" ] && list+="  session\t$s"$'\n'; done \
+      < <(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)
+  if have zoxide; then
+    while IFS= read -r d; do [ -n "$d" ] && list+="  dir\t$d"$'\n'; done \
+        < <(zoxide query -l 2>/dev/null | head -n 20)
+  fi
+  while IFS=$'\t' read -r host ip state os; do
+    [ "$state" = online ] && sshable "$os" && list+="  device\t$host"$'\n'
+  done < <(devices_raw)
+
+  local sel kind val
+  sel="$(printf '%b' "$list" | fzf --prompt='command center ▸ ' --height=100% --reverse \
+        --with-nth=1,3 --delimiter='\t')" || return 0
+  [ -n "$sel" ] || return 0
+  kind="$(printf '%s' "$sel" | awk -F'\t' '{print $2}')"
+  val="$(printf  '%s' "$sel" | awk -F'\t' '{print $3}')"
+  case "$kind" in
+    session) go "$val" ;;
+    dir)     ensure "$(basename "$val")" "$val" ;;
+    device)  jump "$val" ;;
+  esac
+}
+
+# ── Help ───────────────────────────────────────────────────────────────────────
+usage() {
+  cat <<'EOF'
+tm — tmux Command Center
+
+  tm                     fzf picker: sessions + recent project dirs + tailnet devices
+  tm <name>              create-or-attach a session named <name>
+  tm <device>            ssh over Tailscale into that Mac, attach-or-create its session
+  tm <device> --mosh     same jump, but over mosh (survives sleep / roaming)
+  tm .                   "sessionize" the current directory
+  tm <path>              "sessionize" the given directory
+  tm ls                  list local sessions
+  tm kill [name]         kill a session (fzf-pick if no name)
+  tm devices [--pick]    list tailnet devices (online/offline); --pick to jump
+  tm edit                open the config folder in $EDITOR
+  tm reload              reload tmux.conf
+  tm reboot              remote reboot that self-recovers (authrestart if FileVault on)
+  tm help                this help
+
+  In tmux:  C-a T = picker   C-a G = device jump   C-a g = lazygit   C-a r = reload
+EOF
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────────
+main() {
+  local cmd="${1:-}"
+  case "$cmd" in
+    ""|menu)        pick_all ;;
+    -h|help|--help) usage ;;
+    ls|list)        tmux list-sessions ;;
+    edit)           "${EDITOR:-vi}" "$CONFIG_DIR" ;;
+    reload)         tmux source-file "$HOME/.config/tmux/tmux.conf" && echo "reloaded" ;;
+    reboot)
+      # Remote reboot that comes back hands-off. Uses FileVault authrestart
+      # (unlocks the disk once) if FV is on, else a plain reboot.
+      if fdesetup status 2>/dev/null | grep -q "FileVault is On"; then
+        echo "FileVault on → authenticated restart (unlocks once, then auto-login)…"
+        sudo fdesetup authrestart
+      else
+        echo "rebooting → auto-login will bring Tailscale + tmux back. Reconnect with 'studio' shortly."
+        sudo shutdown -r now
+      fi ;;
+    devices)
+      if [ "${2:-}" = "--pick" ]; then pick_devices
+      else devices_raw | awk -F'\t' '{printf "%-26s %-16s %-8s %s\n",$1,$2,$3,$4}'; fi ;;
+    kill)
+      if [ -n "${2:-}" ]; then tmux kill-session -t "$2"
+      else
+        local s; s="$(tmux list-sessions -F '#{session_name}' 2>/dev/null | fzf --prompt='kill ▸ ')" || exit 0
+        [ -n "$s" ] && tmux kill-session -t "$s"
+      fi ;;
+    jump)  shift; jump "$1" "${2:-}" ;;             # explicit: tm jump <device> [--mosh]
+    new)   shift; ensure "$1" "$PWD" ;;             # explicit: tm new <name>
+    .)     ensure "$(basename "$PWD")" "$PWD" ;;
+    *)
+      # A bare argument: directory > device > session name.
+      local mosh=""
+      [ "${2:-}" = "--mosh" ] && mosh=1
+      if [ -d "$cmd" ]; then
+        ensure "$(basename "$(cd "$cmd" && pwd)")" "$(cd "$cmd" && pwd)"
+      elif is_device "$cmd"; then
+        jump "$cmd" "$mosh"
+      else
+        ensure "$cmd" "$PWD"
+      fi ;;
+  esac
+}
+
+main "$@"

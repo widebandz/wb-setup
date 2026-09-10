@@ -237,12 +237,15 @@ const S = [
  ["op","Get the URL.","fleetdeck url"],
  ["client","Open the board on the phone and add it to the home screen."],
 ]],
-["N","tmux workspace",[
- ["op","Decide the standing sessions with the operator — one per concern, never one per task.","","A session per task means the set churns daily and the boot script is stale within a week."],
- ["op","Write tmux-boot.sh with those sessions."],
- ["op","Load the boot, save and healthcheck LaunchAgents."],
+["N","tmux workspace — the standing sessions",[
+ ["op","install.sh already placed tm, tm-standard and the session standard. Confirm.","ls -l ~/bin/tm ~/bin/tm-standard ~/.config/tmux-command-center/config/sessions.conf"],
+ ["op","Review the standard: main + website + research + messages + experiment.","cat ~/.config/tmux-command-center/config/sessions.conf","One session per concern, never one per task. A session per task means the set churns daily and this file is stale inside a week."],
+ ["op","Point 'website' at the work repo if it was cloned somewhere other than ~/app.","tm-standard edit"],
+ ["op","Create every standard session that is not running.","tm-standard apply"],
+ ["op","Check the standard against what is live.","tm-standard","'ok' means running at the right root. '~' means running but somewhere else. '--' means missing."],
  ["op","Reboot the machine."],
- ["op","Verify: the sessions came back on their own.","tmux ls","If you had to run tmux-boot.sh by hand, the agent is not loaded."],
+ ["op","Verify: all five came back on their own.","tmux ls","If you had to run tm-standard apply by hand, the tmux-boot agent is not loaded."],
+ ["op","Verify: the healthcheck is writing.","tail -n 5 ~/.config/tmux/health.log","One line every 5 minutes: ssh, tailscale, tmux. When the phone cannot connect, this says which of the three failed."],
 ]],
 ["O","Knowledge graph — optional, needs repo access",[
  ["op","Clone the graph engine (private — needs gh auth from section G).","gh repo clone <org>/<graph-engine> ~/graph"],

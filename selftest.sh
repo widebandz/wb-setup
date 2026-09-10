@@ -80,13 +80,26 @@ found="$(grep -rIlniE 'brainwave|tailacfa70|zayed' "$HERE" \
                 || { no "machine-specific identity leaked into:"; printf '      %s\n' "$found"; }
 
 # ── 4 + 5. the loops ─────────────────────────────────────────────────────────
-head_ "4 · loops read ~/.sop-vars"
+# The invariant is "no loop hardcodes identity", NOT "every loop reads
+# ~/.sop-vars". A loop with no identity in it at all — tmux-boot, healthcheck —
+# satisfies the intent more completely than one that reads the file. Testing for
+# the file rather than for the property failed those two and was wrong to.
+head_ "4 · no loop hardcodes identity"
+IDENT='\+1[0-9]{10}|/Users/[a-z]|[a-z0-9-]+\.ts\.net|@[a-z0-9-]+\.(com|ai|io)'
+NEEDS='OPERATOR_PHONE|GH_USER|GIT_EMAIL|WORK_REPO|GRAPH_PACK|\$ORG|\$BRAND'
 for f in "$HERE"/loops/*; do
   [ -f "$f" ] || continue
   b="$(basename "$f")"
-  grep -q 'sop-vars' "$f" \
-    && ok "$b reads ~/.sop-vars" \
-    || no "$b does not read ~/.sop-vars — it is hardcoding something"
+  lit="$(sed -e "s/'[^']*'//g" -e 's/#.*$//' "$f" | grep -nEo "$IDENT" | head -3)"
+  if [ -n "$lit" ]; then
+    no "$b contains an identity literal: $(printf '%s' "$lit" | tr '\n' ' ')"
+  elif grep -qE "$NEEDS" "$f"; then
+    grep -q 'sop-vars' "$f" \
+      && ok "$b needs identity and reads ~/.sop-vars" \
+      || no "$b references identity vars but never reads ~/.sop-vars"
+  else
+    ok "$b is identity-free"
+  fi
 done
 
 head_ "5 · every loop is schedulable"

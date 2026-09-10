@@ -1,0 +1,25 @@
+# sessions.conf — the tmux session standard
+#
+#   Format:  <session-name> = <project root>   # optional note
+#
+#   `tm-standard apply` creates any of these that aren't running. It never
+#   kills or moves a live session, so it is safe to re-run and safe to call at
+#   login — tmux-boot does exactly that.
+#
+#   Only names and roots are standard. Windows, panes, and whatever is running
+#   inside them are transient: tmux-resurrect carries those across reboots.
+#   This file is what survives a wiped resurrect directory, a fresh install, or
+#   a new Mac.
+#
+#   ONE SESSION PER CONCERN, NEVER ONE PER TASK. A session per task means the
+#   set churns daily and this file is stale inside a week. These five are
+#   concerns — they are still true next month.
+#
+#   `tm-standard save` rewrites this file from whatever is live, folding in any
+#   session you created by hand. `tm-standard` on its own reports the drift.
+
+main         = ~                    # baseline — what the phone attaches to
+website      = __APP_DIR__                #  the work repo; the app this machine builds
+research     = ~                    # scoped reading and answers
+messages     = ~                    # the iMessage channel and inbound
+experiment   = ~                    # scratch — anything that might be thrown away

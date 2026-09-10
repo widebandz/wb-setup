@@ -46,6 +46,8 @@ done
 PREFIX="com.$ORG"
 PY="$(command -v python3 || echo /usr/bin/python3)"
 MARK="${MARK:-◈}"
+# Where the work repo lives — the root the `website` session opens in.
+APP_DIR="${APP_DIR:-$HOME/app}"
 
 echo "  prefix     $PREFIX"
 echo "  brand      $BRAND"
@@ -75,6 +77,7 @@ render() {
       -e "s|__ORG__|$ORG|g" \
       -e "s|__BRAND__|$BRAND|g" \
       -e "s|__MARK__|$MARK|g" \
+      -e "s|__APP_DIR__|$APP_DIR|g" \
       "$tmpl" > "$tmp"
   mkdir -p "$(dirname "$dest")"
   if cmp -s "$tmp" "$dest"; then echo "  = $dest"
@@ -116,6 +119,27 @@ fi
 echo
 echo "tmux"
 render "$HERE/templates/tmux.conf.tmpl" "$HOME/.config/tmux/tmux.conf"
+
+# The command-center CLI. Copied to ~/bin rather than symlinked into the brew
+# prefix: a symlink there is clobberable by brew, and the SOP's copies-not-
+# symlinks rule exists because TCC grants follow a binary's resolved real path.
+mkdir -p "$HOME/bin"
+place "$HERE/bin/tm"          "$HOME/bin/tm"          755
+place "$HERE/bin/tm-standard" "$HOME/bin/tm-standard" 755
+if ! grep -qs 'HOME/bin' "$HOME/.zshrc" 2>/dev/null; then
+  printf '\n# added by wb-setup — operator commands\nexport PATH="$HOME/bin:$PATH"\n' >> "$HOME/.zshrc"
+  echo "  + ~/bin on PATH (~/.zshrc)"
+fi
+
+# The session standard. Seeded once, then it belongs to the operator — the same
+# rule config.json gets. `tm-standard save` is how it changes after that, and
+# re-running install.sh must not undo a curated set.
+SESSIONS="$HOME/.config/tmux-command-center/config/sessions.conf"
+if [ -f "$SESSIONS" ]; then
+  echo "  = $SESSIONS (operator's — left alone)"
+else
+  render "$HERE/templates/sessions.conf.tmpl" "$SESSIONS"
+fi
 
 TPM="$HOME/.config/tmux/plugins/tpm"
 if [ -d "$TPM/.git" ]; then
