@@ -119,20 +119,65 @@ Things true on a built machine and false on a fresh one:
 
 ## P0-FDA — Full Disk Access
 
-**Class:** grant-path. Message scanning silently returns nothing.
+**Class:** grant-path. Protected local-data workflows silently return nothing.
 
 ```bash
-sqlite3 ~/Library/Messages/chat.db "select count(*) from message;"
+bash ~/srv/wb-setup/verify.sh --quick
 ```
 
-A number means granted. An error means not.
+The verifier launches the app through LaunchServices so TCC evaluates the
+Wideband Agent identity rather than the invoking terminal. The Full Disk check
+reads one byte and does not print, retain, or transmit its contents.
 
-**Fix:** Settings → Privacy & Security → Full Disk Access → add Terminal.
-Then **quit Terminal completely and reopen it** — the grant does not apply
-to the running process. If the messaging tool is what fails, grant to its
-*real binary path* (`/opt/homebrew/bin/imsg`), not to a wrapper.
+**Fix:** Settings → Privacy & Security → Full Disk Access → add and enable
+`~/Applications/Wideband Agent.app`. Use the installer's **Show Wideband
+Agent** button to reveal the exact bundle.
 
-**Proof:** the `sqlite3` command above returns a count in a *new* terminal.
+**Proof:** the verifier reports `Wideband Agent has Full Disk Access`.
+
+## P0-AX — Accessibility is not granted
+
+**Class:** grant-path. Visible-control automation cannot operate the Mac.
+
+```bash
+bash ~/srv/wb-setup/verify.sh --quick
+```
+
+**Fix:** use **Request Accessibility** in Wideband Setup, choose Open System
+Settings, then enable **Wideband Agent** under Privacy & Security →
+Accessibility.
+
+**Proof:** the verifier reports that Wideband Agent has Accessibility. A check against Terminal or Python
+does not prove that the agent itself was approved.
+
+## P0-SCREEN — Screen Recording is not granted
+
+**Class:** grant-path. Desktop-level visual verification can return blank or
+incomplete images.
+
+```bash
+bash ~/srv/wb-setup/verify.sh --quick
+```
+
+**Fix:** use **Request Screen Access** in Wideband Setup, then allow
+**Wideband Agent** under Privacy & Security → Screen & System Audio Recording.
+
+**Proof:** the verifier reports that Wideband Agent has Screen Recording.
+
+## P0-AUTOMATION — Messages automation is not granted
+
+**Class:** grant-path. Approved Messages actions cannot run.
+
+```bash
+bash ~/srv/wb-setup/verify.sh --quick
+```
+
+**Fix:** use **Show macOS prompt** in Wideband Setup and allow Wideband Agent
+to control Messages. The request reads only the Messages application name and
+does not send or read a conversation.
+
+**Proof:** the verifier reports that Wideband Agent may automate Messages
+without presenting another prompt.
 
 ## P0-SSH — Remote Login is off
 
@@ -147,6 +192,20 @@ launchctl print-disabled system | grep sshd
 **Proof:** the command prints `"com.openssh.sshd" => enabled`. Do not check
 `lsof -iTCP:22` — see class 4; it shows an unprivileged user nothing either
 way.
+
+## P0-SCREENSHARING — Screen Sharing is off
+
+**Class:** reachability. The operator cannot provide visual support.
+
+```bash
+launchctl print-disabled system | grep com.apple.screensharing
+```
+
+**Fix:** Settings → General → Sharing → Screen Sharing → on. Restrict access
+to the intended administrator account. Leave legacy VNC password access off
+unless it is explicitly required.
+
+**Proof:** the command prints `"com.apple.screensharing" => enabled`.
 
 ## P0-SLEEP — the machine sleeps
 

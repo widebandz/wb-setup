@@ -87,8 +87,8 @@ footer{margin-top:34px;border-top:1px solid var(--line);padding-top:14px;color:v
 <body>
 
 <header>
-  <h1>Operator build — checklist</h1>
-  <p class="sub">Bare M-chip Mac → a working operator machine. Work top to bottom. Progress saves in this browser.</p>
+  <h1>Operator build — detailed checklist</h1>
+  <p class="sub">Reference view. For the resumable guided installer, run <code>bash ~/srv/wb-setup/setup.sh</code>.</p>
   <div class="meta">
     <input id="m-machine"  placeholder="Machine (e.g. northside-studio)">
     <input id="m-operator" placeholder="Built by">
@@ -159,12 +159,12 @@ const S = [
 ["D","Permissions — while the download runs",[
  ["op","Every one of these is a dialog. A missed grant fails silently several phases later, which is the most expensive failure in this build.","","Do these now. They need no network and no Homebrew."],
  ["client","Remote Login ON — Settings → General → Sharing."],
- ["client","Full Disk Access → add Terminal. Settings → Privacy & Security → Full Disk Access."],
- ["op","Quit Terminal completely and reopen it.","","Full Disk Access does not apply to a running process. If you skip this, the next check fails and looks like the grant did not work."],
- ["op","Verify: Full Disk Access is live.","sqlite3 ~/Library/Messages/chat.db 'select count(*) from message;'","A number means granted. An error means not."],
- ["client","Accessibility → add Terminal."],
- ["client","Screen Recording → add Terminal.","","Without this, Playwright screenshots come back black — and nothing else complains."],
- ["op","Provoke the Automation dialog, then click OK.","osascript -e 'tell application \"Messages\" to get name'","This makes macOS show the prompt now rather than making anyone hunt for it."],
+ ["client","Screen Sharing ON — restrict it to the intended administrator account."],
+ ["client","Full Disk Access → add Wideband Agent when the installer reveals it."],
+ ["op","Verify: Wideband Agent has Full Disk Access.","~/Applications/'Wideband Agent.app'/Contents/MacOS/'Wideband Agent' check-full-disk"],
+ ["client","Use Request Accessibility, then enable Wideband Agent."],
+ ["client","Use Request Screen Access, then enable Wideband Agent."],
+ ["client","Use Show macOS prompt and allow Wideband Agent to control Messages.","","The harmless request reads the app name only and sends no message."],
  ["client","Login Items & Extensions → allow background items.","","Without it, no LaunchAgent survives a reboot."],
  ["client","Messages.app → Settings → sign in to iMessage."],
  ["op","Disable sleep so scheduled jobs do not miss their window.","sudo pmset -a sleep 0 disksleep 0"],

@@ -1,0 +1,103 @@
+#!/bin/bash
+# Finder entry point for the unsigned Wideband Setup.app.
+set -uo pipefail
+
+CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
+RESOURCES="$CONTENTS/Resources"
+PAYLOAD="$RESOURCES/wb-setup"
+AGENT_SOURCE="$RESOURCES/Wideband Agent.app"
+ENGINE_SOURCE="$RESOURCES/wb-setup-engine"
+AGENT_TARGET="$HOME/Applications/Wideband Agent.app"
+TARGET="$HOME/srv/wb-setup"
+STATE="$HOME/.wideband/setup"
+MARKER="$STATE/payload-build"
+AGENT_MARKER="$STATE/agent-build"
+DEACTIVATED="$STATE/deactivated"
+BUILD_ID="$(sed -n '1p' "$RESOURCES/build-id.txt" 2>/dev/null)"
+
+fail() {
+  /usr/bin/osascript -e 'display alert "Wideband Setup" message "The installer could not prepare its local files. Open Terminal and run bash ~/srv/wb-setup/setup.sh, or contact Wideband." as critical' >/dev/null 2>&1 || true
+  exit 1
+}
+
+launch_terminal() {
+  # Login restoration can leave Terminal briefly unavailable just after the
+  # desktop appears. A client should not see a fatal installer alert for that
+  # transient race, especially after an immediate or repeated double-click.
+  local attempt=1
+  while [ "$attempt" -le 5 ]; do
+    /usr/bin/open -a Terminal "$TARGET/.wideband-setup.command" && return 0
+    /bin/sleep 1
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
+[ -n "$BUILD_ID" ] && [ -f "$PAYLOAD/setup.py" ] && [ -d "$AGENT_SOURCE" ] \
+  && [ -x "$ENGINE_SOURCE" ] || fail
+/bin/mkdir -p "$TARGET" "$STATE" "$HOME/Applications" || fail
+/bin/chmod 700 "$STATE" 2>/dev/null || fail
+
+# Install the exact app that requests and verifies macOS privacy grants. Keep
+# replaced copies in the setup backup area so an interrupted update never
+# destroys the previous helper or touches an unrelated application.
+AGENT_INSTALLED="$(sed -n '1p' "$AGENT_MARKER" 2>/dev/null)"
+if [ ! -f "$DEACTIVATED" ] \
+   && { [ "$AGENT_INSTALLED" != "$BUILD_ID" ] || [ ! -x "$AGENT_TARGET/Contents/MacOS/Wideband Agent" ]; }; then
+  if [ -e "$AGENT_TARGET" ]; then
+    AGENT_BACKUP="$STATE/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/Wideband Agent.app"
+    /bin/mkdir -p "$(dirname "$AGENT_BACKUP")" || fail
+    /bin/mv "$AGENT_TARGET" "$AGENT_BACKUP" || fail
+  fi
+  /usr/bin/ditto --norsrc --noextattr --noqtn "$AGENT_SOURCE" "$AGENT_TARGET" || fail
+  ( umask 077; printf '%s\n' "$BUILD_ID" > "$AGENT_MARKER" ) || fail
+fi
+
+# Every packaged launch uses the simple client experience by default. A
+# personalized package also seeds the validated build identity once; an
+# existing identity always wins so an upgrade cannot flatten a curated Mac.
+( umask 077; printf '%s\n' "$BUILD_ID" > "$STATE/client-package" ) || fail
+if [ -f "$RESOURCES/client-profile.env" ]; then
+  if [ ! -f "$HOME/.sop-vars" ]; then
+    /usr/bin/ditto --norsrc --noextattr --noqtn "$RESOURCES/client-profile.env" "$HOME/.sop-vars" || fail
+    /bin/chmod 600 "$HOME/.sop-vars" || fail
+  fi
+  ( umask 077; printf '%s\n' "personalized" > "$STATE/client-package-kind" ) || fail
+else
+  ( umask 077; printf '%s\n' "generic" > "$STATE/client-package-kind" ) || fail
+fi
+
+if [ ! -f "$STATE/native-welcome-seen" ]; then
+  if [ -f "$RESOURCES/client-profile.env" ]; then
+    WELCOME_DETAIL="Your Wideband build profile is already loaded. The browser guide opens immediately and shows live progress while Terminal prepares this Mac."
+  else
+    WELCOME_DETAIL="This generic pilot collects the build identity in a few plain-language popups. The browser guide opens immediately and shows live progress while Terminal prepares this Mac."
+  fi
+  /usr/bin/osascript - "$RESOURCES/AppIcon.icns" "$WELCOME_DETAIL" <<'APPLESCRIPT' >/dev/null 2>&1 || exit 0
+on run argv
+  display dialog (item 2 of argv) & return & return & "Leave Terminal open behind the browser. If the guide asks for your Mac password, enter it in Terminal; no dots or characters will appear. Wideband never receives that password." with title "Wideband Setup" buttons {"Begin setup"} default button "Begin setup" with icon POSIX file (item 1 of argv)
+end run
+APPLESCRIPT
+  ( umask 077; printf '%s\n' "$BUILD_ID" > "$STATE/native-welcome-seen" ) || fail
+fi
+
+INSTALLED="$(sed -n '1p' "$MARKER" 2>/dev/null)"
+if [ "$INSTALLED" != "$BUILD_ID" ]; then
+  if [ -n "$(/usr/bin/find "$TARGET" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+    BACKUP="$STATE/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/wb-setup"
+    /bin/mkdir -p "$(dirname "$BACKUP")" || fail
+    /usr/bin/ditto --norsrc --noqtn "$TARGET" "$BACKUP" || fail
+  fi
+  /usr/bin/ditto --norsrc --noextattr --noqtn "$PAYLOAD" "$TARGET" || fail
+  ( umask 077; printf '%s\n' "$BUILD_ID" > "$MARKER" ) || fail
+fi
+
+/usr/bin/ditto --norsrc --noextattr --noqtn "$RESOURCES/run-setup.command" "$TARGET/.wideband-setup.command" || fail
+/usr/bin/ditto --norsrc --noextattr --noqtn "$ENGINE_SOURCE" "$TARGET/.wideband-setup-engine" || fail
+/bin/chmod 700 "$TARGET/.wideband-setup.command" "$TARGET/.wideband-setup-engine" || fail
+
+# Terminal supplies the TTY needed by Homebrew's one visible sudo prompt. Once
+# bootstrap has installed Python, the same command opens/reopens the localhost
+# guided installer instead.
+launch_terminal || fail
+exit 0

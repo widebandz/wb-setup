@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07070b">
+  <title>Wideband Setup</title>
+  <link rel="icon" href="/wideband-mark.png">
+  <link rel="apple-touch-icon" href="/wideband-mark.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="site-backdrop" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="Wideband Setup home">
+      <img src="/wideband-mark.png" alt="" class="brand-mark">
+      <span class="brand-word">WIDEBAND<span>.AI</span></span>
+      <span class="brand-product">SETUP</span>
+    </a>
+    <div class="top-actions">
+      <span class="privacy connecting" id="connection-pill" title="This setup page is served only from this Mac"><i></i><span id="connection-label">Connecting on this Mac…</span></span>
+      <button class="quiet" id="help" type="button">Guide</button>
+      <button class="quiet" id="support" type="button">Setup tools</button>
+      <button class="mode-button" id="view-toggle" type="button">Operator view</button>
+    </div>
+  </header>
+
+  <section class="connection-alert" id="connection-alert" role="alert" hidden>
+    <div><strong>Setup page disconnected.</strong><span>Your progress is safe on this Mac. Reopen Wideband Setup from Applications to continue.</span></div>
+    <button class="quiet" id="connection-recovery" type="button">Show recovery steps</button>
+  </section>
+
+  <section class="client-view" id="client-view">
+    <main class="client-main" id="top">
+      <section class="client-hero">
+        <div>
+          <p class="overline">Private AI infrastructure you own</p>
+          <h1><span id="client-greeting">Your AI</span> is being built on this Mac.</h1>
+          <p>Wideband handles the repeatable work. You handle the few account and macOS approvals that must remain yours.</p>
+        </div>
+        <div class="build-badge" id="build-badge">
+          <span class="status-orb"></span>
+          <div><strong>Preparing your machine</strong><small>You can work through the guide while installation runs.</small></div>
+        </div>
+      </section>
+
+      <section class="client-progress" aria-label="Your setup progress">
+        <div class="client-progress-copy">
+          <div><p class="overline">Your setup</p><strong id="client-progress-label">Loading…</strong></div>
+          <span id="client-progress-percent">0%</span>
+        </div>
+        <div class="client-progress-track"><i id="client-progress-bar"></i></div>
+        <div class="client-progress-dots" id="client-progress-dots" aria-hidden="true"></div>
+        <p class="save-state" id="save-state">Progress saves privately on this Mac.</p>
+        <div class="live-state-row">
+          <span id="live-state">Connecting to this Mac…</span>
+          <span id="proof-state">Reading the latest machine proof…</span>
+          <button class="quiet" id="status-help" type="button">How status works</button>
+        </div>
+      </section>
+
+      <div class="client-grid">
+        <section class="focus-card" id="focus-card" aria-live="polite">
+          <div class="focus-topline"><span id="focus-count">Next step</span><span id="focus-stage">Setup</span></div>
+          <div class="focus-icon" id="focus-icon">01</div>
+          <p class="overline" id="focus-eyebrow">Your action</p>
+          <h2 id="focus-title">Loading your next step…</h2>
+          <p id="focus-description"></p>
+          <div class="focus-note" id="focus-note" hidden></div>
+          <button class="primary large" id="focus-action" type="button">Continue setup <span>→</span></button>
+        </section>
+
+        <aside class="machine-card">
+          <div class="machine-card-head">
+            <div><p class="overline">Wideband is working</p><h2>Machine installation</h2></div>
+            <span class="machine-state" id="machine-state">Starting</span>
+          </div>
+          <ul class="machine-list" id="machine-list">
+            <li><span class="mini-spinner"></span><div><strong>Reading machine state</strong><small>One moment…</small></div></li>
+          </ul>
+          <div class="terminal-reminder">
+            <span>⌘</span>
+            <p><strong>Leave Terminal open behind this window.</strong> It hosts this private setup page. If it closes, reopen Wideband Setup and your progress will return.</p>
+          </div>
+        </aside>
+      </div>
+
+      <section class="readiness-section" id="readiness-section" aria-labelledby="readiness-title">
+        <div class="section-heading">
+          <div><p class="overline">Live readiness</p><h2 id="readiness-title">Know exactly what is ready.</h2></div>
+          <p>Wideband separates your approvals, machine health, and final handoff proofs so “installed” never gets mistaken for “working.”</p>
+        </div>
+        <div class="status-legend" aria-label="Status meaning">
+          <span><i class="verified"></i>Machine verified</span>
+          <span><i class="confirmed"></i>You confirmed</span>
+          <span><i class="waiting"></i>Waiting</span>
+          <span><i class="attention"></i>Needs attention</span>
+          <button class="quiet" id="status-legend-help" type="button">What do these mean?</button>
+        </div>
+        <div class="readiness-grid" id="readiness-grid"></div>
+        <div class="readiness-footer">
+          <p id="readiness-summary">Reading the latest machine proof…</p>
+          <div>
+            <button class="secondary" id="readiness-check" type="button">Run readiness check</button>
+            <button class="secondary" id="readiness-tools" type="button">Repair or get support</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="queue-section" id="queue-section">
+        <div class="section-heading">
+          <div><p class="overline">Coming up</p><h2>One clear step at a time.</h2></div>
+          <p>The guide opens the right app or System Settings page, tells you exactly what to select, and checks the result where macOS allows it.</p>
+        </div>
+        <div class="client-queue" id="client-queue"></div>
+      </section>
+
+      <section class="handoff-section">
+        <div class="section-heading compact">
+          <div><p class="overline">With Wideband</p><h2>Final proofs happen together.</h2></div>
+          <p>These stay visible but do not block your first session. Wideband returns to them after the custom layer is ready.</p>
+        </div>
+        <div class="handoff-list" id="handoff-list"></div>
+      </section>
+
+      <section class="client-complete" id="client-complete" hidden>
+        <img src="/wideband-mark.png" alt="" class="complete-mark">
+        <p class="overline">Your part is complete</p>
+        <h2>Wideband can take it from here.</h2>
+        <p>Your approvals are saved on this Mac. Keep it plugged in and online while Wideband finishes the custom agent layer and final verification.</p>
+        <button class="secondary" id="review-client-steps" type="button">Review completed steps</button>
+      </section>
+    </main>
+  </section>
+
+  <section class="operator-view" id="operator-view" hidden>
+    <aside class="rail" aria-label="Setup stages">
+      <div class="rail-intro">
+        <p class="overline">Custom agent build</p>
+        <h1>Operator view.</h1>
+        <p>The full build record, machine checks, judgment work, and handoff proof.</p>
+      </div>
+      <nav id="stage-nav"></nav>
+      <div class="rail-foot">
+        <div class="progress-copy"><span id="progress-label">0 of 0 complete</span><span id="progress-percent">0%</span></div>
+        <div class="progress-track"><i id="progress-bar"></i></div>
+        <p>Progress is private to this Mac and survives a restart.</p>
+      </div>
+    </aside>
+
+    <main class="operator-main">
+      <section class="build-meta" aria-labelledby="build-heading">
+        <div><p class="overline">Build record</p><h2 id="build-heading">Who and what are we building?</h2></div>
+        <div class="meta-fields">
+          <label>Machine<input id="meta-machine" autocomplete="off" placeholder="northside-studio"></label>
+          <label>Built by<input id="meta-operator" autocomplete="name" placeholder="Operator name"></label>
+          <label>Date<input id="meta-date" type="date"></label>
+        </div>
+      </section>
+
+      <section class="stage-head">
+        <div><p class="overline" id="stage-eyebrow"></p><h2 id="stage-title">Loading setup…</h2><p id="stage-description"></p></div>
+        <div class="stage-count" id="stage-count"></div>
+      </section>
+      <section class="steps" id="steps" aria-live="polite"></section>
+
+      <section class="handoff-card">
+        <div><p class="overline">Something different?</p><h2>Record the deviation while it is fresh.</h2><p>A deviation is useful operational knowledge. An unrecorded one is how the next build becomes unpredictable.</p></div>
+        <form id="deviation-form">
+          <textarea id="deviation" rows="3" placeholder="What changed, and why?"></textarea>
+          <button class="secondary" type="submit">Add to build record</button>
+        </form>
+        <ul id="deviation-list"></ul>
+      </section>
+    </main>
+  </section>
+
+  <dialog id="welcome-dialog" class="brand-dialog">
+    <div class="welcome-shell">
+      <button class="icon-button dialog-close" id="welcome-close" type="button" aria-label="Close welcome">×</button>
+      <img src="/wideband-mark.png" alt="" class="welcome-mark">
+      <p class="overline">Wideband client setup</p>
+      <h2>We will guide every action.</h2>
+      <p id="welcome-personalized">Your custom build is ready. The installer will do the machine work and pause only when macOS or an account needs you.</p>
+      <div class="welcome-points">
+        <div><span>01</span><p><strong>Follow the popup.</strong> Each step opens the exact place you need.</p></div>
+        <div><span>02</span><p><strong>Leave Terminal open.</strong> You can keep it behind this browser window; it is the local engine behind the guide.</p></div>
+        <div><span>03</span><p><strong>Keep credentials private.</strong> Sign-ins happen directly with Apple, Anthropic, GitHub, and the other providers.</p></div>
+      </div>
+      <button class="primary large full" id="welcome-begin" type="button">Begin guided setup <span>→</span></button>
+    </div>
+  </dialog>
+
+  <dialog id="guide-dialog" class="guide-dialog">
+    <div class="guide-shell">
+      <header class="guide-header">
+        <div class="guide-brand"><img src="/wideband-mark.png" alt=""><span>WIDEBAND<span>.AI</span></span></div>
+        <button class="icon-button" id="guide-close" type="button" aria-label="Close guide">×</button>
+      </header>
+      <div class="guide-progress"><span id="guide-progress-label">Step 1</span><i><b id="guide-progress-bar"></b></i></div>
+      <p class="overline" id="guide-eyebrow">Your action</p>
+      <h2 id="guide-title"></h2>
+      <p class="guide-intro" id="guide-intro"></p>
+      <div class="guide-context" id="guide-context">
+        <div><span>Why this matters</span><p id="guide-purpose"></p></div>
+        <div><span>Success looks like</span><p id="guide-success"></p></div>
+      </div>
+      <ol class="guide-instructions" id="guide-instructions"></ol>
+      <div class="guide-privacy" id="guide-privacy" hidden><span>●</span><p></p></div>
+      <div class="guide-open-actions" id="guide-open-actions"></div>
+      <p class="guide-message" id="guide-message" aria-live="polite"></p>
+      <footer>
+        <button class="quiet" id="guide-later" type="button">Do this later</button>
+        <button class="primary" id="guide-confirm" type="button">I finished this <span>→</span></button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="status-dialog" class="status-dialog">
+    <div class="dialog-shell status-shell">
+      <header>
+        <div><p class="overline">Honest setup status</p><h2>What each status proves.</h2><p id="status-connection-detail">Checking the private connection on this Mac…</p></div>
+        <button class="icon-button" id="status-close" type="button" aria-label="Close status help">×</button>
+      </header>
+      <div class="status-explain-grid">
+        <div><i class="verified"></i><strong>Machine verified</strong><p>A live, read-only Wideband check observed the app, service, or macOS setting on this Mac.</p></div>
+        <div><i class="confirmed"></i><strong>You confirmed</strong><p>You told the guide an account sign-in, two-factor setup, or real-world outcome is complete. Wideband does not pretend it can inspect private account details.</p></div>
+        <div><i class="waiting"></i><strong>Waiting</strong><p>The installer is still working, no proof exists yet, or the next action belongs to you.</p></div>
+        <div><i class="attention"></i><strong>Needs attention</strong><p>A machine check failed or a completed task returned something that should be reviewed.</p></div>
+      </div>
+      <div class="recovery-note">
+        <strong>If this page disconnects</strong>
+        <p>Progress is already saved. Reopen <b>Wideband Setup</b> from Applications or the installer disk image. Do not type localhost manually—the app supplies the private token and opens the correct port automatically.</p>
+      </div>
+      <footer><span>This page never guesses account status.</span><button class="secondary" id="status-done" type="button">Got it</button></footer>
+    </div>
+  </dialog>
+
+  <dialog id="support-dialog" class="support-dialog">
+    <div class="dialog-shell support-shell">
+      <header>
+        <div><p class="overline">Setup tools</p><h2>Check, repair, or get help.</h2><p>These tools use the same saved setup state. Diagnostics intentionally exclude credentials, profile answers, identity-file values, and raw logs.</p></div>
+        <button class="icon-button" id="support-close" type="button" aria-label="Close setup tools">×</button>
+      </header>
+      <div class="support-grid">
+        <button class="support-option" id="support-check" type="button"><span>01</span><strong>Check this Mac</strong><small>Run a fresh read-only readiness check.</small></button>
+        <button class="support-option" id="support-repair" type="button"><span>02</span><strong>Repair Wideband</strong><small>Safely reconcile missing or changed setup files and services.</small></button>
+        <button class="support-option" id="support-copy" type="button"><span>03</span><strong>Copy diagnostics</strong><small>Copy a short, redacted support summary.</small></button>
+        <button class="support-option" id="support-export" type="button"><span>04</span><strong>Export support bundle</strong><small>Create a redacted ZIP and reveal it in Finder.</small></button>
+      </div>
+      <div class="support-privacy"><strong>Private by design</strong><p>No password, token, two-factor code, custom profile answer, raw log, or <code>.sop-vars</code> value is placed in the support bundle.</p></div>
+      <button class="danger-link" id="support-deactivate" type="button">Deactivate Wideband services…</button>
+      <p class="support-message" id="support-message" aria-live="polite"></p>
+    </div>
+  </dialog>
+
+  <dialog id="deactivate-dialog" class="deactivate-dialog">
+    <div class="dialog-shell">
+      <header>
+        <div><p class="overline">Recoverable deactivation</p><h2>Pause the Wideband runtime?</h2><p>This stops Wideband background jobs and moves the agent and job definitions into a private recovery folder. It does not delete client work, account sign-ins, configuration, or setup history.</p></div>
+        <button class="icon-button" id="deactivate-close" type="button" aria-label="Close deactivation">×</button>
+      </header>
+      <div class="deactivate-note">
+        <strong>macOS settings remain yours.</strong>
+        <p>Remote Login, Screen Sharing, and privacy approvals are not silently changed. Review them in System Settings after deactivation if you no longer want them enabled.</p>
+      </div>
+      <label>Type DEACTIVATE to continue<input id="deactivate-confirmation" autocomplete="off" spellcheck="false"></label>
+      <footer><button class="quiet" id="deactivate-cancel" type="button">Cancel</button><button class="danger-button" id="deactivate-apply" type="button" disabled>Deactivate services</button></footer>
+      <p class="support-message" id="deactivate-message" aria-live="polite"></p>
+    </div>
+  </dialog>
+
+  <section class="runner" id="runner" hidden aria-live="polite">
+    <header><div><span class="pulse" id="runner-pulse"></span><strong id="runner-title">Running</strong></div><button class="quiet" id="runner-close" type="button">Close</button></header>
+    <pre id="runner-output"></pre>
+  </section>
+
+  <dialog id="interview-dialog">
+    <form method="dialog" class="dialog-shell" id="interview-form">
+      <header>
+        <div><p class="overline">Make the agent yours</p><h2>How should your agent work with you?</h2><p>This becomes durable agent context. Do not put passwords, tokens, or project secrets here.</p></div>
+        <button class="icon-button" value="cancel" aria-label="Close interview">×</button>
+      </header>
+      <div class="interview-grid">
+        <label>Name<input name="name" autocomplete="name" placeholder="How should the agent address you?" required></label>
+        <label>Role<input name="role" autocomplete="organization-title" placeholder="Founder, operator, creative director…"></label>
+        <label class="wide">Core responsibilities<textarea name="responsibilities" rows="3" placeholder="What outcomes are you accountable for?"></textarea></label>
+        <label class="wide">How should the agent work with you?<textarea name="working_style" rows="3" placeholder="Level of initiative, detail, and how to present decisions…"></textarea></label>
+        <label class="wide">Communication style<textarea name="communication_style" rows="3" placeholder="Tone, channels, cadence, and what makes an update useful…"></textarea></label>
+        <label class="wide">Approval boundaries<textarea name="approval_boundaries" rows="3" placeholder="What may the agent do autonomously, and what needs approval?"></textarea></label>
+        <label class="wide">Never do without asking<textarea name="never_without_asking" rows="3" placeholder="External messages, spending, production changes, irreversible actions…"></textarea></label>
+        <label class="wide">Recurring priorities<textarea name="recurring_priorities" rows="3" placeholder="Daily, weekly, or ongoing work the agent should keep in view…"></textarea></label>
+      </div>
+      <div class="preview-wrap" id="interview-preview-wrap" hidden>
+        <div class="preview-head"><strong>Agent profile preview</strong><span id="interview-lines"></span></div>
+        <pre id="interview-preview"></pre>
+      </div>
+      <footer><span id="interview-message"></span><div><button class="secondary" id="interview-preview-button" type="button">Preview profile</button><button class="primary" id="interview-apply" type="button">Approve and install</button></div></footer>
+    </form>
+  </dialog>
+
+  <dialog id="record-dialog">
+    <div class="dialog-shell record-dialog">
+      <header><div><p class="overline">Handoff artifact</p><h2>Build record</h2><p id="record-path"></p></div><button class="icon-button" id="record-close" aria-label="Close build record">×</button></header>
+      <pre id="record-preview"></pre>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>

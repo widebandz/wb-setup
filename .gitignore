@@ -3,3 +3,10 @@
 .sop-vars
 __pycache__/
 *.pyc
+.DS_Store
+.wideband-setup.command
+
+# Local packaging output. The shareable app/DMG is rebuilt from source.
+dist/
+packaging/client-profile.json
+packaging/client-profiles/

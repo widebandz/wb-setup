@@ -8,7 +8,7 @@ Nothing below is hardcoded to one person or one company. Every
 identity-shaped value is a variable, set once in §Variables and
 referenced everywhere after.
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-16
 **Requirements:** Apple silicon Mac (M-series), macOS 13.0+, an AI
 subscription (Claude Pro/Max, or Console API key).
 **Time:** ~3 hours hands-on. Permissions and DNS waits are most of it.
@@ -41,9 +41,56 @@ Code is not behind Homebrew and never was.
 Then:
 
 ```bash
-claude                      # authenticate → the agent is live
-bash ~/srv/wb-setup/verify.sh    # what is actually true on this machine
-bash ~/srv/wb-setup/install.sh   # phases 5-9, once brew and auth are in
+bash ~/srv/wb-setup/setup.sh
+```
+
+That opens the guided installer on localhost. It keeps progress across a
+restart, rolls machine assertions into the relevant steps, runs only named
+installer actions, conducts the operator interview, and generates the build
+record. It does not collect passwords or replace the client at an account or
+macOS permission gate.
+
+The packaged app has two surfaces. **Client view** is the default: one branded
+popup at a time, with numbered instructions and buttons that open the exact
+macOS pane or provider page. Machine-owned reconciliation runs in parallel.
+**Operator view** retains this complete phase model, verification output,
+deviations, and the build record. Client view treats phone, messaging, and the
+first scheduled brief as later proofs with Wideband rather than pretending a
+first-session installer can verify them early.
+
+Client view exposes four separate readiness areas: the Wideband foundation,
+macOS permissions and support access, client-owned accounts and profile, and
+real-world handoff proofs. Saved time and the next unfinished action remain
+visible after a restart. **Setup tools** provides a fresh read-only check, an
+idempotent repair, a redacted support ZIP, and recoverable deactivation. The
+client-facing support ZIP excludes credentials, two-factor codes, operator
+profile answers, `.sop-vars` values, and raw logs.
+
+Deactivation is intentionally narrower than deleting the machine build. It
+stops the three Wideband LaunchAgents and moves their plists plus Wideband
+Agent into `~/.wideband/setup/deactivations/`; it leaves client work, account
+sign-ins, and curated configuration intact. It also leaves Remote Login,
+Screen Sharing, and macOS privacy choices visible for the owner to review
+rather than silently changing system security settings. Reopen the packaged
+app and select Repair Wideband to restore the managed runtime.
+
+For a handoff, build a client-specific DMG with an approved profile:
+
+```bash
+./packaging/build-app.sh --profile /secure/path/client-profile.json
+```
+
+The profile pre-seeds identity only; it must never contain passwords, tokens,
+API keys, or project secrets. The app preserves an existing `~/.sop-vars` and
+the profile is intended for exactly one client.
+
+The underlying interfaces remain available for diagnosis or an agent-driven
+build:
+
+```bash
+claude                           # authenticate → the agent is live
+bash ~/srv/wb-setup/verify.sh    # human-readable machine assertions
+bash ~/srv/wb-setup/install.sh   # reconcile deterministic artifacts
 ```
 
 The phases below are the full procedure — what the agent works through,
@@ -135,26 +182,33 @@ them.
 
 | # | Grant | Where | Without it |
 |---|---|---|---|
-| 0.1 | **Remote Login (SSH)** | Settings → General → Sharing → Remote Login **ON** | no remote reach into the machine |
-| 0.2 | **Full Disk Access** — Terminal, iTerm, VS Code, `/opt/homebrew/bin/imsg` | Settings → Privacy & Security → Full Disk Access | message scanning cannot read `~/Library/Messages/chat.db` |
-| 0.3 | **Automation** — Terminal → Messages, Terminal → System Events | Privacy & Security → Automation (prompts on first use; approve) | agent cannot send texts |
-| 0.4 | **Accessibility** — Terminal / iTerm | Privacy & Security → Accessibility | window control and AppleScript automation fail |
-| 0.5 | **Screen Recording** — Terminal, VS Code | Privacy & Security → Screen Recording | Playwright captures come back black |
-| 0.6 | **Background items allowed** | Settings → General → Login Items & Extensions | LaunchAgents do not survive reboot |
-| 0.7 | **Command line tools** | `xcode-select --install` | native npm modules fail to build |
-| 0.8 | **Never sleep** | `sudo pmset -a sleep 0 disksleep 0` (plugged in) | scheduled loops miss their window |
-| 0.9 | **Sign in to Messages** | Messages.app → Settings → iMessage | no delivery channel to the operator |
+| 0.1 | **Remote Login (SSH)** | Settings → General → Sharing → Remote Login **ON**; intended individual admin only; remote-user Full Disk Access **OFF** | no command-line support path |
+| 0.2 | **Screen Sharing** | Settings → General → Sharing → Screen Sharing **ON**, intended admin only | no visual support path |
+| 0.3 | **Full Disk Access** — Wideband Agent | installer requests and verifies the exact app | protected local workflows silently fail |
+| 0.4 | **Automation** — Wideband Agent → Messages | installer provokes a harmless Apple Event and verifies it | agent cannot perform approved Messages actions |
+| 0.5 | **Accessibility** — Wideband Agent | installer calls the native trust API and verifies it | visible-control automation fails |
+| 0.6 | **Screen Recording** — Wideband Agent | installer calls the native capture API and verifies it | desktop visual verification fails |
+| 0.7 | **Background items allowed** | Settings → General → Login Items & Extensions | LaunchAgents do not survive reboot |
+| 0.8 | **Command line tools** | `xcode-select --install` | native npm modules fail to build |
+| 0.9 | **Never sleep** | `sudo pmset -a sleep 0 disksleep 0` (plugged in) | scheduled loops miss their window |
+| 0.10 | **Sign in to Messages** | Messages.app → Settings → iMessage | no delivery channel to the operator |
 
-Grants attach to a **binary path**, not to a name. The messaging tool
-needs its grants on the real binary (`/opt/homebrew/bin/imsg`); a grant
-on a wrapper script is a different grant and will not work.
+Grants attach to an exact application or binary identity, not to a product
+name. The packaged flow therefore installs one stable `Wideband Agent.app`
+before requesting permissions and runs every permission check through it.
+Open Messages and finish its first-run panels before requesting Automation;
+the consent check counts configured accounts but reads no message content and
+sends nothing. Scheduled jobs also launch through Wideband Agent so macOS shows
+one recognizable branded background item rather than generic shell runtimes.
+Project-specific tools that access protected data directly still need their
+own narrowly scoped grant or must route that operation through the agent.
 
 **Verify Phase 0:**
 
 ```bash
-sqlite3 ~/Library/Messages/chat.db "select count(*) from message;"   # a number = FDA granted
-ssh localhost 'echo ok'                                              # ok = remote login on
-pmset -g | grep -E '^\s*sleep'                                       # 0
+bash ~/srv/wb-setup/verify.sh --quick
+launchctl print-disabled system | grep -E 'sshd|screensharing'
+pmset -g | grep -E '^\s*sleep'
 ```
 
 ---
@@ -177,6 +231,12 @@ mail arrives **before** creating anything else.
    CRM, voice. See Phase 6 for which keys the app actually reads.
 
 **Gate:** mail confirmed working both directions. Do not proceed without it.
+
+If Apple Account sign-in fails or only partially attaches during macOS Setup
+Assistant, finish Setup Assistant and retry from System Settings at the desktop.
+Treat that as an Apple setup condition, not a Wideband installer failure. Then
+open Messages and verify its iMessage sign-in separately; an Apple Account shown
+in System Settings does not prove that Messages is ready.
 
 ---
 

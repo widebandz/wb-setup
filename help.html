@@ -167,16 +167,36 @@ bash verify.sh          # what is wrong, each failure tagged [P0-FDA] etc.</code
 <hr>
 <h1 id="part-2-failures-by-check-id">Part 2 — failures by check ID</h1>
 <h2 id="p0-fda-full-disk-access">P0-FDA — Full Disk Access</h2>
-<p><strong>Class:</strong> grant-path. Message scanning silently returns nothing.</p>
-<pre><code>sqlite3 ~/Library/Messages/chat.db &quot;select count(*) from message;&quot;</code></pre>
-<p>A number means granted. An error means not.</p>
-<p><strong>Fix:</strong> Settings → Privacy &amp; Security → Full Disk Access → add Terminal. Then <strong>quit Terminal completely and reopen it</strong> — the grant does not apply to the running process. If the messaging tool is what fails, grant to its <em>real binary path</em> (<code>/opt/homebrew/bin/imsg</code>), not to a wrapper.</p>
-<p><strong>Proof:</strong> the <code>sqlite3</code> command above returns a count in a <em>new</em> terminal.</p>
+<p><strong>Class:</strong> grant-path. Protected local-data workflows silently return nothing.</p>
+<pre><code>bash ~/srv/wb-setup/verify.sh --quick</code></pre>
+<p>The verifier launches the app through LaunchServices so TCC evaluates the Wideband Agent identity rather than the invoking terminal. The Full Disk check reads one byte and does not print, retain, or transmit its contents.</p>
+<p><strong>Fix:</strong> Settings → Privacy &amp; Security → Full Disk Access → add and enable <code>~/Applications/Wideband Agent.app</code>. Use the installer&#x27;s <strong>Show Wideband Agent</strong> button to reveal the exact bundle.</p>
+<p><strong>Proof:</strong> the verifier reports <code>Wideband Agent has Full Disk Access</code>.</p>
+<h2 id="p0-ax-accessibility-is-not-granted">P0-AX — Accessibility is not granted</h2>
+<p><strong>Class:</strong> grant-path. Visible-control automation cannot operate the Mac.</p>
+<pre><code>bash ~/srv/wb-setup/verify.sh --quick</code></pre>
+<p><strong>Fix:</strong> use <strong>Request Accessibility</strong> in Wideband Setup, choose Open System Settings, then enable <strong>Wideband Agent</strong> under Privacy &amp; Security → Accessibility.</p>
+<p><strong>Proof:</strong> the verifier reports that Wideband Agent has Accessibility. A check against Terminal or Python does not prove that the agent itself was approved.</p>
+<h2 id="p0-screen-screen-recording-is-not-granted">P0-SCREEN — Screen Recording is not granted</h2>
+<p><strong>Class:</strong> grant-path. Desktop-level visual verification can return blank or incomplete images.</p>
+<pre><code>bash ~/srv/wb-setup/verify.sh --quick</code></pre>
+<p><strong>Fix:</strong> use <strong>Request Screen Access</strong> in Wideband Setup, then allow <strong>Wideband Agent</strong> under Privacy &amp; Security → Screen &amp; System Audio Recording.</p>
+<p><strong>Proof:</strong> the verifier reports that Wideband Agent has Screen Recording.</p>
+<h2 id="p0-automation-messages-automation-is-not-granted">P0-AUTOMATION — Messages automation is not granted</h2>
+<p><strong>Class:</strong> grant-path. Approved Messages actions cannot run.</p>
+<pre><code>bash ~/srv/wb-setup/verify.sh --quick</code></pre>
+<p><strong>Fix:</strong> use <strong>Show macOS prompt</strong> in Wideband Setup and allow Wideband Agent to control Messages. The request reads only the Messages application name and does not send or read a conversation.</p>
+<p><strong>Proof:</strong> the verifier reports that Wideband Agent may automate Messages without presenting another prompt.</p>
 <h2 id="p0-ssh-remote-login-is-off">P0-SSH — Remote Login is off</h2>
 <p><strong>Class:</strong> reachability.</p>
 <pre><code>launchctl print-disabled system | grep sshd</code></pre>
 <p><strong>Fix:</strong> Settings → General → Sharing → Remote Login → on.</p>
 <p><strong>Proof:</strong> the command prints <code>&quot;com.openssh.sshd&quot; =&gt; enabled</code>. Do not check <code>lsof -iTCP:22</code> — see class 4; it shows an unprivileged user nothing either way.</p>
+<h2 id="p0-screensharing-screen-sharing-is-off">P0-SCREENSHARING — Screen Sharing is off</h2>
+<p><strong>Class:</strong> reachability. The operator cannot provide visual support.</p>
+<pre><code>launchctl print-disabled system | grep com.apple.screensharing</code></pre>
+<p><strong>Fix:</strong> Settings → General → Sharing → Screen Sharing → on. Restrict access to the intended administrator account. Leave legacy VNC password access off unless it is explicitly required.</p>
+<p><strong>Proof:</strong> the command prints <code>&quot;com.apple.screensharing&quot; =&gt; enabled</code>.</p>
 <h2 id="p0-sleep-the-machine-sleeps">P0-SLEEP — the machine sleeps</h2>
 <p><strong>Class:</strong> ledger-vs-object. Scheduled loops miss their window and there is no error anywhere, because a job that never ran cannot fail.</p>
 <pre><code>sudo pmset -a sleep 0 disksleep 0</code></pre>

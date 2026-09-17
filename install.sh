@@ -14,6 +14,19 @@
 # Idempotent. Safe to re-run. Does not touch tmux sessions.
 set -uo pipefail
 
+RUN_VERIFY=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-verify) RUN_VERIFY=0 ;;
+    --help|-h)
+      echo "usage: bash install.sh [--no-verify]"
+      exit 0 ;;
+    *)
+      echo "unknown option: $arg" >&2
+      exit 2 ;;
+  esac
+done
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VARS="$HOME/.sop-vars"
 LA="$HOME/Library/LaunchAgents"
@@ -29,13 +42,24 @@ if [ ! -f "$VARS" ]; then
   echo "    bootstrap.sh first, or copy vars.example to $VARS and edit it."
   exit 1
 fi
+chmod 600 "$VARS" 2>/dev/null || { echo "  ✗ cannot make $VARS private"; exit 1; }
 # shellcheck disable=SC1090
 . "$VARS"
 
+for v in ORG BRAND MARK GH_USER GIT_EMAIL OPERATOR_PHONE WORK_REPO GRAPH_PACK; do
+  eval "val=\${$v:-}"
+  [ -z "$val" ] && continue
+  printf '%s' "$val" | grep -q '[[:cntrl:]]' \
+    && { echo "  ✗ REFUSING: $v contains a control character in $VARS"; exit 1; }
+done
 for v in ORG BRAND GH_USER OPERATOR_PHONE; do
   eval "val=\${$v:-}"
   [ -n "$val" ] || { echo "  ✗ REFUSING: $v is empty in $VARS"; exit 1; }
 done
+printf '%s' "$ORG" | grep -Eq '^[a-z][a-z0-9-]{0,30}$' \
+  || { echo "  ✗ REFUSING: ORG must be a lowercase slug in $VARS"; exit 1; }
+printf '%s' "$OPERATOR_PHONE" | grep -Eq '^\+[1-9][0-9]{7,14}$' \
+  || { echo "  ✗ REFUSING: OPERATOR_PHONE must be E.164 in $VARS"; exit 1; }
 
 miss=0
 for b in jq tmux git; do
@@ -45,9 +69,12 @@ done
 
 PREFIX="com.$ORG"
 PY="$(command -v python3 || echo /usr/bin/python3)"
+AGENT_EXECUTABLE="$HOME/Applications/Wideband Agent.app/Contents/MacOS/Wideband Agent"
 MARK="${MARK:-◈}"
 # Where the work repo lives — the root the `website` session opens in.
 APP_DIR="${APP_DIR:-$HOME/app}"
+printf '%s' "$APP_DIR" | grep -q '[[:cntrl:]]' \
+  && { echo "  ✗ REFUSING: APP_DIR contains a control character"; exit 1; }
 
 echo "  prefix     $PREFIX"
 echo "  brand      $BRAND"
@@ -66,23 +93,95 @@ place() {
 }
 
 # render TMPL DEST [mode] — substitute, then place only on difference.
+sed_replacement() {
+  # Values are data, not sed programs. Escape the replacement metacharacters
+  # so names such as "Smith & Co" render byte-for-byte rather than expanding
+  # `&` back to the template token.
+  printf '%s' "$1" | sed 's/[\\&|]/\\&/g'
+}
+
 render() {
   local tmpl="$1" dest="$2" mode="${3:-644}" tmp
+  local root_e home_e prefix_e python_e agent_e org_e brand_e mark_e app_e
   [ -f "$tmpl" ] || { echo "  ~ missing in repo: $tmpl"; return; }
   tmp="$(mktemp)"
-  sed -e "s|__ROOT__|$HERE|g" \
-      -e "s|__HOME__|$HOME|g" \
-      -e "s|__PREFIX__|$PREFIX|g" \
-      -e "s|__PYTHON__|$PY|g" \
-      -e "s|__ORG__|$ORG|g" \
-      -e "s|__BRAND__|$BRAND|g" \
-      -e "s|__MARK__|$MARK|g" \
-      -e "s|__APP_DIR__|$APP_DIR|g" \
+  root_e="$(sed_replacement "$HERE")"; home_e="$(sed_replacement "$HOME")"
+  prefix_e="$(sed_replacement "$PREFIX")"; python_e="$(sed_replacement "$PY")"
+  agent_e="$(sed_replacement "$AGENT_EXECUTABLE")"
+  org_e="$(sed_replacement "$ORG")"; brand_e="$(sed_replacement "$BRAND")"
+  mark_e="$(sed_replacement "$MARK")"; app_e="$(sed_replacement "$APP_DIR")"
+  sed -e "s|__ROOT__|$root_e|g" \
+      -e "s|__HOME__|$home_e|g" \
+      -e "s|__PREFIX__|$prefix_e|g" \
+      -e "s|__PYTHON__|$python_e|g" \
+      -e "s|__AGENT_EXECUTABLE__|$agent_e|g" \
+      -e "s|__ORG__|$org_e|g" \
+      -e "s|__BRAND__|$brand_e|g" \
+      -e "s|__MARK__|$mark_e|g" \
+      -e "s|__APP_DIR__|$app_e|g" \
       "$tmpl" > "$tmp"
   mkdir -p "$(dirname "$dest")"
   if cmp -s "$tmp" "$dest"; then echo "  = $dest"
   else cp "$tmp" "$dest" && chmod "$mode" "$dest" && echo "  + $dest"; fi
   rm -f "$tmp"
+}
+
+# The packaged installer places this app before install.sh runs. Keep the
+# original curl/bootstrap path working too: by this point Homebrew has supplied
+# Command Line Tools, so a missing helper can be built locally without fetching
+# or trusting another binary.
+ensure_wideband_agent() {
+  [ -x "$AGENT_EXECUTABLE" ] && return 0
+
+  local build_root agent_app contents iconset source_png backup
+  command -v xcrun >/dev/null 2>&1 \
+    && xcrun --find swiftc >/dev/null 2>&1 \
+    || { echo "  ✗ Wideband Agent needs Apple Command Line Tools"; return 1; }
+
+  mkdir -p "$HOME/.wideband/setup" "$HOME/Applications" || return 1
+  build_root="$(mktemp -d "$HOME/.wideband/setup/agent-build.XXXXXX")" || return 1
+  agent_app="$build_root/Wideband Agent.app"
+  contents="$agent_app/Contents"
+  iconset="$build_root/AppIcon.iconset"
+  source_png="$build_root/AppIcon-1024.png"
+  mkdir -p "$contents/MacOS" "$contents/Resources" "$iconset" || return 1
+  /usr/bin/ditto "$HERE/agent/Info.plist" "$contents/Info.plist" || return 1
+
+  if [ -s "$HERE/installer/wideband-mark.png" ]; then
+    /usr/bin/sips -z 1024 1024 "$HERE/installer/wideband-mark.png" --out "$source_png" >/dev/null || return 1
+    /usr/bin/sips -z 16 16 "$source_png" --out "$iconset/icon_16x16.png" >/dev/null || return 1
+    /usr/bin/sips -z 32 32 "$source_png" --out "$iconset/icon_16x16@2x.png" >/dev/null || return 1
+    /usr/bin/sips -z 32 32 "$source_png" --out "$iconset/icon_32x32.png" >/dev/null || return 1
+    /usr/bin/sips -z 64 64 "$source_png" --out "$iconset/icon_32x32@2x.png" >/dev/null || return 1
+    /usr/bin/sips -z 128 128 "$source_png" --out "$iconset/icon_128x128.png" >/dev/null || return 1
+    /usr/bin/sips -z 256 256 "$source_png" --out "$iconset/icon_128x128@2x.png" >/dev/null || return 1
+    /usr/bin/sips -z 256 256 "$source_png" --out "$iconset/icon_256x256.png" >/dev/null || return 1
+    /usr/bin/sips -z 512 512 "$source_png" --out "$iconset/icon_256x256@2x.png" >/dev/null || return 1
+    /usr/bin/sips -z 512 512 "$source_png" --out "$iconset/icon_512x512.png" >/dev/null || return 1
+    /usr/bin/sips -z 1024 1024 "$source_png" --out "$iconset/icon_512x512@2x.png" >/dev/null || return 1
+    /usr/bin/iconutil -c icns "$iconset" -o "$contents/Resources/AppIcon.icns" || return 1
+  fi
+
+  xcrun swiftc -parse-as-library -target arm64-apple-macos13.0 \
+    -framework AppKit -framework ApplicationServices -framework Carbon -framework CoreGraphics \
+    "$HERE/agent/WidebandAgent.swift" -o "$contents/MacOS/Wideband Agent" || return 1
+  /bin/chmod 755 "$contents/MacOS/Wideband Agent" || return 1
+  /usr/bin/codesign --force --options runtime --entitlements "$HERE/agent/entitlements.plist" \
+    --sign - "$agent_app" >/dev/null || return 1
+
+  if [ -e "$HOME/Applications/Wideband Agent.app" ]; then
+    backup="$HOME/.wideband/setup/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/Wideband Agent.app"
+    mkdir -p "$(dirname "$backup")" || return 1
+    /bin/mv "$HOME/Applications/Wideband Agent.app" "$backup" || return 1
+  fi
+  /bin/mv "$agent_app" "$HOME/Applications/Wideband Agent.app" || return 1
+  /bin/rm -rf "$build_root"
+  echo "  + $HOME/Applications/Wideband Agent.app (built locally)"
+}
+
+ensure_wideband_agent || {
+  echo "  ✗ could not install the branded Wideband background helper"
+  exit 1
 }
 
 # ── the Claude layer ─────────────────────────────────────────────────────────
@@ -247,4 +346,8 @@ echo "  it will say 'command not found' for tools that are"
 echo "  installed and working."
 echo "──────────────────────────────────────────────────────────"
 echo
+if [ "$RUN_VERIFY" = "0" ]; then
+  echo "  reconciliation finished; verification is owned by the guided installer"
+  exit 0
+fi
 exec bash "$HERE/verify.sh"

@@ -103,15 +103,23 @@ TSBIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 
 # ── permissions ──────────────────────────────────────────────────────────────
 sec "permissions (TCC)"
-if sqlite3 "$HOME/Library/Messages/chat.db" "select count(*) from message;" >/dev/null 2>&1; then
-  kv "Full Disk Access" "granted (chat.db readable)"
+WB_AGENT="$HOME/Applications/Wideband Agent.app/Contents/MacOS/Wideband Agent"
+WB_STATUS="$HOME/.wideband/setup/agent-status.json"
+if [ -x "$WB_AGENT" ] && [ -f "$WB_STATUS" ]; then
+  wb_permission() {
+    value="$(/usr/bin/plutil -extract "$1" raw -o - "$WB_STATUS" 2>/dev/null || true)"
+    [ "$value" = "true" ] && kv "$2" "granted to Wideband Agent" \
+      || kv "$2" "NOT granted to Wideband Agent"
+  }
+  wb_permission full_disk_access "Full Disk Access"
+  wb_permission accessibility "Accessibility"
+  wb_permission screen_capture "Screen Recording"
+  wb_permission automation_messages "Messages Automation"
+  kv "Permission report" "$(/usr/bin/plutil -extract generated_at raw -o - "$WB_STATUS" 2>/dev/null || echo unknown)"
+elif [ -x "$WB_AGENT" ]; then
+  kv "Wideband Agent" "installed; run verify.sh to create a fresh permission report"
 else
-  kv "Full Disk Access" "NOT granted to this terminal — or it was granted after this process started"
-fi
-if osascript -e 'tell application "System Events" to get name' >/dev/null 2>&1; then
-  kv "Automation" "granted (System Events answered)"
-else
-  kv "Automation" "NOT granted — the agent cannot drive Messages"
+  kv "Wideband Agent" "NOT INSTALLED"
 fi
 if launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" => enabled'; then
   kv "Remote Login" "on"
@@ -119,6 +127,13 @@ elif launchctl print-disabled system 2>/dev/null | grep -q '"com.openssh.sshd" =
   kv "Remote Login" "OFF"
 else
   kv "Remote Login" "unreadable"
+fi
+if launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.screensharing" => enabled'; then
+  kv "Screen Sharing" "on"
+elif launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.screensharing" => disabled'; then
+  kv "Screen Sharing" "OFF"
+else
+  kv "Screen Sharing" "unreadable"
 fi
 
 # ── launchd ──────────────────────────────────────────────────────────────────

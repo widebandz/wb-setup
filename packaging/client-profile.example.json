@@ -1,0 +1,11 @@
+{
+  "CLIENT_NAME": "Jordan Example",
+  "ORG": "example-co",
+  "BRAND": "Example Company",
+  "MARK": "◈",
+  "GH_USER": "example-co",
+  "GIT_EMAIL": "ops@example.com",
+  "OPERATOR_PHONE": "+15551234567",
+  "WORK_REPO": "git@github.com:example-co/app.git",
+  "GRAPH_PACK": "example-co"
+}

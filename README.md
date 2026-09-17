@@ -6,6 +6,101 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
+When bootstrap finishes, it opens the resumable guided installer. If the
+browser was closed or the build is being resumed later, run:
+
+```bash
+bash ~/srv/wb-setup/setup.sh
+```
+
+It opens on localhost, stores progress privately in `~/.wideband/setup`, and
+turns the full runbook into six stages. Deterministic work runs through an
+allowlist; account access, macOS permissions, and the operator interview remain
+explicit human gates.
+
+For an unattended bootstrap or a scripts-only diagnostic run, pass `--no-ui`.
+
+The server binds only to `127.0.0.1` and requires a random token kept in the
+browser URL fragment. Its API exposes named actions (`install`, `verify`,
+`doctor`, approved System Settings links), never a caller-supplied command.
+State, interview answers, backups, and the generated build record are mode
+`0600`. Project secrets are neither requested nor written to installer state.
+Port 8803 is preferred; if another process owns it, the app chooses a free
+loopback port and opens that exact private URL. Clients should always reopen
+Wideband Setup rather than manually typing a localhost address. The page polls
+saved state without rerunning protected checks, displays its real connection
+and proof timestamps, and gives a persistent recovery banner if Terminal closes.
+The app includes an arm64 localhost engine, so this guide appears even before a
+bare Mac has Homebrew, Command Line Tools, or Python. It calls out the one
+Terminal password action and continues updating while those tools install.
+
+## Shareable client app
+
+The macOS package opens in **Client view** by default. It uses the canonical
+wideband.ai mark, palette, and type system, presents one human action at a time,
+and opens the exact provider, app, or System Settings page for that action. A
+welcome popup explains the visible Terminal window and the single Homebrew
+administrator-password prompt. The complete six-stage checklist remains
+available behind **Operator view**.
+
+The package also installs `~/Applications/Wideband Agent.app`, the single
+branded macOS permission principal. Accessibility, Screen Recording, Full Disk
+Access, and Messages Automation are requested and verified against that exact
+app rather than trusting a checkbox or granting broad access to Terminal.
+Scheduled health and workspace jobs also launch through that app so macOS shows
+one recognizable Wideband Agent background item instead of generic bash or
+Python entries.
+Apple Screen Sharing is guided separately for private visual support.
+Those access steps are deliberately first in the client queue, before account
+and customization work, so a support path exists while the rest is installed.
+
+Build the generic pilot:
+
+```bash
+./packaging/build-app.sh
+```
+
+For a client handoff, copy `packaging/client-profile.example.json` outside the
+repository, fill it with that client's approved build identity, then build:
+
+```bash
+./packaging/build-app.sh --profile /secure/path/client-profile.json
+```
+
+The resulting `dist/Wideband-Setup-unsigned.dmg` is one shareable file. The
+generic build collects six build-identity details in plain-language macOS
+popups; a personalized build seeds those approved values into `~/.sop-vars`
+once and skips those questions. An existing identity file is never overwritten.
+The profile contains client identity data—not credentials—and is embedded only
+in the intended client's app. Do not reuse one client's DMG for another client.
+
+Because the pilot is not notarized, current macOS versions require one initial
+launch attempt followed by **System Settings → Privacy & Security → Open
+Anyway**. The DMG includes both `READ ME FIRST.txt` and a direct **Open Privacy
+& Security** shortcut for that handoff. A signed and notarized production build
+will remove this exception step.
+
+Machine-owned reconciliation starts automatically in packaged client mode.
+Client-owned steps remain deliberate because macOS privacy grants, account
+sign-ins, two-factor authentication, and the agent interview cannot be safely
+impersonated. Progress survives closing the browser or restarting the Mac.
+
+Client view also includes a live readiness dashboard and **Setup tools**:
+
+- Status labels distinguish machine-observed proof from client-confirmed
+  account, two-factor, and real-world outcomes.
+- **Check this Mac** refreshes the read-only machine proof.
+- **Repair Wideband** idempotently reconciles the managed runtime without
+  replacing client-owned project work or curated configuration.
+- **Copy diagnostics** and **Export support bundle** produce a deliberately
+  narrow report that excludes credentials, two-factor codes, profile answers,
+  `.sop-vars` values, and raw logs.
+- **Deactivate Wideband services** stops the three managed jobs and moves their
+  definitions plus `Wideband Agent.app` into a private recovery folder. It does
+  not delete client work or silently change Remote Login, Screen Sharing, or
+  macOS privacy choices. Reopen the packaged app and select **Repair Wideband**
+  when the managed runtime should be restored.
+
 You are about to pipe a URL into a shell, so here is exactly what that
 does before you run it.
 
@@ -20,14 +115,17 @@ does before you run it.
 3. **Starts Homebrew in the background**, logging to
    `/tmp/wb-bootstrap-brew.log`. Nothing after this waits on it.
 4. **Downloads this repo** to `~/srv/wb-setup` as a tarball.
-5. **Asks you eight questions** and writes the answers to `~/.sop-vars`.
-   If that file already exists it is left alone.
+5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
+   package preloads the approved values; the generic client package asks six
+   plain-language questions in native macOS popups. If that file already
+   exists it is left alone.
 6. **Places four files** — a status line script, `~/.claude/SOP.md`,
    `~/.claude/CLAUDE.md`, and `~/.claude/settings.json` (only if you do
    not already have one).
-7. **Prints a checklist** of sign-ins and macOS permission dialogs to work
-   through while the download runs.
+7. **Queues the human gates.** The generic bootstrap prints them; the packaged
+   client app presents them later as branded, resumable popups.
 8. **Runs `brew bundle`** against the `Brewfile` in this repo.
+9. **Opens Wideband Setup** on localhost unless `--no-ui` was requested.
 
 It writes nothing outside `$HOME`, asks for no passwords, and sends
 nothing anywhere. The Homebrew installer it invokes will ask for `sudo`
@@ -63,7 +161,9 @@ should be.
 ## The tool budget
 
 Before Homebrew lands, `bootstrap.sh` may use **only** `bash`, `curl`,
-`tar`, `sed`, `awk`, and `grep`.
+`tar`, `sed`, `awk`, and `grep`. Packaged client mode may additionally use
+macOS's built-in `/usr/bin/osascript` to collect identity through native
+Wideband Setup dialogs; it still invokes no package-managed tool.
 
 A bare macOS has no `git` and no `python3` — `/usr/bin/git` and
 `/usr/bin/python3` are stubs that pop the Command Line Tools dialog and
@@ -88,7 +188,11 @@ render-help.py     builds help.html; selftest fails if it is stale
 selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup
-checklist.html     108-step interactive checklist; open it directly, no server
+checklist.html     106-step detailed checklist; open it directly, no server
+setup.sh           opens the resumable localhost guided installer
+setup.py           allowlisted runner, state, readiness, support and recovery APIs
+installer/         six-stage manifest and browser interface
+packaging/          branded app/DMG builder and client-profile renderer
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
 bin/               tm, tm-standard → copied to ~/bin
@@ -136,6 +240,13 @@ If a fresh build prints nothing but `✓`, distrust the verifier before
 trusting the build.
 
 ## When something breaks
+
+For a client handoff, open **Setup tools** in Wideband Setup first. The exported
+support ZIP is the safe default to share because it omits identity-file values,
+profile answers, raw logs, and common credential formats. **Repair Wideband**
+reconciles the same deterministic install path used during initial setup.
+
+For an operator working directly on the Mac:
 
 ```bash
 bash doctor.sh > /tmp/doctor.txt    # paste this to the agent

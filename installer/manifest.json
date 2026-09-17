@@ -1,0 +1,785 @@
+{
+  "schema_version": 1,
+  "release": "0.4.4",
+  "product": "Wideband Setup",
+  "description": "A guided, verified build for a custom Wideband operator machine.",
+  "stages": [
+    {
+      "id": "prepare",
+      "title": "Prepare",
+      "eyebrow": "Before setup day",
+      "description": "Remove the avoidable account and machine blockers before installation begins.",
+      "steps": [
+        {
+          "id": "prepare.send-prep-sheet",
+          "title": "Send the preparation sheet",
+          "description": "Send PREP.md to the client at least one day before the build.",
+          "actor": "operator",
+          "type": "guided"
+        },
+        {
+          "id": "prepare.create-accounts",
+          "title": "Create the service accounts",
+          "description": "Create email, Apple ID, Anthropic, GitHub, Tailscale, then Vercel and Supabase—in that order.",
+          "actor": "client",
+          "type": "guided",
+          "note": "GitHub comes before Tailscale, Vercel, and Supabase because those services should use the same GitHub identity.",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Accounts you own",
+            "intro": "These accounts remain in your name. Wideband will never ask you to hand over their passwords.",
+            "instructions": [
+              "Use the dedicated work email and Apple Account intended for this Mac.",
+              "Create GitHub first, with the exact username supplied in your Wideband build profile.",
+              "Create Anthropic, then use the same GitHub identity for Tailscale, Vercel, and Supabase wherever sign-in with GitHub is offered.",
+              "Complete every email or phone verification before returning here."
+            ],
+            "privacy": "Passwords and two-factor codes are entered only into the provider's page.",
+            "actions": [
+              {"action": "open_apple_id", "label": "Apple Account"},
+              {"action": "open_github", "label": "GitHub"},
+              {"action": "open_anthropic", "label": "Anthropic"},
+              {"action": "open_tailscale_account", "label": "Tailscale"},
+              {"action": "open_vercel", "label": "Vercel"},
+              {"action": "open_supabase", "label": "Supabase"}
+            ],
+            "confirm_label": "My accounts are ready"
+          }
+        },
+        {
+          "id": "prepare.collect-build-identity",
+          "title": "Collect the build identity",
+          "description": "Have the company short name, GitHub username, commit email, phone for briefs, work repository, and graph pack ready.",
+          "actor": "operator",
+          "type": "guided"
+        },
+        {
+          "id": "prepare.confirm-machine-policy",
+          "title": "Confirm management and migration status",
+          "description": "Confirm the Mac is not MDM-managed, the client is an administrator, and whether data will be migrated from another Mac.",
+          "actor": "operator",
+          "type": "guided",
+          "note": "Any one of these answers can change the build path."
+        },
+        {
+          "id": "prepare.complete-setup-assistant",
+          "title": "Complete macOS Setup Assistant",
+          "description": "Connect power and Wi-Fi, select region and language, create the admin account, and sign into the intended Apple ID.",
+          "actor": "client",
+          "type": "guided",
+          "action": "open_apple_id",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Mac basics",
+            "intro": "Confirm this Mac is ready to become your always-on Wideband operator machine.",
+            "instructions": [
+              "Keep the Mac connected to power and a reliable network.",
+              "Try to sign into the intended Apple Account—not a temporary or technician account. If Setup Assistant reports an error, finish setup and sign in here from the desktop instead; that is not a Wideband install failure.",
+              "After a delayed or partially completed Apple Account sign-in, open Messages separately and confirm its iMessage account. Apple Account and Messages sign-in are two distinct checks.",
+              "Confirm your current macOS user is an administrator.",
+              "Finish any pending Migration Assistant or macOS update before continuing."
+            ],
+            "open_label": "Open Apple Account settings",
+            "confirm_label": "This Mac is ready"
+          }
+        },
+        {
+          "id": "prepare.resolve-migration",
+          "title": "Resolve Migration Assistant",
+          "description": "Skip migration unless it was planned. If migration is required, finish it completely before continuing.",
+          "actor": "operator",
+          "type": "guided",
+          "note": "Migrated dotfiles and PATH entries can quietly conflict with this build."
+        }
+      ]
+    },
+    {
+      "id": "identify",
+      "title": "Identify",
+      "eyebrow": "Machine and operator",
+      "description": "Give the machine one coherent identity, then capture the operator judgment that cannot be templated.",
+      "steps": [
+        {
+          "id": "identify.run-bootstrap",
+          "title": "Run the bootstrap",
+          "description": "Install the agent, start Homebrew, fetch this setup repository, and write the build identity.",
+          "actor": "operator",
+          "type": "automatic",
+          "command": "curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash",
+          "note": "The guided installer is available after bootstrap because its Python runtime arrives in the Brewfile."
+        },
+        {
+          "id": "identify.review-vars",
+          "title": "Review the identity file",
+          "description": "Confirm every value is correct before it is rendered into services and agent configuration.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "cat ~/.sop-vars"
+        },
+        {
+          "id": "identify.authenticate-agent",
+          "title": "Authenticate Claude Code",
+          "description": "Start Claude Code and complete its browser authentication.",
+          "actor": "client",
+          "type": "guided",
+          "command": "claude",
+          "action": "open_claude_auth",
+          "note": "Installation is machine-verifiable; successful account authentication still requires the client to confirm it.",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Your AI account",
+            "intro": "Connect Claude directly to your account. Wideband can see whether the tool works, but never your password.",
+            "instructions": [
+              "Select Open Claude sign-in below. A second Terminal window will open.",
+              "Follow the secure browser sign-in opened by Claude.",
+              "Approve the account you intend this custom agent to use.",
+              "Return here after Claude confirms authentication."
+            ],
+            "open_label": "Open Claude sign-in",
+            "privacy": "Authentication happens between you and Anthropic.",
+            "confirm_label": "Claude is connected"
+          }
+        },
+        {
+          "id": "identify.operator-interview",
+          "title": "Complete the operator interview",
+          "description": "Capture responsibilities, collaboration style, approval boundaries, communication preferences, and recurring priorities.",
+          "actor": "operator",
+          "type": "interview",
+          "action": "open_interview"
+        },
+        {
+          "id": "identify.review-agent-profile",
+          "title": "Review the generated agent profile",
+          "description": "Preview and approve USER.md before it becomes part of the agent's standing context.",
+          "actor": "client",
+          "type": "interview",
+          "requires_confirmation": true,
+          "checks": ["P5-MD", "P5-MDCAP"],
+          "action": "open_interview",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Make the agent yours",
+            "intro": "This is the custom part: tell the agent how to work with you, where it may act, and where it must stop and ask.",
+            "instructions": [
+              "Open the profile interview and answer in plain language.",
+              "Be specific about approval boundaries, spending, external messages, and production changes.",
+              "Do not enter passwords, API keys, or project secrets.",
+              "Preview the profile, approve it, then return here to confirm your review."
+            ],
+            "open_label": "Open my agent interview",
+            "privacy": "The profile is stored only on this Mac.",
+            "confirm_label": "I reviewed my profile"
+          }
+        }
+      ]
+    },
+    {
+      "id": "connect",
+      "title": "Connect",
+      "eyebrow": "Permissions and accounts",
+      "description": "Guide the client through the macOS and account actions no installer should impersonate.",
+      "steps": [
+        {
+          "id": "connect.remote-login",
+          "title": "Enable Remote Login",
+          "description": "Open General → Sharing and turn on Remote Login.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-SSH"],
+          "action": "open_remote_login",
+          "client_priority": 60,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Secure support access",
+            "intro": "Remote Login gives the Wideband operator a private command-line support path without exposing it to the public internet.",
+            "purpose": "This is the recovery path Wideband can use when the visual interface is unavailable or a background service needs repair.",
+            "success": "Remote Login is on, remote-user Full Disk Access is off, and only the named administrator is allowed.",
+            "instructions": [
+              "Select Open System Settings.",
+              "Turn Remote Login on, then select its info button.",
+              "Turn off Allow full disk access for remote users unless Wideband has explicitly requested it for an approved workflow.",
+              "Under Allow access for, choose Only these users. Remove the Administrators group and add only the intended individual administrator account.",
+              "Return here and let Wideband verify the setting."
+            ],
+            "open_label": "Open System Settings",
+            "confirm_label": "Check Remote Login"
+          }
+        },
+        {
+          "id": "connect.screen-sharing",
+          "title": "Enable secure Screen Sharing",
+          "description": "Enable Apple's built-in Screen Sharing for visual support over the private tailnet.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-SCREENSHARING"],
+          "action": "open_screen_sharing",
+          "client_priority": 10,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Visual support access",
+            "intro": "Apple Screen Sharing lets your Wideband operator see and control this Mac when visual help is needed.",
+            "purpose": "Visual support makes permission and account troubleshooting possible without asking you to describe every screen over the phone.",
+            "success": "Screen Sharing is on for only the intended administrator, with legacy VNC-password access left off.",
+            "instructions": [
+              "Select Open Screen Sharing settings.",
+              "Turn Screen Sharing on. If Remote Management is on, macOS requires you to turn it off first.",
+              "Under Allow access for, choose Only these users and keep only the intended administrator account.",
+              "Leave the legacy VNC password option off unless Wideband explicitly asks for it.",
+              "Return here and let Wideband verify the system service."
+            ],
+            "open_label": "Open Screen Sharing settings",
+            "privacy": "The service is restricted to the account you choose and will be reached through the private tailnet.",
+            "confirm_label": "Check Screen Sharing"
+          }
+        },
+        {
+          "id": "connect.full-disk-access",
+          "title": "Grant Full Disk Access",
+          "description": "Grant the installed Wideband Agent access to protected local data needed for approved workflows.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-FDA"],
+          "action": "request_full_disk_access",
+          "client_priority": 20,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "macOS permission",
+            "intro": "Full Disk Access lets the Wideband Agent work with protected files and Messages data you explicitly authorize on this Mac.",
+            "purpose": "Approved workflows need one stable, branded app—not Terminal or a changing script—to reach protected local data.",
+            "success": "Wideband Agent is enabled in Full Disk Access and its harmless local read check passes.",
+            "instructions": [
+              "Select Show Wideband Agent. System Settings and the installed agent will open together.",
+              "In Full Disk Access, select + and add the revealed Wideband Agent.app if it is not already listed.",
+              "Turn Wideband Agent on and approve the macOS confirmation.",
+              "Return here and run the check. Wideband reads one byte from a protected system database only to prove the grant."
+            ],
+            "open_label": "Show Wideband Agent",
+            "privacy": "This is a local macOS grant. The permission check does not copy or transmit protected data.",
+            "confirm_label": "Verify Full Disk Access"
+          }
+        },
+        {
+          "id": "connect.accessibility",
+          "title": "Grant Accessibility",
+          "description": "Ask macOS to authorize the installed Wideband Agent for approved visible-control automation.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-AX"],
+          "action": "request_accessibility",
+          "client_priority": 30,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "macOS permission",
+            "intro": "Accessibility permission allows approved local automation to operate visible controls when a task requires it.",
+            "purpose": "This lets the branded Wideband Agent operate visible controls for workflows you approve while keeping the grant away from general developer tools.",
+            "success": "Wideband Agent appears enabled under Accessibility and confirms the grant itself.",
+            "instructions": [
+              "Select Request Accessibility and wait a few seconds. The real macOS alert and Accessibility entry will name Wideband Agent.",
+              "Choose Open System Settings when macOS displays the alert.",
+              "Turn on Wideband Agent in the Accessibility list. If you dismissed the alert earlier, use Open Accessibility Settings below.",
+              "Return here; the same agent will verify its access."
+            ],
+            "actions": [
+              {
+                "action": "request_accessibility",
+                "label": "1. Request Accessibility",
+                "message": "Wideband Agent requested access. Respond to the macOS alert, then enable Wideband Agent in the list."
+              },
+              {
+                "action": "open_accessibility",
+                "label": "2. Open Accessibility Settings",
+                "message": "Accessibility settings opened. Turn on Wideband Agent, then return here."
+              }
+            ],
+            "open_label": "Request Accessibility",
+            "privacy": "Only the installed Wideband Agent receives this grant—not Terminal, Python, or every development tool.",
+            "confirm_label": "Verify Accessibility"
+          }
+        },
+        {
+          "id": "connect.screen-recording",
+          "title": "Grant Screen Recording",
+          "description": "Ask macOS to authorize the installed Wideband Agent for visual verification.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-SCREEN"],
+          "action": "request_screen_recording",
+          "client_priority": 40,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "macOS permission",
+            "intro": "Screen Recording permission is required for browser screenshots and visual verification; it does not start a recording by itself.",
+            "purpose": "Wideband needs to verify what is visibly on screen during approved browser and desktop workflows.",
+            "success": "Wideband Agent is enabled under Screen & System Audio Recording and a fresh capture check passes.",
+            "instructions": [
+              "Select Request Screen Access and wait a few seconds. The real macOS alert will explicitly name Wideband Agent.",
+              "Choose Open System Settings, then turn on Wideband Agent in Screen & System Audio Recording.",
+              "If you dismissed the alert earlier, use Open Recording Settings below and enable Wideband Agent there.",
+              "If macOS asks to quit and reopen the agent, approve it; the next check launches a fresh copy.",
+              "Return here so the same agent can verify the grant."
+            ],
+            "actions": [
+              {
+                "action": "request_screen_recording",
+                "label": "1. Request Screen Access",
+                "message": "Wideband Agent requested screen access. Respond to the macOS alert, then enable Wideband Agent in the list."
+              },
+              {
+                "action": "open_screen_recording",
+                "label": "2. Open Recording Settings",
+                "message": "Screen & System Audio Recording settings opened. Turn on Wideband Agent, then return here."
+              }
+            ],
+            "open_label": "Request Screen Access",
+            "privacy": "The grant belongs only to Wideband Agent and does not start continuous recording.",
+            "confirm_label": "Verify Screen Access"
+          }
+        },
+        {
+          "id": "connect.automation-dialog",
+          "title": "Approve Messages automation",
+          "description": "Ask macOS to approve Wideband Agent controlling Messages.",
+          "actor": "client",
+          "type": "guided",
+          "checks": ["P0-AUTOMATION"],
+          "action": "request_messages_automation",
+          "client_priority": 50,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "macOS permission",
+            "intro": "macOS must explicitly allow the local automation layer to ask Messages to perform approved actions.",
+            "purpose": "This is the protected Apple permission that later allows approved briefs and alerts to use Messages.",
+            "success": "The macOS dialog names Wideband Agent, you select Allow, and the account-count verification passes without sending or reading a message.",
+            "instructions": [
+              "Select 1. Open Messages. Finish sign-in and dismiss any first-run panels, including Shared with You or Focus status prompts.",
+              "Return here and select 2. Show macOS prompt.",
+              "When macOS says Wideband Agent wants to control Messages, select Allow.",
+              "No message is sent by this check.",
+              "Return here so Wideband Agent can verify the approval."
+            ],
+            "actions": [
+              {
+                "action": "open_messages",
+                "label": "1. Open Messages",
+                "message": "Finish Messages sign-in and any first-run panels, then return here."
+              },
+              {
+                "action": "request_messages_automation",
+                "label": "2. Show macOS prompt",
+                "message": "Choose Allow in the macOS dialog, then return here to verify it."
+              }
+            ],
+            "privacy": "This consent check asks Messages only for its configured-account count. It does not read or send any message or conversation content.",
+            "confirm_label": "Verify Messages permission"
+          }
+        },
+        {
+          "id": "connect.background-items",
+          "title": "Allow background items",
+          "description": "Allow the Wideband LaunchAgents under Login Items & Extensions.",
+          "actor": "client",
+          "type": "guided",
+          "action": "open_login_items",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Always-on services",
+            "intro": "Wideband's health checks and scheduled work use standard macOS background items.",
+            "purpose": "Health checks and scheduled work must survive closed windows and Mac restarts.",
+            "success": "Wideband Agent remains enabled under Allow in the Background.",
+            "instructions": [
+              "Open Login Items & Extensions.",
+              "Under Allow in the Background, leave the Wideband items enabled.",
+              "If no Wideband item appears yet, the machine install is still running; return to this step shortly."
+            ],
+            "open_label": "Open Login Items",
+            "confirm_label": "Background items are allowed"
+          }
+        },
+        {
+          "id": "connect.messages",
+          "title": "Sign into Messages",
+          "description": "Sign into iMessage using the intended operator account.",
+          "actor": "client",
+          "type": "guided",
+          "action": "open_messages",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Messaging channel",
+            "intro": "Messages is the private channel this Mac can use for approved briefs and alerts.",
+            "instructions": [
+              "Open Messages and sign in with the intended Apple Account.",
+              "In Messages settings, confirm the correct addresses and phone number are enabled.",
+              "Send one ordinary test message to confirm iMessage is active."
+            ],
+            "open_label": "Open Messages",
+            "privacy": "Sign-in stays inside Apple's Messages app.",
+            "confirm_label": "Messages is signed in"
+          }
+        },
+        {
+          "id": "connect.disable-sleep",
+          "title": "Keep scheduled work awake",
+          "description": "Disable system and disk sleep so scheduled loops can run reliably.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "sudo pmset -a sleep 0 disksleep 0",
+          "checks": ["P0-SLEEP"]
+        },
+        {
+          "id": "connect.email",
+          "title": "Prove email works",
+          "description": "Send the operator a message and confirm it arrives before attempting downstream verification flows.",
+          "actor": "client",
+          "type": "guided",
+          "action": "open_mail",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Recovery channel",
+            "intro": "Email needs to work before the other services can send verification or recovery messages.",
+            "instructions": [
+              "Open Mail and add the dedicated work email if needed.",
+              "Send a message to an address you can check from another device.",
+              "Reply to it and confirm the reply arrives on this Mac."
+            ],
+            "open_label": "Open Mail",
+            "confirm_label": "Email is working"
+          }
+        },
+        {
+          "id": "connect.browser-accounts",
+          "title": "Sign into browser accounts",
+          "description": "Sign into GitHub, Anthropic, Tailscale, Vercel, and Supabase with the intended identities.",
+          "actor": "client",
+          "type": "guided",
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Connect your services",
+            "intro": "Sign into each provider in the default browser so later setup can use the accounts you own.",
+            "instructions": [
+              "Use the intended GitHub identity everywhere GitHub sign-in is available.",
+              "Complete every two-factor prompt and account confirmation.",
+              "Leave each successful dashboard tab open until you return here."
+            ],
+            "privacy": "Wideband opens the official pages; it never receives the credentials you enter.",
+            "actions": [
+              {"action": "open_github", "label": "GitHub"},
+              {"action": "open_anthropic", "label": "Anthropic"},
+              {"action": "open_tailscale_account", "label": "Tailscale"},
+              {"action": "open_vercel", "label": "Vercel"},
+              {"action": "open_supabase", "label": "Supabase"}
+            ],
+            "confirm_label": "All services are signed in"
+          }
+        },
+        {
+          "id": "connect.tailscale-app",
+          "title": "Install standalone Tailscale",
+          "description": "Install the standalone download—not the Mac App Store build—and sign in.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "printf '#!/bin/sh\\nexec \"/Applications/Tailscale.app/Contents/MacOS/Tailscale\" \"$@\"\\n' | sudo tee /opt/homebrew/bin/tailscale >/dev/null && sudo chmod +x /opt/homebrew/bin/tailscale",
+          "requires_confirmation": true,
+          "checks": ["P4-TSCLI"],
+          "action": "open_tailscale_download"
+        },
+        {
+          "id": "connect.tailscale-https",
+          "title": "Enable tailnet HTTPS",
+          "description": "Enable HTTPS certificates in the tailnet admin console and create a test serve mapping.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "tailscale serve --bg --https=8790 http://127.0.0.1:8790 && tailscale serve status",
+          "checks": ["P4-TSSERVE"]
+        },
+        {
+          "id": "connect.phone-tls",
+          "title": "Prove the phone path",
+          "description": "Open the test URL on the client's phone and confirm there is a real padlock with no warning.",
+          "actor": "client",
+          "type": "guided",
+          "note": "A successful curl from the Mac does not prove this path.",
+          "client_phase": "handoff",
+          "client_guide": {
+            "eyebrow": "Final proof with Wideband",
+            "intro": "Wideband will provide a private tailnet URL after the secure phone path is ready.",
+            "instructions": [
+              "Open the URL on your phone while connected to Tailscale.",
+              "Confirm the page opens with a real padlock and no certificate warning.",
+              "Do not approve or bypass a browser security warning—tell Wideband instead."
+            ],
+            "confirm_label": "The secure URL works"
+          }
+        }
+      ]
+    },
+    {
+      "id": "install",
+      "title": "Install",
+      "eyebrow": "Deterministic machine work",
+      "description": "Run the repeatable installation and prove the resulting objects exist and are healthy.",
+      "steps": [
+        {
+          "id": "install.core-toolchain",
+          "title": "Install the core toolchain",
+          "description": "Let bootstrap finish Homebrew and the Brewfile, then verify every required CLI.",
+          "actor": "machine",
+          "type": "automatic",
+          "checks": ["P3-CLI"]
+        },
+        {
+          "id": "install.github-cli",
+          "title": "Authenticate the GitHub CLI",
+          "description": "Authenticate gh and confirm it is the one identity named in the build profile.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "gh auth login",
+          "checks": ["P3-GHAUTH", "P3-GHUSER"]
+        },
+        {
+          "id": "install.reconcile",
+          "title": "Reconcile the Wideband layer",
+          "description": "Install agent context, tmux configuration, standing loops, and fleetdeck from the repository.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_install"
+        },
+        {
+          "id": "install.claude-layer",
+          "title": "Verify the Claude layer",
+          "description": "Prove the status line, settings, parser, and standing context were installed correctly.",
+          "actor": "machine",
+          "type": "verification",
+          "checks": ["P5-SL", "P5-SLCOLOR", "P5-SLJQ", "P5-SETTINGS"]
+        },
+        {
+          "id": "install.editor",
+          "title": "Finish VS Code setup",
+          "description": "Open VS Code, install its shell command, and grant Full Disk Access.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "code --version"
+        },
+        {
+          "id": "install.tmux",
+          "title": "Install the tmux workspace",
+          "description": "Load TPM plugins and confirm the command center, configuration, and standard exist.",
+          "actor": "operator",
+          "type": "guided",
+          "requires_confirmation": true,
+          "checks": ["P7-CONF", "P7-TPM", "P7-TM", "P7-STD"],
+          "note": "Inside tmux, press Ctrl-a and then Shift-i once to fetch the plugin set."
+        },
+        {
+          "id": "install.standing-sessions",
+          "title": "Start the standing sessions",
+          "description": "Apply the curated session standard and confirm every concern is represented.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "tm-standard apply",
+          "checks": ["P7-SESS"]
+        },
+        {
+          "id": "install.background-loops",
+          "title": "Verify background loops",
+          "description": "Confirm each LaunchAgent is loaded and its most recent exit was clean.",
+          "actor": "machine",
+          "type": "verification",
+          "checks": ["P8-LOAD", "P8-EXIT"]
+        },
+        {
+          "id": "install.fleetdeck",
+          "title": "Verify fleetdeck",
+          "description": "Confirm the board is installed and resolves its machine dynamically from Tailscale.",
+          "actor": "machine",
+          "type": "verification",
+          "checks": ["P9-FLEET", "P9-PINNED"]
+        },
+        {
+          "id": "install.path",
+          "title": "Verify the shell path",
+          "description": "Open a new Terminal window and prove every installed tool is discoverable.",
+          "actor": "operator",
+          "type": "verification",
+          "checks": ["SHELL-PATH"]
+        }
+      ]
+    },
+    {
+      "id": "project",
+      "title": "Customize",
+      "eyebrow": "Project and working environment",
+      "description": "Connect the operator's actual work, secrets, deployment surface, and recoverable knowledge.",
+      "steps": [
+        {
+          "id": "project.clone-work-repo",
+          "title": "Clone the work repository",
+          "description": "Clone the configured work repository to ~/app and install its dependencies.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "source ~/.sop-vars && git clone \"$WORK_REPO\" ~/app && cd ~/app && npm install"
+        },
+        {
+          "id": "project.configure-environment",
+          "title": "Configure project secrets",
+          "description": "Seed .env.local and enter the Supabase URL, anon key, service-role key, site URL, and any app-specific values directly on this machine.",
+          "actor": "operator",
+          "type": "guided",
+          "note": "Secrets are never stored in installer state or support logs."
+        },
+        {
+          "id": "project.apply-migrations",
+          "title": "Apply migrations deliberately",
+          "description": "Apply migrations individually and verify the database objects—not only the migration ledger.",
+          "actor": "operator",
+          "type": "guided",
+          "note": "Do not run a blanket db push against a project with an existing ledger."
+        },
+        {
+          "id": "project.test-application",
+          "title": "Run the application tests",
+          "description": "Run the repository's test suite and resolve failures before deployment.",
+          "actor": "agent",
+          "type": "guided",
+          "command": "cd ~/app && npm test"
+        },
+        {
+          "id": "project.serve-development",
+          "title": "Serve development to the tailnet",
+          "description": "Start the development server on 0.0.0.0 and map it through Tailscale HTTPS.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "cd ~/app && npm run dev -- -H 0.0.0.0"
+        },
+        {
+          "id": "project.link-vercel",
+          "title": "Link and verify Vercel",
+          "description": "Authenticate, link the intended project, and confirm the project ID, environment variables, and domain are real.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "vercel login"
+        },
+        {
+          "id": "project.curate-sessions",
+          "title": "Curate the standing workspace",
+          "description": "Keep one tmux session per concern, point website at the actual work root, and remove concerns this operator does not need.",
+          "actor": "operator",
+          "type": "interview",
+          "command": "tm-standard edit"
+        },
+        {
+          "id": "project.knowledge-graph",
+          "title": "Build the knowledge graph",
+          "description": "When included in the engagement, declare the load-bearing roots, build the index, and run the reconstitution drill.",
+          "actor": "agent",
+          "type": "guided",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "id": "prove",
+      "title": "Prove",
+      "eyebrow": "Verification and handoff",
+      "description": "A build is finished only when its real user paths and scheduled behavior have been observed.",
+      "steps": [
+        {
+          "id": "prove.quick-verification",
+          "title": "Run the quick verification",
+          "description": "Check local machine state without waiting on network-bound services.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_verify_quick"
+        },
+        {
+          "id": "prove.full-verification",
+          "title": "Run the full verification",
+          "description": "Run every assertion and work remaining failures in phase order.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_verify_full"
+        },
+        {
+          "id": "prove.reboot",
+          "title": "Reboot and prove persistence",
+          "description": "Restart the Mac, then confirm the standard tmux sessions and background healthcheck returned without manual repair.",
+          "actor": "operator",
+          "type": "guided",
+          "command": "tmux ls && tail -n 5 ~/.config/tmux/health.log"
+        },
+        {
+          "id": "prove.phone-board",
+          "title": "Open the board from the phone",
+          "description": "Open fleetdeck from the client's phone, confirm trusted HTTPS, and add it to the home screen.",
+          "actor": "client",
+          "type": "guided",
+          "client_phase": "handoff",
+          "client_guide": {
+            "eyebrow": "Final proof with Wideband",
+            "intro": "Your private command board should behave like an app from your phone.",
+            "instructions": [
+              "Open the board URL Wideband provides while Tailscale is connected.",
+              "Confirm the board loads without a certificate warning.",
+              "Use Add to Home Screen, then launch it from the new icon once."
+            ],
+            "confirm_label": "The phone board works"
+          }
+        },
+        {
+          "id": "prove.messaging",
+          "title": "Prove the messaging channel",
+          "description": "Send the operator a real test message from the machine and confirm receipt.",
+          "actor": "client",
+          "type": "guided",
+          "client_phase": "handoff",
+          "client_guide": {
+            "eyebrow": "Final proof with Wideband",
+            "intro": "A real message proves the account, permission, and automation path together.",
+            "instructions": [
+              "Ask Wideband to send the named test message from this Mac.",
+              "Confirm it arrives on the intended device and from the intended account.",
+              "Reply once so both directions are proven."
+            ],
+            "confirm_label": "The test message arrived"
+          }
+        },
+        {
+          "id": "prove.record",
+          "title": "Generate the build record",
+          "description": "Capture machine, operator, installer release, verification summary, progress, and every recorded deviation.",
+          "actor": "operator",
+          "type": "automatic",
+          "action": "generate_build_record"
+        },
+        {
+          "id": "prove.next-morning-brief",
+          "title": "Observe the first scheduled brief",
+          "description": "The next morning, confirm the usage brief arrived through the intended channel.",
+          "actor": "client",
+          "type": "guided",
+          "note": "Until a scheduled job has fired once, it is installed—not working.",
+          "client_phase": "later",
+          "client_guide": {
+            "eyebrow": "Tomorrow's proof",
+            "intro": "The first scheduled brief is the final proof that the always-on system survived the night.",
+            "instructions": [
+              "Leave the Mac plugged in, awake, and online overnight.",
+              "Confirm the first brief arrives through the agreed channel.",
+              "If it does not arrive, contact Wideband rather than changing the schedule yourself."
+            ],
+            "confirm_label": "The first brief arrived"
+          }
+        },
+        {
+          "id": "prove.support-bundle",
+          "title": "Create diagnostics when needed",
+          "description": "Produce a read-only machine report for troubleshooting. This is a support action, not a completion requirement.",
+          "actor": "operator",
+          "type": "automatic",
+          "optional": true,
+          "action": "run_doctor"
+        }
+      ]
+    }
+  ]
+}

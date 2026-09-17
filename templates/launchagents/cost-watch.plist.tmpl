@@ -4,11 +4,13 @@
 <dict>
 	<key>Label</key>
 	<string>__PREFIX__.cost-watch</string>
-	<!-- python3 by absolute path, not via the shebang: this plist is generated,
-	     and an env-based shebang resolves against launchd's PATH rather than the
-	     operator's. -->
+	<!-- Launch through the signed/ad-hoc-signed Wideband app so macOS presents
+	     one branded background item. Python remains absolute because launchd's
+	     PATH does not contain the Homebrew prefix. -->
 	<key>ProgramArguments</key>
 	<array>
+		<string>__AGENT_EXECUTABLE__</string>
+		<string>run-background-task</string>
 		<string>__PYTHON__</string>
 		<string>__ROOT__/loops/cost-watch</string>
 	</array>
