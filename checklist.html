@@ -154,7 +154,8 @@ const S = [
  ["op","Answer: knowledge-graph pack name."],
  ["op","Verify: identity written.","cat ~/.sop-vars"],
  ["mac","Claude Code installs — seconds, no dependencies."],
- ["mac","Homebrew starts downloading in the background. Nothing waits on it.","tail -f /tmp/wb-bootstrap-brew.log"],
+ ["mac","Wideband verifies the actual user, Apple developer Git, and the /opt/homebrew prefix separately. After a macOS upgrade, approve the small Command Line Tools installer if Apple opens it; the guide shows live status while bootstrap waits.","bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew"],
+ ["mac","Once that preflight is healthy, Homebrew and the core tools continue. The live log remains available for operator diagnosis.","tail -f /tmp/wb-bootstrap-brew.log"],
 ]],
 ["D","Permissions — while the download runs",[
  ["op","Every one of these is a dialog. A missed grant fails silently several phases later, which is the most expensive failure in this build.","","Do these now. They need no network and no Homebrew."],

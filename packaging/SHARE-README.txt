@@ -60,6 +60,11 @@ localhost link or technical setup guide.
 16. If the app is closed or the Mac restarts, open “Wideband Setup” from your
     user Applications folder. Do not reuse an old localhost tab; the app safely
     supplies the current private connection and resumes the saved step.
+17. If this Mac was upgraded from an older macOS release and Terminal reports
+    that /opt/homebrew is not writable or Git is unavailable, do not run a
+    broad chown command from the error. Leave the app open and contact
+    Wideband; release 0.5.1 verifies the intended user, Apple developer tools,
+    and exact Homebrew prefix before it prints any repair for you to approve.
 
 Requirements
 • Apple silicon Mac

@@ -486,12 +486,18 @@ function renderMachineState() {
         ? "Homebrew, Python, and the setup runtime are ready."
         : bootstrapStatus === "needs_admin_password"
           ? "Action needed: enter your Mac password in Terminal, then return here."
+          : bootstrapStatus === "needs_developer_tools"
+            ? "Action needed: approve Apple's Command Line Tools installer; Wideband checks it automatically."
+            : bootstrapStatus === "needs_developer_tools_selection"
+              ? "Apple's tools are installed but no longer selected. Terminal shows the exact reselect command."
+            : bootstrapStatus === "needs_homebrew_ownership"
+              ? "Homebrew was left by another ownership context. Terminal shows the verified repair boundary."
           : bootstrapStatus === "collecting_identity"
             ? "Complete the Wideband setup popup currently on screen."
             : bootstrapStatus === "needs_attention"
               ? "The core tool install needs review in Terminal."
               : "Homebrew and the core tools are installing in Terminal.",
-      !bootstrapDone && !["needs_admin_password", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
+      !bootstrapDone && !["needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
     ),
     machineRow(installDone, "Wideband layer", installDone ? "Agent context, workspace, and standing services installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : running?.action === "run_install" ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", running?.action === "run_install"),
     machineRow(Boolean(verification) && !verification.failed, "Machine checks", verification ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred` : "Checks run automatically after installation.", running?.action?.includes("verify")),
@@ -520,6 +526,24 @@ function renderMachineState() {
     badge.classList.add("attention");
     badge.querySelector("strong").textContent = "Enter your Mac password in Terminal";
     badge.querySelector("small").textContent = "No dots appear while you type. Press Return, then come back to this guide.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_developer_tools") {
+    state.textContent = "Your action";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Approve Apple Command Line Tools";
+    badge.querySelector("small").textContent = "This is smaller than full Xcode. Select Install in Apple's dialog; Wideband detects completion automatically.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_developer_tools_selection") {
+    state.textContent = "Your action";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Reselect Apple Command Line Tools";
+    badge.querySelector("small").textContent = "Review the exact sudo command in Terminal, run it in a new Terminal window, then reopen Wideband Setup.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_homebrew_ownership") {
+    state.textContent = "Operator review";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Homebrew ownership needs a safe review";
+    badge.querySelector("small").textContent = "Review the two scoped commands in Terminal, run them in a new Terminal window, then reopen Wideband Setup. Never use a blind broad chown.";
   } else if (!bootstrapDone && bootstrapStatus === "needs_attention") {
     state.textContent = "Review Terminal";
     state.classList.add("attention");

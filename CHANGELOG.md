@@ -3,6 +3,32 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.5.1 — 2026-09-23
+
+### Post-upgrade bootstrap recovery
+
+- Fixed a path where the presence of `/opt/homebrew/bin/brew` was incorrectly
+  treated as proof of a healthy Homebrew installation.
+- Added a read-only `--diagnose-homebrew` mode that reports the actual invoking
+  user and UID, home owner, GUI console user, administrator membership,
+  architecture, PATH, selected Apple developer directory, developer Git, and
+  `/opt/homebrew` ownership and writability.
+- Added a distinct Apple Command Line Tools state. The app now explains that
+  this is not full Xcode, requests the Apple installer when the tools are
+  absent, waits for real Git evidence, and detects the post-upgrade case where
+  the tools exist but are not selected.
+- Added a guarded ownership state for a recognized but non-writable Homebrew
+  prefix. Wideband never executes `chown`; it prints a same-filesystem,
+  no-symlink-follow repair only after the intended user and exact prefix have
+  been proven, and requires the client to approve it personally.
+- Made a blocked preflight authoritative: stale `git`, `jq`, or `tmux`
+  executables can no longer overwrite the ownership/developer-tools state with
+  a false `ready`, and no Homebrew fallback runs after the guard stops it.
+- Fetches the small versioned setup payload before Homebrew so the tested
+  health guard is available on a genuinely bare or partially upgraded Mac.
+- Added targeted native UI coaching for developer-tools approval and Homebrew
+  ownership review.
+
 ## 0.5.0 — 2026-09-23
 
 ### Client experience

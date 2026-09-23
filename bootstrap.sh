@@ -15,12 +15,13 @@
 # work to do while the download runs. The common mistake is installing Homebrew
 # first and waiting on it — Claude Code is not behind it and never was.
 #
-# TOOL BUDGET: bash, curl, tar, sed, awk, grep. Packaged client mode may also
-# use macOS's built-in /usr/bin/osascript for the identity popups. Nothing
-# package-managed, until Homebrew lands. A bare macOS has no git and no python3 — /usr/bin/git and
-# /usr/bin/python3 are stubs that pop the Command Line Tools dialog and block.
-# That is why the repo arrives as a tarball rather than a clone. verify.sh
-# asserts this budget, because it is the constraint most likely to regress.
+# TOOL BUDGET: macOS built-ins only until Homebrew lands. Packaged client mode
+# may use /usr/bin/osascript for identity popups, and the health guard uses
+# built-in identity, filesystem, and xcode-select probes. A bare macOS has no
+# usable Git or Python — /usr/bin/git and /usr/bin/python3 can be stubs that pop
+# the Command Line Tools dialog and block. That is why the repo arrives as a
+# tarball rather than a clone. selftest.sh asserts that no package-managed tool
+# crosses this boundary, because it is the constraint most likely to regress.
 #
 # bash 3.2 compatible on purpose: that is what /bin/bash on macOS is, and this
 # script runs before a newer one exists.
@@ -36,6 +37,16 @@ SETUP_STATE="$HOME/.wideband/setup"
 BREW_LOG="/tmp/wb-bootstrap-brew.log"
 BREW_PID=""
 SUDO_KEEPALIVE=""
+BREW_BLOCK_REASON=""
+BREW_USABLE=0
+BREW_INSTALLER=""
+DIAGNOSE_HOMEBREW=0
+CLT_WAIT_SECONDS="${WB_CLT_WAIT_SECONDS:-3600}"
+CLT_POLL_SECONDS="${WB_CLT_POLL_SECONDS:-5}"
+HERE=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]:-/nonexistent}" ]; then
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+fi
 
 DO_CLAUDE=1; DO_BREW=1; DO_FETCH=1; DO_UI=1; ASSUME_YES=0; CLIENT_MODE=0
 
@@ -46,6 +57,7 @@ for arg in "$@"; do
     --no-fetch)  DO_FETCH=0 ;;
     --no-ui)     DO_UI=0 ;;
     --client)    CLIENT_MODE=1; export WB_SETUP_CLIENT_MODE=1 ;;
+    --diagnose-homebrew) DIAGNOSE_HOMEBREW=1; DO_CLAUDE=0; DO_BREW=0; DO_FETCH=0; DO_UI=0 ;;
     --yes|-y)    ASSUME_YES=1 ;;
     --org=*)     export ORG="${arg#*=}" ;;
     --brand=*)   export BRAND="${arg#*=}" ;;
@@ -61,6 +73,14 @@ for arg in "$@"; do
     *) echo "  ! unknown flag: $arg (--help for usage)" >&2 ;;
   esac
 done
+
+case "$CLT_WAIT_SECONDS:$CLT_POLL_SECONDS" in
+  *[!0-9:]*|:*|*:) echo "  ! invalid developer-tools wait configuration" >&2; exit 2 ;;
+esac
+if [ "$CLT_POLL_SECONDS" -lt 1 ]; then
+  echo "  ! developer-tools polling interval must be at least one second" >&2
+  exit 2
+fi
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -111,6 +131,24 @@ for t in curl tar sed awk grep; do
   command -v "$t" >/dev/null 2>&1 || { say "  ✗ REFUSING: no $t on PATH."; exit 1; }
 done
 
+if [ "$DIAGNOSE_HOMEBREW" = 1 ]; then
+  if [ -z "$HERE" ] || [ ! -f "$HERE/lib/bootstrap-homebrew.sh" ]; then
+    say "  ✗ --diagnose-homebrew must be run from the downloaded wb-setup repository."
+    exit 1
+  fi
+  # shellcheck source=lib/bootstrap-homebrew.sh
+  . "$HERE/lib/bootstrap-homebrew.sh"
+  wb_hb_identity_probe
+  wb_hb_clt_probe
+  wb_hb_prefix_probe /opt/homebrew
+  wb_hb_print_report
+  if wb_hb_repair_available; then
+    echo
+    wb_hb_print_repair
+  fi
+  exit 0
+fi
+
 say "  ✓ arm64 · macOS $(sw_vers -productVersion) · $(id -un)"
 bootstrap_status starting
 
@@ -145,62 +183,13 @@ else
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
-# ── 2. Homebrew, in the background ───────────────────────────────────────────
-# The long pole, and nothing below waits on it. It pulls the Command Line Tools
-# (a large download) on a bare machine, which is most of the wall clock for the
-# whole build.
+# ── 2. the repo ──────────────────────────────────────────────────────────────
+# Tarball, not clone: git does not exist yet. Fetch this small payload before
+# Homebrew so its versioned, testable health guard can diagnose partial prefixes
+# left behind by OS upgrades. The delay is seconds; the long downloads still
+# run in the background while the human works.
 
-step "2/6  Homebrew + Command Line Tools (background)"
-if [ "$DO_BREW" = "0" ]; then
-  say "  ~ skipped (--no-brew)"
-elif command -v brew >/dev/null 2>&1 || [ -x /opt/homebrew/bin/brew ]; then
-  say "  = already installed"
-else
-  : > "$BREW_LOG"
-
-  # Homebrew needs sudo. A detached job has no terminal, so it cannot prompt
-  # for the password — it just dies, and the first version of this script then
-  # reported success anyway. Prime the credential in the FOREGROUND (one
-  # prompt, visible to whoever is standing there), then keep it warm while the
-  # installer runs detached.
-  bootstrap_status needs_admin_password
-  say "  macOS will ask for your password once — Homebrew needs it."
-  if sudo -v; then
-    bootstrap_status installing_tools
-    ( while true; do sudo -n true 2>/dev/null; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) &
-    SUDO_KEEPALIVE=$!
-  else
-    bootstrap_status needs_attention
-    say "  ! no sudo — Homebrew cannot install. Everything else still runs."
-    DO_BREW=0
-  fi
-
-  if [ "$DO_BREW" = "1" ]; then
-    # Download to a FILE first. Piped straight into bash, a 404 or a blocked
-    # network yields an empty string, `bash -c ""` exits 0, and the run reports
-    # a successful install of nothing.
-    if curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh \
-         -o /tmp/wb-brew-install.sh 2>>"$BREW_LOG"; then
-      ( NONINTERACTIVE=1 /bin/bash /tmp/wb-brew-install.sh >>"$BREW_LOG" 2>&1 ) &
-      BREW_PID=$!
-      say "  → started (pid $BREW_PID), logging to $BREW_LOG"
-      say "    This is the download to work around, not wait on."
-    else
-      say "  ! could not download the Homebrew installer — the network is blocking it"
-      say "    Try a phone hotspot. See TROUBLESHOOTING.md."
-    fi
-  fi
-fi
-
-# ── 3. the repo ──────────────────────────────────────────────────────────────
-# Tarball, not clone: git does not exist yet. See the tool budget above.
-
-step "3/6  wb-setup"
-HERE=""
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]:-/nonexistent}" ]; then
-  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-fi
-
+step "2/6  wb-setup"
 if [ -n "$HERE" ] && [ -f "$HERE/Brewfile" ]; then
   ROOT="$HERE"
   say "  = running from the repo at $ROOT"
@@ -214,6 +203,178 @@ else
     say "  ✗ could not fetch $TARBALL"
     say "    The repo is public; this is a network failure or a renamed branch."
     exit 1
+  fi
+fi
+
+if [ ! -f "$ROOT/lib/bootstrap-homebrew.sh" ]; then
+  say "  ✗ Homebrew health guard is missing from $ROOT."
+  say "    Refusing to inspect or repair /opt/homebrew without it."
+  exit 1
+fi
+# shellcheck source=lib/bootstrap-homebrew.sh
+. "$ROOT/lib/bootstrap-homebrew.sh"
+
+ensure_developer_tools() {
+  local waited=0 next_notice=60
+  wb_hb_clt_probe
+  [ "$WB_HB_CLT_READY" = 1 ] && return 0
+
+  if [ "$WB_HB_CLT_STATE" = "installed_not_selected" ]; then
+    bootstrap_status needs_developer_tools_selection
+    say "  ! Apple Command Line Tools exist but are not selected after the OS upgrade."
+    say "    Wideband will not change the system developer directory with sudo."
+    say "    The intended user must personally review and run:"
+    say ""
+    say "      sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools"
+    say ""
+    say "    Then reopen Wideband Setup."
+    return 1
+  fi
+
+  bootstrap_status needs_developer_tools
+  say "  Apple Command Line Tools are missing. This is not the full Xcode app."
+  say "  macOS will open its installer; select Install and accept Apple's terms."
+  say "  The request message alone does not mean the download has started."
+  /usr/bin/xcode-select --install >>"$BREW_LOG" 2>&1 || true
+  say "  … waiting for Apple Command Line Tools; Wideband checks automatically."
+  while [ "$waited" -lt "$CLT_WAIT_SECONDS" ]; do
+    /bin/sleep "$CLT_POLL_SECONDS"
+    waited=$((waited + CLT_POLL_SECONDS))
+    wb_hb_clt_probe
+    if [ "$WB_HB_CLT_READY" = 1 ]; then
+      say "  ✓ Apple Command Line Tools and developer Git are ready"
+      return 0
+    fi
+    if [ "$waited" -ge "$next_notice" ]; then
+      say "  … still waiting for the Apple installer (${waited}s); do not close Terminal"
+      next_notice=$((next_notice + 60))
+    fi
+  done
+  say "  ! Apple Command Line Tools did not become ready before the wait expired."
+  say "    Reopen Wideband Setup after the Apple installation finishes."
+  return 1
+}
+
+prepare_brew_log() {
+  local log_uid=""
+  if [ -L "$BREW_LOG" ] || { [ -e "$BREW_LOG" ] && [ ! -f "$BREW_LOG" ]; }; then
+    say "  ✗ refusing unsafe Homebrew log target: $BREW_LOG"
+    return 1
+  fi
+  if [ -e "$BREW_LOG" ]; then
+    log_uid="$(/usr/bin/stat -f '%u' "$BREW_LOG" 2>/dev/null)"
+    if [ "$log_uid" != "$WB_HB_UID" ]; then
+      say "  ✗ refusing Homebrew log owned by another user: $BREW_LOG"
+      return 1
+    fi
+  fi
+  ( umask 077; : > "$BREW_LOG" ) || return 1
+  /bin/chmod 600 "$BREW_LOG" 2>/dev/null || return 1
+}
+
+# ── 3. Homebrew + Command Line Tools ────────────────────────────────────────
+# A binary at /opt/homebrew/bin/brew is not enough. Major macOS upgrades can
+# leave the prefix in place while removing/deselecting CLT or changing the
+# ownership context. Inspect identity, prefix and Git separately before brew.
+
+step "3/6  Homebrew + Command Line Tools (background)"
+wb_hb_identity_probe
+wb_hb_clt_probe
+wb_hb_prefix_probe /opt/homebrew
+wb_hb_print_report
+
+if [ "$DO_BREW" = "0" ]; then
+  say "  ~ skipped (--no-brew)"
+elif [ "$WB_HB_IDENTITY_SAFE" != 1 ]; then
+  BREW_BLOCK_REASON="identity"
+  bootstrap_status needs_attention
+  say "  ✗ cannot prove the intended install user owns HOME; refusing Homebrew changes"
+  DO_BREW=0
+else
+  PREFIX_REPAIR_REQUIRED=0
+  case "$WB_HB_PREFIX_STATE" in
+    absent|healthy) ;;
+    wrong_owner|not_writable)
+      if wb_hb_repair_available; then
+        PREFIX_REPAIR_REQUIRED=1
+      else
+        BREW_BLOCK_REASON="unsafe_prefix"
+        bootstrap_status needs_homebrew_ownership
+        say "  ✗ /opt/homebrew is not healthy, but the intended repair user is not proven."
+        say "    No chown command will be suggested. An operator must review the report above."
+        DO_BREW=0
+      fi
+      ;;
+    *)
+      BREW_BLOCK_REASON="unsafe_prefix"
+      bootstrap_status needs_homebrew_ownership
+      say "  ✗ refusing an unrecognized or redirected /opt/homebrew target ($WB_HB_PREFIX_STATE)"
+      DO_BREW=0
+      ;;
+  esac
+
+  if [ "$DO_BREW" = 1 ] && ! prepare_brew_log; then
+    BREW_BLOCK_REASON="unsafe_log"
+    bootstrap_status needs_attention
+    DO_BREW=0
+  fi
+
+  if [ "$DO_BREW" = 1 ] && ! ensure_developer_tools; then
+    if [ "$WB_HB_CLT_STATE" = "installed_not_selected" ]; then
+      BREW_BLOCK_REASON="developer_tools_selection"
+    else
+      BREW_BLOCK_REASON="developer_tools"
+    fi
+    DO_BREW=0
+  fi
+
+  if [ "$DO_BREW" = 1 ] && [ "$PREFIX_REPAIR_REQUIRED" = 1 ]; then
+    BREW_BLOCK_REASON="ownership"
+    bootstrap_status needs_homebrew_ownership
+    say "  ✗ Homebrew belongs to another ownership context or is not writable."
+    wb_hb_print_repair
+    DO_BREW=0
+  fi
+fi
+
+if [ "$DO_BREW" = 1 ] && [ -x /opt/homebrew/bin/brew ]; then
+  BREW_USABLE=1
+  say "  = existing Homebrew passed identity, prefix, and developer-Git checks"
+elif [ "$DO_BREW" = 1 ]; then
+  # Homebrew needs sudo. A detached job has no terminal, so it cannot prompt
+  # for the password — prime the credential in the foreground, then keep it
+  # warm while the official installer runs detached.
+  bootstrap_status needs_admin_password
+  say "  macOS will ask for your password once — Homebrew needs it."
+  if sudo -v; then
+    bootstrap_status installing_tools
+    ( while true; do sudo -n true 2>/dev/null; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) &
+    SUDO_KEEPALIVE=$!
+  else
+    bootstrap_status needs_attention
+    BREW_BLOCK_REASON="sudo"
+    say "  ! no sudo — Homebrew cannot install. Everything else still runs."
+    DO_BREW=0
+  fi
+
+  if [ "$DO_BREW" = "1" ]; then
+    # Download to a FILE first. Piped straight into bash, a 404 or a blocked
+    # network yields an empty string, `bash -c ""` exits 0, and the run reports
+    # a successful install of nothing.
+    BREW_INSTALLER="$(/usr/bin/mktemp "$SETUP_STATE/homebrew-install.XXXXXX")" || BREW_INSTALLER=""
+    if [ -n "$BREW_INSTALLER" ] \
+       && /bin/chmod 600 "$BREW_INSTALLER" \
+       && curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh \
+         -o "$BREW_INSTALLER" 2>>"$BREW_LOG"; then
+      ( NONINTERACTIVE=1 /bin/bash "$BREW_INSTALLER" >>"$BREW_LOG" 2>&1 ) &
+      BREW_PID=$!
+      say "  → started (pid $BREW_PID), logging to $BREW_LOG"
+      say "    This is the download to work around, not wait on."
+    else
+      BREW_BLOCK_REASON="network"
+      say "  ! could not download the Homebrew installer — the network is blocking it"
+      say "    Try a phone hotspot. See TROUBLESHOOTING.md."
+    fi
   fi
 fi
 
@@ -495,17 +656,26 @@ if [ -n "$BREW_PID" ]; then
   # nothing, which is exactly how a machine reached the end of this script with
   # "✓ Homebrew installed" on screen and no brew on disk.
   if [ -x /opt/homebrew/bin/brew ]; then
-    say "  ✓ Homebrew installed"
+    wb_hb_prefix_probe /opt/homebrew
+    if [ "$WB_HB_PREFIX_STATE" = "healthy" ]; then
+      BREW_USABLE=1
+      say "  ✓ Homebrew installed and passed the prefix health check"
+    else
+      BREW_BLOCK_REASON="homebrew_install"
+      say "  ! Homebrew appeared but failed its prefix health check ($WB_HB_PREFIX_STATE)"
+    fi
   else
+    BREW_BLOCK_REASON="homebrew_install"
     say "  ! Homebrew did NOT install (installer exited $brew_rc) — see $BREW_LOG"
     say "    Run it in the foreground so it can prompt for your password:"
     say "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
   fi
 fi
+[ -n "$BREW_INSTALLER" ] && /bin/rm -f "$BREW_INSTALLER"
 [ -n "${SUDO_KEEPALIVE:-}" ] && kill "$SUDO_KEEPALIVE" 2>/dev/null
 
 BREW_BIN=""
-[ -x /opt/homebrew/bin/brew ] && BREW_BIN=/opt/homebrew/bin/brew
+[ "$BREW_USABLE" = 1 ] && [ -x /opt/homebrew/bin/brew ] && BREW_BIN=/opt/homebrew/bin/brew
 if [ -n "$BREW_BIN" ]; then
   eval "$("$BREW_BIN" shellenv)"
   if ! grep -qs 'brew shellenv' "$HOME/.zprofile" 2>/dev/null; then
@@ -517,6 +687,7 @@ if [ -n "$BREW_BIN" ]; then
     if brew bundle --file="$ROOT/Brewfile" >>"$BREW_LOG" 2>&1; then
       say "  ✓ core CLIs installed"
     else
+      BREW_BLOCK_REASON="brew_bundle"
       say "  ! brew bundle had failures — see $BREW_LOG"
     fi
   fi
@@ -543,14 +714,23 @@ if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; th
     fi
   else
     step "Claude Code — not installed"
-    say "  No Homebrew to fall back to. On a working network, either of:"
+    say "  No healthy Homebrew to fall back to. After resolving the preflight, either of:"
     say "    curl -fsSL https://claude.ai/install.sh | bash"
     say "    brew install --cask claude-code"
   fi
 fi
 
 # ── handoff ──────────────────────────────────────────────────────────────────
-if [ -f "$VARS" ] \
+if [ "$BREW_BLOCK_REASON" = "ownership" ] \
+  || [ "$BREW_BLOCK_REASON" = "unsafe_prefix" ]; then
+  bootstrap_status needs_homebrew_ownership
+elif [ "$BREW_BLOCK_REASON" = "developer_tools" ]; then
+  bootstrap_status needs_developer_tools
+elif [ "$BREW_BLOCK_REASON" = "developer_tools_selection" ]; then
+  bootstrap_status needs_developer_tools_selection
+elif [ -n "$BREW_BLOCK_REASON" ]; then
+  bootstrap_status needs_attention
+elif [ -f "$VARS" ] \
    && [ -x /opt/homebrew/bin/git ] \
    && [ -x /opt/homebrew/bin/jq ] \
    && [ -x /opt/homebrew/bin/tmux ]; then

@@ -6,7 +6,7 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.5.0. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
+**Current release:** 0.5.1. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and
 proven E2E behavior. [CHANGELOG.md](CHANGELOG.md) records what changed by
 release; [AGENTS.md](AGENTS.md) carries the non-negotiable context for future
@@ -147,9 +147,13 @@ does before you run it.
    macOS 13, or the target directory sits inside a TCC-protected folder.
 2. **Installs Claude Code** — `claude.ai/install.sh`, the official
    installer. Adds `~/.local/bin` to your PATH in `.zshrc`.
-3. **Starts Homebrew in the background**, logging to
-   `/tmp/wb-bootstrap-brew.log`. Nothing after this waits on it.
-4. **Downloads this repo** to `~/srv/wb-setup` as a tarball.
+3. **Downloads this repo** to `~/srv/wb-setup` as a tarball so the versioned
+   Homebrew health guard is available before the package manager is touched.
+4. **Verifies and starts Homebrew in the background**, logging to
+   `/tmp/wb-bootstrap-brew.log`. It separately proves the intended user,
+   `/opt/homebrew` ownership and writability, PATH, architecture, and Apple
+   Command Line Tools/Git. A partial post-upgrade prefix is stopped for review
+   instead of being accepted merely because `brew` exists.
 5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
    package preloads the approved values; the generic client package asks six
    plain-language questions in native macOS popups. If that file already
@@ -162,9 +166,17 @@ does before you run it.
 8. **Runs `brew bundle`** against the `Brewfile` in this repo.
 9. **Opens Wideband Setup** on localhost unless `--no-ui` was requested.
 
-It writes nothing outside `$HOME`, asks for no passwords, and sends
-nothing anywhere. The Homebrew installer it invokes will ask for `sudo`
-on its own — that is Homebrew, not this script.
+The Wideband payload stays under `$HOME`, asks for no passwords, and sends
+nothing anywhere. Apple Command Line Tools and Homebrew write to their own
+system-managed locations only after visible client approval. Wideband never
+runs an ownership repair automatically; any verified `/opt/homebrew` repair is
+printed for the client to review and run personally.
+
+For a read-only post-upgrade diagnosis:
+
+```bash
+bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew
+```
 
 To watch before committing: `--no-brew --no-claude` does everything
 except the two installs.
@@ -238,6 +250,7 @@ bin/               tm, tm-standard → copied to ~/bin
 dotfiles/          byte-identical artifacts: statusline, shell.zsh
 templates/         __TOKEN__ files rendered by install.sh
 loops/             LaunchAgent jobs — cost-watch, tmux-boot, healthcheck
+lib/               bare-Mac-safe Homebrew and developer-tools health guard
 interview/         judgment-layer status and future interview designs
 ```
 

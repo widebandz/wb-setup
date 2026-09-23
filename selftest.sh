@@ -28,9 +28,9 @@ head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 echo "▩ wb-setup selftest — $HERE"
 
 # ── 1. bare-Mac tool budget ──────────────────────────────────────────────────
-# Everything before the Homebrew step may use only: bash curl tar sed awk grep
-# plus shell builtins. A bare macOS has no git and no python3 — those paths are
-# CLT stubs that pop a dialog and block.
+# Everything before the Homebrew step may use macOS system binaries but no
+# package-managed executable. A bare macOS has no usable git or python3 — those
+# paths can be CLT stubs that pop a dialog and block.
 #
 # Strings and comments are stripped first, and only COMMAND POSITION counts:
 # `--no-brew` as a flag name and `command -v brew` as a guard are both fine,
@@ -38,7 +38,7 @@ echo "▩ wb-setup selftest — $HERE"
 head_ "1 · bare-Mac tool budget"
 FORBIDDEN='git|python3|python|jq|node|npm|brew|gh|tmux|sqlite3|launchctl|tailscale|code'
 hits="$(
-  awk '/^# ── 2\. Homebrew/{exit} {print}' "$HERE/bootstrap.sh" \
+  awk '/^# ── 3\. Homebrew/{exit} {print}' "$HERE/bootstrap.sh" \
   | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g' -e 's/#.*$//' \
   | grep -nE "(^|[;&|(]|\\\$\()[[:space:]]*($FORBIDDEN)[[:space:]]" \
   | grep -vE 'command[[:space:]]+-v'
@@ -48,6 +48,83 @@ if [ -z "$hits" ]; then
 else
   no "out-of-budget invocations before Homebrew:"
   printf '      %s\n' "$hits"
+fi
+
+if bash - "$HERE/lib/bootstrap-homebrew.sh" <<'SH' >/dev/null 2>&1
+set -u
+. "$1"
+WB_HB_USER=clientuser
+WB_HB_PREFIX_MARKER=1
+WB_HB_PREFIX_OWNER=old-owner
+WB_HB_PREFIX_WRITABLE=0
+WB_HB_NONWRITABLE=/opt/homebrew
+WB_HB_MISMATCH_COUNT=1
+WB_HB_NONWRITABLE_DIR_COUNT=1
+wb_hb_classify_prefix
+[ "$WB_HB_PREFIX_STATE" = wrong_owner ]
+WB_HB_PREFIX_OWNER=clientuser
+WB_HB_MISMATCH_COUNT=0
+wb_hb_classify_prefix
+[ "$WB_HB_PREFIX_STATE" = not_writable ]
+WB_HB_PREFIX_WRITABLE=1
+WB_HB_NONWRITABLE=""
+WB_HB_NONWRITABLE_DIR_COUNT=0
+wb_hb_classify_prefix
+[ "$WB_HB_PREFIX_STATE" = healthy ]
+WB_HB_PREFIX_MARKER=0
+wb_hb_classify_prefix
+[ "$WB_HB_PREFIX_STATE" = unrecognized ]
+SH
+then
+  ok "Homebrew guard distinguishes stale ownership, permissions, and unknown prefixes"
+else
+  no "Homebrew guard cannot classify post-upgrade prefix states"
+fi
+
+HB_FIXTURE="$(mktemp -d /tmp/wb-homebrew-selftest.XXXXXX)"
+/bin/mkdir -p "$HB_FIXTURE/prefix/bin" "$HB_FIXTURE/prefix/Library/Homebrew"
+printf '#!/bin/sh\nexit 0\n' > "$HB_FIXTURE/prefix/bin/brew"
+: > "$HB_FIXTURE/prefix/Library/Homebrew/brew.sh"
+/bin/chmod 755 "$HB_FIXTURE/prefix/bin/brew"
+/bin/chmod 555 "$HB_FIXTURE/prefix"
+if bash - "$HERE/lib/bootstrap-homebrew.sh" "$HB_FIXTURE" <<'SH' >/dev/null 2>&1
+set -u
+. "$1"
+fixture="$2"
+WB_HB_USER="$(id -un)"
+WB_HB_UID="$(id -u)"
+WB_HB_IDENTITY_SAFE=1
+WB_HB_ARCH=arm64
+WB_HB_ADMIN=1
+WB_HB_CONSOLE_USER="$WB_HB_USER"
+wb_hb_prefix_probe "$fixture/prefix"
+[ "$WB_HB_PREFIX_STATE" = not_writable ]
+! wb_hb_repair_available
+chmod 755 "$fixture/prefix"
+ln -s "$fixture/prefix" "$fixture/redirected-prefix"
+wb_hb_prefix_probe "$fixture/redirected-prefix"
+[ "$WB_HB_PREFIX_STATE" = unsafe_symlink ]
+! wb_hb_repair_available
+SH
+then
+  ok "Homebrew guard refuses nonstandard and symlinked repair targets"
+else
+  no "Homebrew guard accepted an unsafe repair target"
+fi
+/bin/chmod -R u+rwX "$HB_FIXTURE" 2>/dev/null || true
+/usr/bin/find "$HB_FIXTURE" -depth -delete 2>/dev/null || true
+
+if grep -q -- '--diagnose-homebrew' "$HERE/bootstrap.sh" \
+   && grep -q 'needs_developer_tools' "$HERE/bootstrap.sh" \
+   && grep -q 'needs_developer_tools_selection' "$HERE/bootstrap.sh" \
+   && grep -q 'needs_homebrew_ownership' "$HERE/bootstrap.sh" \
+   && grep -q '/usr/bin/find /opt/homebrew -xdev ! -uid' "$HERE/lib/bootstrap-homebrew.sh" \
+   && grep -q '/usr/sbin/chown -h' "$HERE/lib/bootstrap-homebrew.sh" \
+   && grep -q '/usr/bin/find /opt/homebrew -xdev -type d -uid' "$HERE/lib/bootstrap-homebrew.sh" \
+   && ! grep -qE 'chown[[:space:]]+-R.*(/opt/homebrew|\$WB_HB_PREFIX)' "$HERE/bootstrap.sh" "$HERE/lib/bootstrap-homebrew.sh"; then
+  ok "Homebrew recovery is diagnostic-first and never runs a broad recursive chown"
+else
+  no "Homebrew recovery can mutate an unverified or overly broad target"
 fi
 
 # ── 2. status line fidelity ──────────────────────────────────────────────────
@@ -272,6 +349,12 @@ with tempfile.TemporaryDirectory() as directory:
     original = module.bootstrap_is_ready
     module.bootstrap_is_ready = lambda: False
     assert module.bootstrap_status(store.directory) == "needs_admin_password"
+    module.write_private(store.directory / "bootstrap-status", "needs_developer_tools\n")
+    assert module.bootstrap_status(store.directory) == "needs_developer_tools"
+    module.write_private(store.directory / "bootstrap-status", "needs_developer_tools_selection\n")
+    assert module.bootstrap_status(store.directory) == "needs_developer_tools_selection"
+    module.write_private(store.directory / "bootstrap-status", "needs_homebrew_ownership\n")
+    assert module.bootstrap_status(store.directory) == "needs_homebrew_ownership"
     module.bootstrap_is_ready = original
 PY
   then
@@ -538,6 +621,7 @@ PY
      && grep -q 'function evidenceLabel' "$HERE/installer/app.js" \
      && grep -q 'function pollState' "$HERE/installer/app.js" \
      && grep -q 'needs_admin_password' "$HERE/installer/app.js" \
+     && grep -q 'needs_developer_tools_selection' "$HERE/installer/app.js" \
      && grep -q 'setView(viewMode, false)' "$HERE/installer/app.js"; then
     ok "client UI distinguishes proof sources, polls live state, and explains reconnection"
   else
@@ -766,7 +850,8 @@ fi
 # ── 10. syntax ───────────────────────────────────────────────────────────────
 head_ "10 · syntax"
 for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh setup.sh \
-         packaging/app-launcher packaging/build-app.sh packaging/run-setup.command; do
+         packaging/app-launcher packaging/build-app.sh packaging/run-setup.command \
+         lib/bootstrap-homebrew.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"
 done

@@ -115,6 +115,59 @@ On an established machine, reopening Wideband Setup should run quietly. If the
 readiness screen already says the foundation is installed but every launch
 opens Terminal, export a support bundle for the operator.
 
+## Homebrew is not writable or says Git is unavailable after an OS upgrade
+
+**Symptom:** the log reports that `/opt/homebrew` is not writable and may
+suggest a recursive `chown`; later Homebrew downloads API data but fails with
+“Git is unavailable.”
+
+**Class:** identity plus bare-machine assumptions. A major macOS upgrade can
+leave the Homebrew prefix on disk while removing or deselecting Apple Command
+Line Tools. The old prefix may also belong to a different setup user. These are
+two independent failures; the existence of `brew` proves neither is healthy.
+
+Run the read-only guard from the downloaded repository:
+
+```bash
+bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew
+```
+
+It reports the invoking user and UID, home owner, GUI console user,
+architecture, PATH, selected developer directory and Git, exact prefix owner
+and mode, and the number of objects owned by another UID. It does not use
+`sudo` or change the machine.
+
+Do not copy a generic `sudo chown -R <name> /opt/homebrew` from an error. The
+bootstrap prints a repair only when all of these are true:
+
+- the machine is arm64 and the target is exactly `/opt/homebrew`;
+- the target is a real directory, not a symlink, and contains Homebrew markers;
+- the invoking user owns their unsymlinked home and is an administrator; and
+- the GUI console user is the same intended user.
+
+The printed repair uses `find -xdev`, changes ownership only on objects whose
+UID differs, uses `chown -h` so symlinks are not followed, and restores owner
+access only on directories already owned by that UID. It does not make every
+file writable. Wideband never runs it. The client must personally review and
+execute the two printed commands, then reopen Wideband Setup.
+
+If the report says `developer Git installed_not_selected`, the files already
+exist and the client may personally run the exact selection shown by the
+installer:
+
+```bash
+sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools
+```
+
+If it says `developer Git missing`, approve Apple's Command Line Tools dialog.
+That package is not the full Xcode application. The message saying an install
+was requested is not proof the download started; select **Install** and leave
+Terminal open while Wideband waits for the Git executable to appear.
+
+**Proof:** a second diagnostic reports `developer Git ready`, `prefix state
+healthy`, the intended user and console user agree, and reopening Wideband
+Setup advances the Core tools row without another ownership error.
+
 ## A permission was approved but remains red
 
 Confirm the selected row names **Wideband Agent**, not Terminal, Python, or

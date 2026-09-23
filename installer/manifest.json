@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "0.5.0",
+  "release": "0.5.1",
   "product": "Wideband Setup",
   "description": "A guided, verified build for a custom Wideband operator machine.",
   "stages": [
@@ -106,7 +106,7 @@
           "actor": "operator",
           "type": "automatic",
           "command": "curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash",
-          "note": "The guided installer is available after bootstrap because its Python runtime arrives in the Brewfile."
+          "note": "The packaged guide opens immediately and shows live bootstrap progress before Homebrew or Apple Command Line Tools are ready."
         },
         {
           "id": "identify.review-vars",

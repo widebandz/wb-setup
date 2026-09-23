@@ -8,7 +8,7 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Release: **0.5.0**.
+- Release: **0.5.1**.
 - Functional release checkpoint: `018f829` (`ship embedded Wideband setup
   0.5`).
 - Platform: Apple silicon, macOS 13 or newer.
@@ -104,6 +104,25 @@ engine. Terminal appears behind it only because Homebrew requires one visible
 administrator-password prompt. After the core foundation exists, later app
 launches start the engine quietly in the background and require no browser or
 Terminal knowledge.
+
+Before touching Homebrew, `lib/bootstrap-homebrew.sh` independently proves the
+invoking user, UID, home owner, console user, administrator membership,
+architecture, PATH, selected Apple developer directory, developer Git, and the
+ownership/writability of the exact `/opt/homebrew` prefix. This is required for
+machines upgraded from an older macOS release: the prefix can survive while
+Command Line Tools is removed or deselected, and a previous ownership context
+can make `brew` executable but unusable.
+
+The bootstrap never runs an ownership repair. It can print a scoped repair only
+when `/opt/homebrew` is a real, recognized Homebrew directory on arm64; the
+current user owns their unsymlinked home; the GUI console user matches; and the
+user is an administrator. The command changes only mismatched objects on the
+same filesystem and does not follow symlinks. The client must personally review
+and run it, then reopen Wideband Setup so the entire preflight runs again. The
+permission repair is directory-only; it does not make the entire Homebrew tree
+writable file by file. A blocked health state is authoritative even when stale
+tool executables remain in `bin`; those files must never turn the final state
+back into a false `ready` or be invoked as a fallback.
 
 ### Private setup engine
 
@@ -217,6 +236,9 @@ approval, operator interview, and real-world phone/message proofs.
 - Never add arbitrary command execution to the API.
 - Keep state, interview answers, backups, records, and bundles private.
 - Never collect passwords or two-factor codes.
+- Never treat an executable `brew` file as proof that Homebrew is healthy.
+- Never run recursive ownership changes automatically; prove the user and
+  prefix first, print the scoped command, and require personal approval.
 - Never put credentials, client profile answers, `.sop-vars` values, raw logs,
   or common contact identifiers in the support bundle.
 - Preserve existing identity and client-owned work during install and repair.
@@ -341,6 +363,28 @@ The reference E2E artifact was build `0.5.0-20260923054220`, SHA-256
 `c8147b3597a5d9c9241fd14f4fff70fe714748269a23bf7ff92b3b3cceec9d97`.
 Later documentation-only package builds should cite their own generated hash.
 
+### 0.5.1 post-upgrade bootstrap validation
+
+The 2026-09-23 recovery change was tested without altering the established host
+configuration:
+
+- an isolated bootstrap with a temporary `HOME` reached `ready`, produced the
+  expected agent artifacts, and kept `.sop-vars` at mode `0600`;
+- a read-only real-host diagnostic proved the user/home/console identity,
+  arm64 architecture, selected developer Git, PATH, and a healthy Homebrew
+  prefix;
+- synthetic recognized-but-non-writable and symlinked prefixes were classified
+  correctly, while both nonstandard repair targets were denied;
+- a fresh authenticated localhost/browser run completed the client and operator
+  journey and rendered distinct, actionable states for missing developer tools,
+  installed-but-not-selected tools, and Homebrew ownership review; and
+- the source self-test passed 59 checks with zero failures.
+
+These tests prove the branching and safety behavior. They do not substitute for
+the read-only diagnostic from the affected client Mac, whose actual UID,
+console user, prefix ownership, and developer-tools state must still be
+observed before that client runs any repair.
+
 ## Lessons that must not regress
 
 1. A native app must follow the exact packaged build ID, not the first live
@@ -359,6 +403,10 @@ Later documentation-only package builds should cite their own generated hash.
    real client-experience cost until notarization.
 8. The physical client gates are part of the product design, not missing
    automation. The guide should make ownership and next action unmistakable.
+9. A major macOS upgrade can leave `/opt/homebrew` behind while invalidating
+   Command Line Tools/Git or its ownership context. Bootstrap must diagnose the
+   three layers independently and stop safely instead of calling that state
+   “already installed.”
 
 ## Documentation map
 

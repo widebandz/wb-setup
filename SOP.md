@@ -878,6 +878,11 @@ reboot. Eight durable lessons came from that run:
 8. **Unsigned is a testing state.** The Open Anyway handoff is documented and
    works, but Developer ID signing and notarization remain the production trust
    boundary.
+9. **An OS upgrade creates a third Homebrew state.** The machine is neither
+   clean nor ready when `/opt/homebrew` survives but Apple Command Line Tools,
+   Git selection, or prefix ownership does not. Release 0.5.1 diagnoses the
+   actual user, prefix and developer tools independently, never runs `chown`
+   itself, and resumes only after the owner approves a verified scoped repair.
 
 The exact scenarios and release commands are recorded in
 [BUILD-MEMORY.md](BUILD-MEMORY.md), not duplicated here.
