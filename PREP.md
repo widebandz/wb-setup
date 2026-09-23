@@ -10,6 +10,28 @@ difference between a morning and an afternoon.
 
 ---
 
+## What you will receive
+
+Wideband sends one disk image containing the branded **Wideband Setup** app,
+`READ ME FIRST.txt`, and a Privacy & Security shortcut. You do not need a
+separate localhost link or technical checklist.
+
+Open the app and follow one action at a time. It saves progress and installs a
+resumable copy in your user Applications folder. If you close it or restart the
+Mac, reopen **Applications → Wideband Setup**.
+
+An unsigned pilot requires a one-time **Privacy & Security → Open Anyway**
+approval. A signed and notarized production build opens normally. On a brand
+new Mac, Terminal may appear behind the branded guide for Homebrew's one
+administrator-password prompt. Your typing is intentionally invisible in that
+prompt; Wideband never receives the password.
+
+The guide labels every step as **Wideband installs**, **You approve**, or **We
+customize together**. macOS permission checks update automatically after you
+approve them.
+
+---
+
 ## Four answers we need
 
 Reply with these and the machine is configured from them. They are the
@@ -107,10 +129,16 @@ not us.
 
 ## What happens on the day
 
-You will spend most of your time signing in and clicking through
-permission dialogs while the machine downloads in the background. Neither
-of us waits on the other — that is deliberate, and it is why this sheet
-exists.
+Wideband Setup performs the repeatable machine work while you sign in and
+approve the small number of macOS permission dialogs that must belong to you.
+Approve Accessibility, Screen Recording, Full Disk Access, and Messages
+Automation only for the exact app named **Wideband Agent**. Remote Login and
+Screen Sharing are separate Apple settings and will be configured only for the
+intended administrator.
+
+The readiness screen distinguishes software that the Mac verified from account
+or real-world outcomes that only you can confirm. Neither of us waits on the
+other — that is deliberate, and it is why this sheet exists.
 
 By the end, the machine texts you a daily brief, you can reach it from
 your phone, and it can build and deploy your work.

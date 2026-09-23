@@ -31,6 +31,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 # is last and catches everything, because a symptom picker with no escape
 # hatch sends people away rather than to the diagnostic.
 CARDS = [
+    ("Wideband Setup won't open or says reconnect",
+     "Your progress is saved on this Mac. An unsigned pilot may need one "
+     "Privacy & Security → Open Anyway approval; a disconnected old page "
+     "needs the installed app to supply its current private connection.",
+     'open "$HOME/Applications/Wideband Setup.app"',
+     "Do not type a localhost address or share connection.json. If the app "
+     "still cannot connect, ask Wideband for help with Part 0 below."),
+
     ("My morning text didn't arrive",
      "The machine sends a usage summary each morning. If it stopped, the job "
      "behind it is either failing or never fired — those look identical from "

@@ -22,6 +22,123 @@ a new one.
 
 ---
 
+# Part 0 — Wideband Setup app and private guide
+
+Use this section when the installer itself will not open or the embedded guide
+disconnects. Once the guide is healthy, use the check ID from its readiness
+screen and continue in Part 2.
+
+## The unsigned pilot is blocked by Gatekeeper
+
+**Symptom:** macOS says Wideband Setup was not opened or cannot verify the
+developer.
+
+The pilot DMG is ad-hoc signed but not notarized. This is expected only when the
+filename contains `unsigned`.
+
+1. Select **Done**, not Move to Trash.
+2. Open **Open Privacy & Security** from the DMG.
+3. In System Settings, scroll to Security and select **Open Anyway** beside
+   Wideband Setup.
+4. Confirm **Open Anyway** and enter the Mac administrator password into the
+   macOS prompt.
+
+**Proof:** Wideband Setup reaches its branded welcome window. A production DMG
+must be Developer ID signed, notarized, and stapled; it should not require this
+exception.
+
+## The app stays on “Preparing your private setup guide”
+
+Wait up to a minute on a new Mac. The bundled engine can open before Homebrew,
+Python, or Command Line Tools exists, but the app still has to copy its private
+payload and start the loopback service.
+
+If it remains there, quit the app and open the installed copy:
+
+```bash
+open "$HOME/Applications/Wideband Setup.app"
+```
+
+An operator may inspect the local log on the Mac:
+
+```bash
+tail -n 80 ~/.wideband/setup/engine.log
+```
+
+Do not paste the raw log into a support channel. Use **Setup tools → Export
+support bundle** when the UI is available; that export is deliberately
+redacted.
+
+**Proof:** the header says **Connected on this Mac** and the next saved action
+appears.
+
+## The page says “Reconnect needed”
+
+Progress is already saved. Do not refresh an old localhost tab or type a port
+manually. Reopen:
+
+```bash
+open "$HOME/Applications/Wideband Setup.app"
+```
+
+The native shell reads the current private connection, supplies the current
+token, and resumes the saved step. An old browser tab cannot safely invent a
+replacement token.
+
+**Proof:** the reconnect banner disappears and Live Readiness updates again.
+
+## The guide is not using port 8803
+
+This is normal when another local process already owns 8803. Wideband Setup
+selects a free loopback port and records the real one. Inspect only the
+non-secret fields:
+
+```bash
+plutil -extract port raw -o - ~/.wideband/setup/connection.json
+plutil -extract build_id raw -o - ~/.wideband/setup/connection.json
+```
+
+Never print or share the `token` field. Do not kill an unknown process merely
+to reclaim 8803.
+
+**Proof:** the app reports the selected port and remains connected. Reopening
+after 8803 becomes free may return to the preferred port.
+
+## Terminal appeared behind the app
+
+On a genuinely bare Mac, this is the one intentional exception to the quiet
+embedded experience. Homebrew requires an interactive administrator-password
+prompt. Enter the password in Terminal; no dots or characters appear while
+typing. Leave that window open until the guide says the foundation is ready.
+
+On an established machine, reopening Wideband Setup should run quietly. If the
+readiness screen already says the foundation is installed but every launch
+opens Terminal, export a support bundle for the operator.
+
+## A permission was approved but remains red
+
+Confirm the selected row names **Wideband Agent**, not Terminal, Python, or
+Wideband Setup. Close any old copy of Wideband Agent if macOS asks, then return
+to the guide. The focused check refreshes automatically while the permission
+step is open.
+
+If the grant remains red after two refresh cycles, use **Setup tools → Check
+this Mac** and follow the matching `P0-*` section in Part 2.
+
+## Repair completed but setup is not “done”
+
+That is a valid state. **Repair Wideband** reconciles deterministic software;
+it cannot approve macOS privacy prompts, sign into accounts, answer the
+operator interview, or prove a message arrived on the client's phone.
+
+Read the ownership label on the next action:
+
+- **Machine verified** means the app observed the object or permission.
+- **You confirmed** means the client owns the account or real-world outcome.
+- **We customize together** means the result requires a Wideband handoff.
+
+---
+
 # Part 1 — the six classes
 
 ## 1. Grant-path

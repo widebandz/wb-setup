@@ -1,5 +1,8 @@
 WIDEBAND SETUP
 
+This disk image is the complete client handoff. You do not need a separate
+localhost link or technical setup guide.
+
 1. Open the disk image.
 2. Either drag “Wideband Setup” into Applications or open it directly. When it
    is opened directly, it leaves a resumable copy in your user Applications
@@ -54,6 +57,9 @@ WIDEBAND SETUP
    redacted support ZIP. The ZIP excludes credentials, two-factor codes,
    profile answers, .sop-vars values, and raw logs. Recoverable deactivation is
    also available behind an explicit typed confirmation.
+16. If the app is closed or the Mac restarts, open “Wideband Setup” from your
+    user Applications folder. Do not reuse an old localhost tab; the app safely
+    supplies the current private connection and resumes the saved step.
 
 Requirements
 • Apple silicon Mac

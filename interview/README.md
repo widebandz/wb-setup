@@ -1,7 +1,14 @@
 # interview/ — the judgment layer
 
-Not yet written. This directory holds the prompts for the parts of a build
-that have no correct default and therefore should not be a file.
+The first judgment workflow is now implemented in the guided installer. The
+operator interview lives in `installer/app.js` and `setup.py`, previews a
+human-readable profile, enforces the 200-line cap, and writes the approved
+result privately to `~/.claude/USER.md`. Existing profiles are backed up before
+replacement, and the answers remain in private installer state.
+
+This directory remains the design home for judgment workflows that do not yet
+have an implemented UI. See `BUILD-MEMORY.md` for the installer architecture
+and ownership boundaries.
 
 The split this repo runs on:
 
@@ -12,16 +19,18 @@ The split this repo runs on:
 | genuine judgment | **an interview** | here |
 | "did it work?" | assertions | `verify.sh` |
 
-Planned:
+Status:
 
-- **`operator.md`** — produces `~/.claude/USER.md` and the global
-  `CLAUDE.md`. Who the operator is, how they want to be worked with,
-  what they never want done without asking. Capped at 200 lines each.
+- **Operator profile — implemented.** Produces `~/.claude/USER.md`: who the
+  operator is, how they want to be worked with, and what must never happen
+  without approval. Preview and explicit apply remain separate actions.
 - **`sessions.md`** — produces the tmux session list and `tmux-boot.sh`.
   The rule is "one session per concern, never one per task"; which
   concerns a given operator has is not derivable, which is exactly why
-  this is an interview and not a file.
-- **`fleetdeck.md`** — the four values in fleetdeck's `config.json`.
+  this is an interview and not a file. Not yet implemented as a standalone
+  interview.
+- **`fleetdeck.md`** — the values in fleetdeck's `config.json`. Not yet
+  implemented as a standalone interview.
 
 The test for whether something belongs here: if two competent operators
 would correctly answer differently, it is judgment. If they would answer

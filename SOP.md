@@ -15,6 +15,21 @@ subscription (Claude Pro/Max, or Console API key).
 
 ---
 
+## Release implementation context
+
+This SOP defines the desired machine. [BUILD-MEMORY.md](BUILD-MEMORY.md)
+defines how the 0.5 installer delivers it: native shell, local authenticated
+engine, client/operator views, ownership boundaries, permission principal,
+packaging, recovery, security invariants, and the release E2E matrix.
+[CHANGELOG.md](CHANGELOG.md) is the release history.
+
+Future software work must update those files when it changes architecture,
+client responsibility, trust, persisted state, release procedure, or proven
+behavior. Client-day preparation lives in [PREP.md](PREP.md); the instructions
+embedded in the DMG live in `packaging/SHARE-README.txt`.
+
+---
+
 ## Start here
 
 One line, on a bare machine, before anything else:
@@ -834,6 +849,38 @@ have predicted, all now folded in above:
 None of these were caught by the structural verification, because the two
 steps that needed a genuinely bare machine were the two always run with
 `--no-brew --no-claude`. That is the honest limit of what testing proved.
+
+### What the 0.5 Apple Silicon VM taught
+
+The full installer was then tested from the shareable DMG through a real
+reboot. Eight durable lessons came from that run:
+
+1. **Follow the packaged build ID.** During an upgrade, the connection file may
+   briefly describe the old engine. The native shell must wait for its exact
+   packaged build and keep watching for connection changes.
+2. **Port 8803 is preferred, not promised.** A client should always open the
+   app. The authenticated connection record is the authority when another
+   process occupies the preferred port.
+3. **A permission needs real evidence.** Focused checks must inspect Wideband
+   Agent and update the guide automatically; a checkbox or client claim alone
+   is not machine proof.
+4. **Disconnects need a visible recovery path.** Saved progress plus “reopen
+   Wideband Setup from Applications” is actionable; a dead localhost page is
+   not.
+5. **Reboot is part of acceptance.** The setup engine does not need to become a
+   login item. The installed app must resume cleanly, privately, and without
+   reopening Safari or Terminal on a prepared Mac.
+6. **Support exports are a product surface.** The useful bundle is narrow,
+   private, and redacted; raw logs and the connection token stay local.
+7. **Repair success and client completion are different.** Reconciliation may
+   finish while privacy grants, sign-ins, and real-world proofs correctly
+   remain in the client's queue.
+8. **Unsigned is a testing state.** The Open Anyway handoff is documented and
+   works, but Developer ID signing and notarization remain the production trust
+   boundary.
+
+The exact scenarios and release commands are recorded in
+[BUILD-MEMORY.md](BUILD-MEMORY.md), not duplicated here.
 
 ---
 

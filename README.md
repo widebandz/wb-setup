@@ -6,6 +6,12 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
+**Current release:** 0.5.0. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
+for the complete architecture, security boundaries, release procedure, and
+proven E2E behavior. [CHANGELOG.md](CHANGELOG.md) records what changed by
+release; [AGENTS.md](AGENTS.md) carries the non-negotiable context for future
+software agents.
+
 When bootstrap finishes, it opens the resumable guided installer. If the guide
 was closed or the build is being resumed later, run:
 
@@ -98,6 +104,8 @@ popups; a personalized build seeds those approved values into `~/.sop-vars`
 once and skips those questions. An existing identity file is never overwritten.
 The profile contains client identity data—not credentials—and is embedded only
 in the intended client's app. Do not reuse one client's DMG for another client.
+Every package build also writes `dist/SHA256SUMS.txt`; compare the recipient's
+DMG against it before installation or VM testing.
 
 Because the pilot is not notarized, current macOS versions require one initial
 launch attempt followed by **System Settings → Privacy & Security → Open
@@ -213,20 +221,24 @@ TROUBLESHOOTING.md the six root-cause classes, every check ID, and day two
 help.html          GENERATED client page — plain-language + the full guide
 render-help.py     builds help.html; selftest fails if it is stale
 selftest.sh        invariants of this repo, not of the machine it built
+BUILD-MEMORY.md    durable architecture, decisions, security and E2E evidence
+CHANGELOG.md       release history and client-visible changes
+AGENTS.md          mandatory context and guardrails for software agents
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup
-checklist.html     106-step detailed checklist; open it directly, no server
+checklist.html     detailed reference checklist; guided app remains canonical
 setup.sh           opens the resumable local guide (browser fallback)
 setup.py           allowlisted runner, state, readiness, support and recovery APIs
 installer/         six-stage manifest and embedded web interface
 packaging/          branded app/DMG builder and client-profile renderer
+tests/              browser and end-to-end release checks
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
 bin/               tm, tm-standard → copied to ~/bin
 dotfiles/          byte-identical artifacts: statusline, shell.zsh
 templates/         __TOKEN__ files rendered by install.sh
 loops/             LaunchAgent jobs — cost-watch, tmux-boot, healthcheck
-interview/         the judgment layer (not yet written)
+interview/         judgment-layer status and future interview designs
 ```
 
 Loops carry no hardcoded identity. `cost-watch` reads `~/.sop-vars`;

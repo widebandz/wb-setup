@@ -231,6 +231,29 @@ PY
     no "manifest schema, IDs, or client-guide contract is invalid"
   fi
 
+  if python3 - "$MANIFEST" "$HERE" <<'PY' >/dev/null 2>&1
+import json, pathlib, sys
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+root = pathlib.Path(sys.argv[2])
+release = manifest["release"]
+memory = (root / "BUILD-MEMORY.md").read_text(encoding="utf-8")
+changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+readme = (root / "README.md").read_text(encoding="utf-8")
+agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+assert f"- Release: **{release}**." in memory
+assert "## Runtime architecture" in memory
+assert "## Security and privacy invariants" in memory
+assert "## Release and test procedure" in memory
+assert f"## {release} —" in changelog
+assert f"**Current release:** {release}." in readme
+assert "BUILD-MEMORY.md" in agents
+PY
+  then
+    ok "release documentation and durable agent memory match the manifest"
+  else
+    no "release documentation or durable agent memory is missing or stale"
+  fi
+
   if python3 - "$HERE/setup.py" <<'PY' >/dev/null 2>&1
 import importlib.util, pathlib, sys, tempfile
 source = pathlib.Path(sys.argv[1])
