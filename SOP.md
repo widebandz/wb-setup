@@ -8,7 +8,7 @@ Nothing below is hardcoded to one person or one company. Every
 identity-shaped value is a variable, set once in §Variables and
 referenced everywhere after.
 
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-23
 **Requirements:** Apple silicon Mac (M-series), macOS 13.0+, an AI
 subscription (Claude Pro/Max, or Console API key).
 **Time:** ~3 hours hands-on. Permissions and DNS waits are most of it.
@@ -44,15 +44,18 @@ Then:
 bash ~/srv/wb-setup/setup.sh
 ```
 
-That opens the guided installer on localhost. It keeps progress across a
-restart, rolls machine assertions into the relevant steps, runs only named
-installer actions, conducts the operator interview, and generates the build
-record. It does not collect passwords or replace the client at an account or
-macOS permission gate.
+That opens the private guided installer. The packaged build keeps the guide
+inside its branded app; this shell entry point remains the browser fallback. It
+keeps progress across a restart, rolls machine assertions into the relevant
+steps, runs only named installer actions, conducts the operator interview, and
+generates the build record. It does not collect passwords or replace the client
+at an account or macOS permission gate.
 
 The packaged app has two surfaces. **Client view** is the default: one branded
 popup at a time, with numbered instructions and buttons that open the exact
 macOS pane or provider page. Machine-owned reconciliation runs in parallel.
+Focused macOS checks run while each permission guide is open, so a grant turns
+green automatically without making the client run the full verifier.
 **Operator view** retains this complete phase model, verification output,
 deviations, and the build record. Client view treats phone, messaging, and the
 first scheduled brief as later proofs with Wideband rather than pretending a

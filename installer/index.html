@@ -46,6 +46,12 @@
         </div>
       </section>
 
+      <section class="responsibility-strip" aria-label="Who handles each part of setup">
+        <article><span>01</span><div><strong>Wideband installs</strong><p>Verified tools, services, repair, and machine checks.</p></div></article>
+        <article><span>02</span><div><strong>You approve</strong><p>macOS permissions, private sign-ins, and account ownership.</p></div></article>
+        <article><span>03</span><div><strong>We customize together</strong><p>Your working style, boundaries, priorities, and real-world proofs.</p></div></article>
+      </section>
+
       <section class="client-progress" aria-label="Your setup progress">
         <div class="client-progress-copy">
           <div><p class="overline">Your setup</p><strong id="client-progress-label">Loading…</strong></div>
@@ -82,7 +88,7 @@
           </ul>
           <div class="terminal-reminder">
             <span>⌘</span>
-            <p><strong>Leave Terminal open behind this window.</strong> It hosts this private setup page. If it closes, reopen Wideband Setup and your progress will return.</p>
+            <p><strong id="runtime-reminder-title">Keep Wideband Setup open.</strong> <span id="runtime-reminder-detail">The private engine runs only on this Mac and your progress is saved automatically.</span></p>
           </div>
         </aside>
       </div>
@@ -128,9 +134,18 @@
       <section class="client-complete" id="client-complete" hidden>
         <img src="/wideband-mark.png" alt="" class="complete-mark">
         <p class="overline">Your part is complete</p>
-        <h2>Wideband can take it from here.</h2>
-        <p>Your approvals are saved on this Mac. Keep it plugged in and online while Wideband finishes the custom agent layer and final verification.</p>
-        <button class="secondary" id="review-client-steps" type="button">Review completed steps</button>
+        <h2 id="completion-title">Wideband can take it from here.</h2>
+        <p id="completion-summary">Your approvals are saved on this Mac. Keep it plugged in and online while Wideband finishes the custom agent layer and final verification.</p>
+        <div class="completion-grid">
+          <div><span>Machine</span><strong id="completion-machine">Reading verification…</strong></div>
+          <div><span>Custom profile</span><strong id="completion-profile">Reading profile state…</strong></div>
+          <div><span>Handoff proofs</span><strong id="completion-handoff">Reading handoff state…</strong></div>
+        </div>
+        <div class="completion-actions">
+          <button class="primary" id="completion-record" type="button">Create setup record</button>
+          <button class="secondary" id="completion-tools" type="button">Check or repair</button>
+          <button class="quiet" id="review-client-steps" type="button">Review completed steps</button>
+        </div>
       </section>
     </main>
   </section>
@@ -186,7 +201,7 @@
       <p id="welcome-personalized">Your custom build is ready. The installer will do the machine work and pause only when macOS or an account needs you.</p>
       <div class="welcome-points">
         <div><span>01</span><p><strong>Follow the popup.</strong> Each step opens the exact place you need.</p></div>
-        <div><span>02</span><p><strong>Leave Terminal open.</strong> You can keep it behind this browser window; it is the local engine behind the guide.</p></div>
+        <div><span>02</span><p><strong>Keep this setup window open.</strong> On a new Mac, Terminal may appear briefly for the administrator-approved tool installation.</p></div>
         <div><span>03</span><p><strong>Keep credentials private.</strong> Sign-ins happen directly with Apple, Anthropic, GitHub, and the other providers.</p></div>
       </div>
       <button class="primary large full" id="welcome-begin" type="button">Begin guided setup <span>→</span></button>
@@ -200,6 +215,7 @@
         <button class="icon-button" id="guide-close" type="button" aria-label="Close guide">×</button>
       </header>
       <div class="guide-progress"><span id="guide-progress-label">Step 1</span><i><b id="guide-progress-bar"></b></i></div>
+      <div class="guide-owner" id="guide-owner">Your approval · Wideband verifies</div>
       <p class="overline" id="guide-eyebrow">Your action</p>
       <h2 id="guide-title"></h2>
       <p class="guide-intro" id="guide-intro"></p>

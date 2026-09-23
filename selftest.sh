@@ -293,6 +293,21 @@ with tempfile.TemporaryDirectory() as directory:
             "build_id": "test-build",
             "started_at": app.started_at,
         }
+        def fake_live_checks():
+            report = {
+                "generated_at": module.now(),
+                "checks": [{"id": "P0-AX", "status": "pass", "message": "Accessibility live"}],
+            }
+            store.update(lambda data: data.update({"live_checks": report}))
+            return report
+        app.refresh_live_checks = fake_live_checks
+        request = urllib.request.Request(
+            base + "/api/live-checks", data=b"{}", method="POST",
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        focused = json.load(urllib.request.urlopen(request, timeout=1))
+        assert focused["verification_rollup"]["P0-AX"] == "pass"
+        assert focused["verification"]["summary"] == {"passed": 1, "failed": 0, "skipped": 0}
         shutdown = urllib.request.Request(
             base + "/api/shutdown", data=b"{}", method="POST",
             headers={**headers, "Content-Type": "application/json"},
@@ -304,7 +319,7 @@ with tempfile.TemporaryDirectory() as directory:
         server.server_close()
 PY
   then
-    ok "authenticated loopback API reports its real release, build, port, and shutdown state"
+    ok "authenticated loopback API reports real state and merges focused live checks"
   else
     no "installer loopback status contract failed"
   fi
@@ -483,9 +498,13 @@ PY
   if grep -q 'id="readiness-grid"' "$HERE/installer/index.html" \
      && grep -q 'id="save-state"' "$HERE/installer/index.html" \
      && grep -q 'id="support-dialog"' "$HERE/installer/index.html" \
+     && grep -q 'id="completion-record"' "$HERE/installer/index.html" \
+     && grep -q 'responsibility-strip' "$HERE/installer/index.html" \
      && grep -q 'function renderReadiness' "$HERE/installer/app.js" \
-     && grep -q 'function runSupportJob' "$HERE/installer/app.js"; then
-    ok "client UI exposes resume state, readiness, repair, and support tools"
+     && grep -q 'function runSupportJob' "$HERE/installer/app.js" \
+     && grep -q 'function monitorGuideStep' "$HERE/installer/app.js" \
+     && grep -q '/api/live-checks' "$HERE/installer/app.js"; then
+    ok "client UI exposes ownership, live permission guidance, completion, repair, and support"
   else
     no "client readiness or recovery UI is incomplete"
   fi
@@ -554,17 +573,31 @@ PY
      && ! grep -q 'codesign --force --options runtime --sign -.*wb-setup-engine' "$HERE/packaging/build-app.sh" \
      && grep -q 'engine unexpectedly enables hardened runtime library validation' "$HERE/packaging/build-app.sh" \
      && grep -q 'launch_terminal' "$HERE/packaging/app-launcher" \
+     && grep -q 'launch_background' "$HERE/packaging/app-launcher" \
+     && grep -q 'WB_SETUP_NATIVE_PID' "$HERE/packaging/app-launcher" \
+     && grep -q 'WKWebView' "$HERE/packaging/WidebandSetupLauncher.swift" \
+     && grep -q 'expectedBuildID' "$HERE/packaging/WidebandSetupLauncher.swift" \
+     && grep -q 'activeConnection' "$HERE/packaging/WidebandSetupLauncher.swift" \
      && grep -q 'WB_SETUP_ROOT' "$HERE/packaging/run-setup.command"; then
     if command -v xcrun >/dev/null 2>&1; then
       xcrun swiftc -parse-as-library -typecheck -target arm64-apple-macos13.0 \
-        -framework AppKit "$HERE/packaging/WidebandSetupLauncher.swift" >/dev/null 2>&1 \
-        && ok "Wideband Setup native launcher compiles" \
-        || no "Wideband Setup native launcher does not compile"
+        -framework AppKit -framework WebKit "$HERE/packaging/WidebandSetupLauncher.swift" >/dev/null 2>&1 \
+        && ok "Wideband Setup embedded native guide compiles" \
+        || no "Wideband Setup embedded native guide does not compile"
     else
       ok "Wideband Setup native launcher and bare-Mac engine are packaged (compile deferred)"
     fi
   else
     no "Wideband Setup launcher or bare-Mac engine packaging is incomplete"
+  fi
+
+  if grep -q -- '--sign-identity' "$HERE/packaging/build-app.sh" \
+     && grep -q 'notarytool submit' "$HERE/packaging/build-app.sh" \
+     && grep -q 'stapler validate' "$HERE/packaging/build-app.sh" \
+     && grep -q 'ARTIFACT_STEM="Wideband-Setup-unsigned"' "$HERE/packaging/build-app.sh"; then
+    ok "release builder supports Developer ID signing, notarization, stapling, and unsigned pilots"
+  else
+    no "release builder lacks a complete signed/notarized path"
   fi
 
   if grep -q 'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension' \
@@ -721,6 +754,8 @@ fi
 if command -v node >/dev/null 2>&1; then
   node --check "$HERE/installer/app.js" >/dev/null 2>&1 \
     && ok "installer/app.js parses" || no "installer/app.js has a syntax error"
+  node --check "$HERE/tests/browser-e2e.mjs" >/dev/null 2>&1 \
+    && ok "browser E2E runner parses" || no "browser E2E runner has a syntax error"
 fi
 for p in "$HERE"/loops/*; do
   [ -f "$p" ] || continue

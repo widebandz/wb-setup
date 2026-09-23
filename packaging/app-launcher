@@ -1,5 +1,5 @@
 #!/bin/bash
-# Finder entry point for the unsigned Wideband Setup.app.
+# Finder entry point for Wideband Setup.app.
 set -uo pipefail
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
@@ -7,13 +7,18 @@ RESOURCES="$CONTENTS/Resources"
 PAYLOAD="$RESOURCES/wb-setup"
 AGENT_SOURCE="$RESOURCES/Wideband Agent.app"
 ENGINE_SOURCE="$RESOURCES/wb-setup-engine"
+SETUP_APP_SOURCE="$(cd "$CONTENTS/.." && pwd)"
+SETUP_APP_TARGET="$HOME/Applications/Wideband Setup.app"
 AGENT_TARGET="$HOME/Applications/Wideband Agent.app"
 TARGET="$HOME/srv/wb-setup"
 STATE="$HOME/.wideband/setup"
 MARKER="$STATE/payload-build"
 AGENT_MARKER="$STATE/agent-build"
+SETUP_APP_MARKER="$STATE/setup-app-build"
 DEACTIVATED="$STATE/deactivated"
 BUILD_ID="$(sed -n '1p' "$RESOURCES/build-id.txt" 2>/dev/null)"
+NATIVE_PID="${WB_SETUP_NATIVE_PID:-}"
+NATIVE_ACTIVE=0
 
 fail() {
   /usr/bin/osascript -e 'display alert "Wideband Setup" message "The installer could not prepare its local files. Open Terminal and run bash ~/srv/wb-setup/setup.sh, or contact Wideband." as critical' >/dev/null 2>&1 || true
@@ -25,6 +30,7 @@ launch_terminal() {
   # desktop appears. A client should not see a fatal installer alert for that
   # transient race, especially after an immediate or repeated double-click.
   local attempt=1
+  ( umask 077; printf '%s\n' "$BUILD_ID" > "$STATE/terminal-hosted" ) || return 1
   while [ "$attempt" -le 5 ]; do
     /usr/bin/open -a Terminal "$TARGET/.wideband-setup.command" && return 0
     /bin/sleep 1
@@ -33,10 +39,74 @@ launch_terminal() {
   return 1
 }
 
+core_ready() {
+  [ -f "$HOME/.sop-vars" ] \
+    && [ -x /opt/homebrew/bin/git ] \
+    && [ -x /opt/homebrew/bin/jq ] \
+    && [ -x /opt/homebrew/bin/tmux ]
+}
+
+connection_is_live() {
+  [ -f "$STATE/connection.json" ] || return 1
+  local pid port token build
+  pid="$(/usr/bin/plutil -extract pid raw -o - "$STATE/connection.json" 2>/dev/null)" || return 1
+  port="$(/usr/bin/plutil -extract port raw -o - "$STATE/connection.json" 2>/dev/null)" || return 1
+  token="$(/usr/bin/plutil -extract token raw -o - "$STATE/connection.json" 2>/dev/null)" || return 1
+  build="$(/usr/bin/plutil -extract build_id raw -o - "$STATE/connection.json" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$port" =~ ^[0-9]+$ ]] && [ -n "$token" ] \
+    && [ "$build" = "$BUILD_ID" ] && /bin/kill -0 "$pid" 2>/dev/null \
+    && /usr/bin/curl -fsS --max-time 1 -H "X-Wideband-Token: $token" \
+      "http://127.0.0.1:$port/api/health" >/dev/null 2>&1
+}
+
+launch_background() {
+  local engine_pid attempt
+  /bin/rm -f "$STATE/terminal-hosted" 2>/dev/null || true
+  ( umask 077; : > "$STATE/engine.log" ) || return 1
+  /bin/chmod 600 "$STATE/engine.log" 2>/dev/null || return 1
+  /usr/bin/nohup "$TARGET/.wideband-setup.command" --embedded \
+    >> "$STATE/engine.log" 2>&1 &
+  engine_pid=$!
+  attempt=1
+  while [ "$attempt" -le 40 ]; do
+    connection_is_live && return 0
+    /bin/kill -0 "$engine_pid" 2>/dev/null || return 1
+    /bin/sleep 0.25
+    attempt=$((attempt + 1))
+  done
+  return 0
+}
+
 [ -n "$BUILD_ID" ] && [ -f "$PAYLOAD/setup.py" ] && [ -d "$AGENT_SOURCE" ] \
   && [ -x "$ENGINE_SOURCE" ] || fail
 /bin/mkdir -p "$TARGET" "$STATE" "$HOME/Applications" || fail
 /bin/chmod 700 "$STATE" 2>/dev/null || fail
+
+if [[ "$NATIVE_PID" =~ ^[0-9]+$ ]] && /bin/kill -0 "$NATIVE_PID" 2>/dev/null; then
+  NATIVE_ACTIVE=1
+  ( umask 077; printf '%s\n' "$NATIVE_PID" > "$STATE/native-shell-pid" ) || fail
+else
+  /bin/rm -f "$STATE/native-shell-pid" 2>/dev/null || true
+fi
+
+# Leave behind the exact verified setup app so a client who double-clicks it
+# directly from the disk image can eject the image and still resume later.
+SETUP_APP_INSTALLED="$(sed -n '1p' "$SETUP_APP_MARKER" 2>/dev/null)"
+SOURCE_IS_INSTALLED=0
+case "$SETUP_APP_SOURCE" in
+  /Applications/*|"$HOME/Applications/"*) SOURCE_IS_INSTALLED=1 ;;
+esac
+if [ "$SOURCE_IS_INSTALLED" != 1 ] \
+   && [ "$SETUP_APP_SOURCE" != "$SETUP_APP_TARGET" ] \
+   && { [ "$SETUP_APP_INSTALLED" != "$BUILD_ID" ] || [ ! -x "$SETUP_APP_TARGET/Contents/MacOS/Wideband Setup" ]; }; then
+  if [ -e "$SETUP_APP_TARGET" ]; then
+    SETUP_APP_BACKUP="$STATE/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/Wideband Setup.app"
+    /bin/mkdir -p "$(dirname "$SETUP_APP_BACKUP")" || fail
+    /bin/mv "$SETUP_APP_TARGET" "$SETUP_APP_BACKUP" || fail
+  fi
+  /usr/bin/ditto --norsrc --noextattr --noqtn "$SETUP_APP_SOURCE" "$SETUP_APP_TARGET" || fail
+  ( umask 077; printf '%s\n' "$BUILD_ID" > "$SETUP_APP_MARKER" ) || fail
+fi
 
 # Install the exact app that requests and verifies macOS privacy grants. Keep
 # replaced copies in the setup backup area so an interrupted update never
@@ -67,15 +137,15 @@ else
   ( umask 077; printf '%s\n' "generic" > "$STATE/client-package-kind" ) || fail
 fi
 
-if [ ! -f "$STATE/native-welcome-seen" ]; then
+if [ "$NATIVE_ACTIVE" != 1 ] && [ ! -f "$STATE/native-welcome-seen" ]; then
   if [ -f "$RESOURCES/client-profile.env" ]; then
-    WELCOME_DETAIL="Your Wideband build profile is already loaded. The browser guide opens immediately and shows live progress while Terminal prepares this Mac."
+    WELCOME_DETAIL="Your Wideband build profile is already loaded. The branded setup guide opens immediately and shows live progress while Terminal prepares this Mac."
   else
-    WELCOME_DETAIL="This generic pilot collects the build identity in a few plain-language popups. The browser guide opens immediately and shows live progress while Terminal prepares this Mac."
+    WELCOME_DETAIL="This generic pilot collects the build identity in a few plain-language popups. The branded setup guide opens immediately and shows live progress while Terminal prepares this Mac."
   fi
   /usr/bin/osascript - "$RESOURCES/AppIcon.icns" "$WELCOME_DETAIL" <<'APPLESCRIPT' >/dev/null 2>&1 || exit 0
 on run argv
-  display dialog (item 2 of argv) & return & return & "Leave Terminal open behind the browser. If the guide asks for your Mac password, enter it in Terminal; no dots or characters will appear. Wideband never receives that password." with title "Wideband Setup" buttons {"Begin setup"} default button "Begin setup" with icon POSIX file (item 1 of argv)
+  display dialog (item 2 of argv) & return & return & "Leave Terminal open behind the setup window. If the guide asks for your Mac password, enter it in Terminal; no dots or characters will appear. Wideband never receives that password." with title "Wideband Setup" buttons {"Begin setup"} default button "Begin setup" with icon POSIX file (item 1 of argv)
 end run
 APPLESCRIPT
   ( umask 077; printf '%s\n' "$BUILD_ID" > "$STATE/native-welcome-seen" ) || fail
@@ -96,8 +166,14 @@ fi
 /usr/bin/ditto --norsrc --noextattr --noqtn "$ENGINE_SOURCE" "$TARGET/.wideband-setup-engine" || fail
 /bin/chmod 700 "$TARGET/.wideband-setup.command" "$TARGET/.wideband-setup-engine" || fail
 
-# Terminal supplies the TTY needed by Homebrew's one visible sudo prompt. Once
-# bootstrap has installed Python, the same command opens/reopens the localhost
-# guided installer instead.
-launch_terminal || fail
+# An established Mac can host the private guide quietly behind the branded app.
+# A bare Mac still gets Terminal for Homebrew's one visible sudo prompt; the
+# native window remains in front and explains exactly why that prompt exists.
+if connection_is_live; then
+  exit 0
+elif core_ready; then
+  launch_background || fail
+else
+  launch_terminal || fail
+fi
 exit 0

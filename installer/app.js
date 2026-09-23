@@ -20,6 +20,8 @@ let statePollActive = false;
 let connectionFailures = 0;
 let connectionOnline = false;
 let lastStateRefresh = null;
+let guideCheckTimer = null;
+let guideCheckActive = false;
 
 const permissionStepIds = [
   "connect.screen-sharing",
@@ -30,6 +32,16 @@ const permissionStepIds = [
   "connect.remote-login",
   "connect.background-items",
 ];
+
+const liveCheckIds = new Set([
+  "P0-FDA",
+  "P0-AX",
+  "P0-SCREEN",
+  "P0-AUTOMATION",
+  "P0-SSH",
+  "P0-SCREENSHARING",
+  "P0-SLEEP",
+]);
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -152,6 +164,17 @@ function evidenceLabel(status) {
   if (["human", "interview"].includes(status.source)) return "You confirmed";
   if (status.source === "action" && status.state === "done") return "Installer completed";
   return "Waiting for proof";
+}
+
+function responsibilityLabel(step) {
+  if (step.actor === "client") return "You approve · Wideband verifies";
+  if (step.actor === "machine") return "Wideband installs and verifies";
+  if (step.actor === "agent") return "Wideband customizes";
+  return "Complete with Wideband";
+}
+
+function supportsLiveCheck(step) {
+  return (step.checks || []).some((checkId) => liveCheckIds.has(checkId));
 }
 
 function requiredSteps() {
@@ -288,7 +311,7 @@ function renderClientQueue() {
     const topline = element("div", "queue-num");
     topline.append(
       element("span", "", status.state === "done" ? "✓ COMPLETE" : String(index + 1).padStart(2, "0")),
-      element("span", "", stageForStep(step.id)?.title || "SETUP"),
+      element("span", "", (step.checks || []).length ? "WIDEBAND CHECKS" : "YOU CONFIRM"),
     );
     button.append(topline, element("h3", "", step.title), element("p", "", evidenceLabel(status)));
     button.addEventListener("click", () => openGuide(step.id));
@@ -313,6 +336,33 @@ function renderHandoff() {
     button.addEventListener("click", () => openGuide(step.id));
     return button;
   }));
+}
+
+function renderCompletion() {
+  const section = $("#client-complete");
+  const clientReady = !currentClientStep();
+  section.hidden = !clientReady;
+  if (!clientReady) return;
+
+  const verification = snapshot.state.last_verification?.summary;
+  const profile = allSteps().find((step) => step.id === "identify.review-agent-profile");
+  const profileReady = profile && checkStatus(profile).state === "done";
+  const handoff = readinessForSteps(clientSteps().filter((step) => step.client_phase !== "now"));
+  const machineReady = verification && verification.failed === 0;
+
+  $("#completion-title").textContent = machineReady && profileReady && handoff.state === "ready"
+    ? "This Wideband build is ready."
+    : "Your approvals are complete.";
+  $("#completion-summary").textContent = machineReady
+    ? "The machine foundation is verified. The remaining cards below distinguish custom-profile review and real-world handoff proofs."
+    : "Your work is saved. Wideband can continue machine repair, customization, and final verification without asking you to repeat these approvals.";
+  $("#completion-machine").textContent = verification
+    ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred`
+    : "Machine verification has not run yet";
+  $("#completion-profile").textContent = profileReady
+    ? "Approved and installed privately"
+    : "Complete the custom operator profile with Wideband";
+  $("#completion-handoff").textContent = `${handoff.done} of ${handoff.total} phone, messaging, and scheduled proofs complete`;
 }
 
 function readinessForSteps(steps) {
@@ -446,7 +496,19 @@ function renderMachineState() {
     machineRow(installDone, "Wideband layer", installDone ? "Agent context, workspace, and standing services installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : running?.action === "run_install" ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", running?.action === "run_install"),
     machineRow(Boolean(verification) && !verification.failed, "Machine checks", verification ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred` : "Checks run automatically after installation.", running?.action?.includes("verify")),
     machineRow(snapshot.facts.personalized, "Client build profile", snapshot.facts.personalized ? "This installer was prepared for this client." : "Generic pilot build; the operator should verify identity values."),
+    machineRow(snapshot.facts.setup_app_installed, "Resume app", snapshot.facts.setup_app_installed ? "Wideband Setup is installed in your Applications folder." : "The setup app is being copied to Applications."),
   );
+
+  if (snapshot.facts.terminal_hosted) {
+    $("#runtime-reminder-title").textContent = "Leave Terminal open for this first installation.";
+    $("#runtime-reminder-detail").textContent = "It supplies the administrator-approved tool installation. Wideband Setup remains your guide in front.";
+  } else if (snapshot.facts.embedded_mode) {
+    $("#runtime-reminder-title").textContent = "Keep Wideband Setup open.";
+    $("#runtime-reminder-detail").textContent = "The private engine is running quietly on this Mac; no browser or Terminal knowledge is required.";
+  } else {
+    $("#runtime-reminder-title").textContent = "Keep this guide open.";
+    $("#runtime-reminder-detail").textContent = "Progress is saved automatically. Reopen Wideband Setup at any time to resume.";
+  }
 
   const state = $("#machine-state");
   const badge = $("#build-badge");
@@ -497,12 +559,69 @@ function renderClient() {
   renderHandoff();
   renderMachineState();
   renderReadiness();
+  renderCompletion();
 }
 
 function guideActions(step) {
   if (step.client_guide.actions) return step.client_guide.actions;
   if (!step.action) return [];
   return [{ action: step.action, label: step.client_guide.open_label || actionLabel(step.action) }];
+}
+
+function stopGuideMonitoring() {
+  clearTimeout(guideCheckTimer);
+  guideCheckTimer = null;
+}
+
+function mergeLiveCheckResult(result) {
+  snapshot.state.live_checks = result.live_checks;
+  snapshot.state.last_verification = result.verification;
+  snapshot.verification_rollup = result.verification_rollup;
+  snapshot.facts.live_checks_at = result.live_checks.generated_at;
+  snapshot.state.updated_at = result.live_checks.generated_at;
+}
+
+async function monitorGuideStep(stepId) {
+  stopGuideMonitoring();
+  if (guideCheckActive || !$("#guide-dialog").open || currentGuideStepId !== stepId) return;
+  const step = allSteps().find((item) => item.id === stepId);
+  if (!step || !supportsLiveCheck(step)) return;
+  guideCheckActive = true;
+  try {
+    const result = await api("/api/live-checks", { method: "POST", body: {} });
+    mergeLiveCheckResult(result);
+    renderClient();
+    const status = checkStatus(step);
+    const message = $("#guide-message");
+    if (status.state === "done") {
+      message.className = "guide-message success";
+      message.textContent = `${evidenceLabel(status)}. Return to Wideband Setup and select Continue.`;
+      $("#guide-confirm").textContent = "Continue";
+      $("#guide-confirm").append(element("span", "", "→"));
+      return;
+    }
+    const failures = latestChecks(step.checks || [])
+      .filter((check) => check.status === "fail")
+      .map((check) => check.message)
+      .slice(0, 1);
+    message.className = "guide-message";
+    message.textContent = failures.length
+      ? `Waiting for macOS approval · ${failures[0]} This updates automatically.`
+      : "Waiting for macOS to publish the new setting. This updates automatically.";
+  } catch (error) {
+    $("#guide-message").className = "guide-message error";
+    $("#guide-message").textContent = `Automatic check paused: ${error.message}`;
+  } finally {
+    guideCheckActive = false;
+  }
+  if ($("#guide-dialog").open && currentGuideStepId === stepId && checkStatus(step).state !== "done") {
+    guideCheckTimer = setTimeout(() => monitorGuideStep(stepId), 2800);
+  }
+}
+
+function startGuideMonitoring(stepId, immediate = false) {
+  stopGuideMonitoring();
+  guideCheckTimer = setTimeout(() => monitorGuideStep(stepId), immediate ? 250 : 1200);
 }
 
 function openGuide(stepId) {
@@ -515,6 +634,7 @@ function openGuide(stepId) {
   const status = checkStatus(step);
   $("#guide-progress-label").textContent = `Client step ${index + 1} of ${steps.length}`;
   $("#guide-progress-bar").style.width = `${Math.round(((index + 1) / steps.length) * 100)}%`;
+  $("#guide-owner").textContent = responsibilityLabel(step);
   $("#guide-eyebrow").textContent = guide.eyebrow || "Your action";
   $("#guide-title").textContent = step.title;
   $("#guide-intro").textContent = guide.intro || step.description;
@@ -540,8 +660,8 @@ function openGuide(stepId) {
 
   const confirm = $("#guide-confirm");
   confirm.disabled = false;
-  confirm.textContent = status.state === "done" && (step.checks || []).length
-    ? "Check again"
+  confirm.textContent = status.state === "done"
+    ? "Continue"
     : guide.confirm_label || ((step.checks || []).length ? "Check this step" : "I finished this");
   confirm.append(element("span", "", "→"));
   confirm.onclick = () => completeGuideStep(step);
@@ -549,6 +669,7 @@ function openGuide(stepId) {
 
   const dialog = $("#guide-dialog");
   if (!dialog.open) dialog.showModal();
+  if (supportsLiveCheck(step) && status.state !== "done") startGuideMonitoring(step.id, false);
 }
 
 async function invokeGuideAction(action, button, openedMessage = "") {
@@ -565,6 +686,8 @@ async function invokeGuideAction(action, button, openedMessage = "") {
     const result = await api(`/api/actions/${action}`, { method: "POST", body: {} });
     if (result.opened) {
       message.textContent = openedMessage || "Opened. Follow the numbered instructions, then return here.";
+      const step = allSteps().find((item) => item.id === currentGuideStepId);
+      if (step && supportsLiveCheck(step)) startGuideMonitoring(step.id, true);
     } else if (result.id) {
       message.textContent = "Wideband is running that step now…";
       await waitForJob(result.id, false);
@@ -590,6 +713,14 @@ async function waitForCurrentJob() {
 async function completeGuideStep(step) {
   const button = $("#guide-confirm");
   const message = $("#guide-message");
+  if (checkStatus(step).state === "done") {
+    stopGuideMonitoring();
+    $("#guide-dialog").close();
+    const next = currentClientStep();
+    if (next && step.client_phase === "now") setTimeout(() => openGuide(next.id), 220);
+    return;
+  }
+  stopGuideMonitoring();
   button.disabled = true;
   message.className = "guide-message";
   message.textContent = (step.checks || []).length ? "Checking this Mac…" : "Saving your progress…";
@@ -600,8 +731,13 @@ async function completeGuideStep(step) {
       await api(`/api/steps/${encodeURIComponent(step.id)}`, { method: "POST", body: { complete: true } });
     }
     if (checks.length) {
-      const job = await api("/api/actions/run_verify_quick", { method: "POST", body: {} });
-      await waitForJob(job.id, false);
+      if (supportsLiveCheck(step)) {
+        const result = await api("/api/live-checks", { method: "POST", body: {} });
+        mergeLiveCheckResult(result);
+      } else {
+        const job = await api("/api/actions/run_verify_quick", { method: "POST", body: {} });
+        await waitForJob(job.id, false);
+      }
     }
     await refreshState();
     const status = checkStatus(step);
@@ -616,6 +752,7 @@ async function completeGuideStep(step) {
         : "The action is saved, but macOS has not exposed a verifiable result yet. Wait a moment, review the instructions, then retry.";
       button.textContent = "Try check again";
       button.append(element("span", "", "→"));
+      if (supportsLiveCheck(step)) startGuideMonitoring(step.id, false);
       return;
     }
     message.className = "guide-message success";
@@ -629,6 +766,7 @@ async function completeGuideStep(step) {
     message.textContent = error.message;
     button.textContent = "Try again";
     button.append(element("span", "", "→"));
+    if (supportsLiveCheck(step)) startGuideMonitoring(step.id, false);
   } finally {
     button.disabled = false;
   }
@@ -1233,8 +1371,9 @@ $("#status-close").addEventListener("click", () => $("#status-dialog").close());
 $("#status-done").addEventListener("click", () => $("#status-dialog").close());
 $("#welcome-begin").addEventListener("click", () => dismissWelcome(true));
 $("#welcome-close").addEventListener("click", () => dismissWelcome(false));
-$("#guide-close").addEventListener("click", () => $("#guide-dialog").close());
-$("#guide-later").addEventListener("click", () => $("#guide-dialog").close());
+$("#guide-close").addEventListener("click", () => { stopGuideMonitoring(); $("#guide-dialog").close(); });
+$("#guide-later").addEventListener("click", () => { stopGuideMonitoring(); $("#guide-dialog").close(); });
+$("#guide-dialog").addEventListener("close", stopGuideMonitoring);
 $("#support-close").addEventListener("click", () => $("#support-dialog").close());
 $("#support-check").addEventListener("click", () => runReadinessCheck($("#support-check")));
 $("#support-repair").addEventListener("click", () => repairWideband());
@@ -1252,6 +1391,8 @@ $("#interview-preview-button").addEventListener("click", previewInterview);
 $("#interview-apply").addEventListener("click", applyInterview);
 $("#record-close").addEventListener("click", () => $("#record-dialog").close());
 $("#review-client-steps").addEventListener("click", () => $("#queue-section").scrollIntoView({ behavior: "smooth" }));
+$("#completion-record").addEventListener("click", (event) => handleAction("generate_build_record", event.currentTarget));
+$("#completion-tools").addEventListener("click", openSupport);
 for (const input of [$("#meta-machine"), $("#meta-operator"), $("#meta-date")]) input.addEventListener("input", queueMetadataSave);
 $("#deviation-form").addEventListener("submit", async (event) => {
   event.preventDefault();

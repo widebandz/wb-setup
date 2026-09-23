@@ -6,41 +6,44 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-When bootstrap finishes, it opens the resumable guided installer. If the
-browser was closed or the build is being resumed later, run:
+When bootstrap finishes, it opens the resumable guided installer. If the guide
+was closed or the build is being resumed later, run:
 
 ```bash
 bash ~/srv/wb-setup/setup.sh
 ```
 
-It opens on localhost, stores progress privately in `~/.wideband/setup`, and
+It opens a private local guide, stores progress in `~/.wideband/setup`, and
 turns the full runbook into six stages. Deterministic work runs through an
 allowlist; account access, macOS permissions, and the operator interview remain
 explicit human gates.
 
 For an unattended bootstrap or a scripts-only diagnostic run, pass `--no-ui`.
 
-The server binds only to `127.0.0.1` and requires a random token kept in the
-browser URL fragment. Its API exposes named actions (`install`, `verify`,
+The embedded guide is backed by a server bound only to `127.0.0.1`; it requires
+a random token passed privately by the app. Its API exposes named actions (`install`, `verify`,
 `doctor`, approved System Settings links), never a caller-supplied command.
 State, interview answers, backups, and the generated build record are mode
 `0600`. Project secrets are neither requested nor written to installer state.
 Port 8803 is preferred; if another process owns it, the app chooses a free
-loopback port and opens that exact private URL. Clients should always reopen
-Wideband Setup rather than manually typing a localhost address. The page polls
-saved state without rerunning protected checks, displays its real connection
-and proof timestamps, and gives a persistent recovery banner if Terminal closes.
-The app includes an arm64 localhost engine, so this guide appears even before a
-bare Mac has Homebrew, Command Line Tools, or Python. It calls out the one
-Terminal password action and continues updating while those tools install.
+loopback port and embeds that exact private surface. Clients should always
+reopen Wideband Setup rather than manually typing a localhost address. The UI
+polls saved state, performs focused permission checks while a permission guide
+is open, displays real proof timestamps, and gives a persistent recovery banner
+if its engine disconnects. The app includes an arm64 engine, so the guide
+appears even before a bare Mac has Homebrew, Command Line Tools, or Python. It
+calls out Homebrew's one Terminal password action and continues updating while
+those tools install. Once the foundation exists, later launches run quietly
+inside the branded app without requiring Terminal or browser knowledge.
 
 ## Shareable client app
 
-The macOS package opens in **Client view** by default. It uses the canonical
+The macOS package opens an embedded **Client view** by default. It uses the canonical
 wideband.ai mark, palette, and type system, presents one human action at a time,
 and opens the exact provider, app, or System Settings page for that action. A
-welcome popup explains the visible Terminal window and the single Homebrew
-administrator-password prompt. The complete six-stage checklist remains
+responsibility strip distinguishes what Wideband installs, what the client must
+approve, and what is customized together. The welcome flow explains the single
+Homebrew administrator-password prompt when a new Mac still needs it. The complete six-stage checklist remains
 available behind **Operator view**.
 
 The package also installs `~/Applications/Wideband Agent.app`, the single
@@ -60,6 +63,27 @@ Build the generic pilot:
 ./packaging/build-app.sh
 ```
 
+Build a Developer ID signed artifact without submitting it for notarization:
+
+```bash
+./packaging/build-app.sh \
+  --sign-identity "Developer ID Application: Wideband AI (…)"
+```
+
+For production, first store notarization credentials in a dedicated Keychain
+profile, then build, submit, wait, staple, and validate in one command:
+
+```bash
+./packaging/build-app.sh \
+  --sign-identity "Developer ID Application: Wideband AI (…)" \
+  --notary-profile wideband-notary
+```
+
+The same settings can be supplied as `WIDEBAND_SIGN_IDENTITY` and
+`WIDEBAND_NOTARY_PROFILE` in release automation. The builder refuses to
+notarize an ad-hoc build and signs the engine, permission agent, app, and disk
+image consistently.
+
 For a client handoff, copy `packaging/client-profile.example.json` outside the
 repository, fill it with that client's approved build identity, then build:
 
@@ -67,7 +91,8 @@ repository, fill it with that client's approved build identity, then build:
 ./packaging/build-app.sh --profile /secure/path/client-profile.json
 ```
 
-The resulting `dist/Wideband-Setup-unsigned.dmg` is one shareable file. The
+The unsigned pilot produces `dist/Wideband-Setup-unsigned.dmg`; a fully trusted
+release produces `dist/Wideband-Setup.dmg`. Either is one shareable file. The
 generic build collects six build-identity details in plain-language macOS
 popups; a personalized build seeds those approved values into `~/.sop-vars`
 once and skips those questions. An existing identity file is never overwritten.
@@ -83,7 +108,9 @@ will remove this exception step.
 Machine-owned reconciliation starts automatically in packaged client mode.
 Client-owned steps remain deliberate because macOS privacy grants, account
 sign-ins, two-factor authentication, and the agent interview cannot be safely
-impersonated. Progress survives closing the browser or restarting the Mac.
+impersonated. Progress survives closing the app or restarting the Mac. The app
+installs a resumable copy into `~/Applications` even when the client launches
+it directly from the disk image.
 
 Client view also includes a live readiness dashboard and **Setup tools**:
 
@@ -189,9 +216,9 @@ selftest.sh        invariants of this repo, not of the machine it built
 SOP.md             the full procedure, universal
 PREP.md            client-facing; send the day before setup
 checklist.html     106-step detailed checklist; open it directly, no server
-setup.sh           opens the resumable localhost guided installer
+setup.sh           opens the resumable local guide (browser fallback)
 setup.py           allowlisted runner, state, readiness, support and recovery APIs
-installer/         six-stage manifest and browser interface
+installer/         six-stage manifest and embedded web interface
 packaging/          branded app/DMG builder and client-profile renderer
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars

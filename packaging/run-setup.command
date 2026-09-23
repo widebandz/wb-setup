@@ -5,6 +5,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 STATE="$HOME/.wideband/setup"
 CONNECTION="$STATE/connection.json"
 ENGINE="$HERE/.wideband-setup-engine"
+SETUP_ARGS=()
+
+NATIVE_PID="$(sed -n '1p' "$STATE/native-shell-pid" 2>/dev/null)"
+if [ "${1:-}" = "--embedded" ] \
+   || { [[ "$NATIVE_PID" =~ ^[0-9]+$ ]] && /bin/kill -0 "$NATIVE_PID" 2>/dev/null; }; then
+  export WB_SETUP_EMBEDDED=1
+  SETUP_ARGS+=(--no-open)
+fi
+if [ -f "$STATE/terminal-hosted" ]; then
+  export WB_SETUP_TERMINAL_HOSTED=1
+fi
 
 if [ -f "$STATE/client-package" ]; then
   export WB_SETUP_CLIENT_MODE=1
@@ -20,19 +31,19 @@ fi
 # stub, which otherwise opens an unrelated install dialog on a bare Mac.
 if [ -x "$ENGINE" ] && { [ -f "$CONNECTION" ] || { [ -x /opt/homebrew/bin/python3 ] && [ -f "$HOME/.sop-vars" ]; }; }; then
   export WB_SETUP_ROOT="$HERE"
-  exec "$ENGINE"
+  exec "$ENGINE" "${SETUP_ARGS[@]}"
 fi
 
 # Brew's Python is the boundary between a genuinely bare Mac and a machine
 # capable of running the guided UI. A partial/first build stays in bootstrap;
 # an established build goes straight back to its saved installer state.
 if [ ! -x "$ENGINE" ] && [ -x /opt/homebrew/bin/python3 ] && [ -f "$HOME/.sop-vars" ]; then
-  exec bash "$HERE/setup.sh"
+  exec bash "$HERE/setup.sh" "${SETUP_ARGS[@]}"
 fi
 
 if [ -x "$ENGINE" ]; then
   export WB_SETUP_ROOT="$HERE"
-  "$ENGINE" &
+  "$ENGINE" "${SETUP_ARGS[@]}" &
   ENGINE_PID=$!
   stop_engine() {
     /bin/kill "$ENGINE_PID" 2>/dev/null || true

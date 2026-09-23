@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .wideband-setup.command
+.wideband-setup-engine
 
 # Local packaging output. The shareable app/DMG is rebuilt from source.
 dist/

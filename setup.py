@@ -245,6 +245,7 @@ class StateStore:
             "deviations": [],
             "action_runs": {},
             "last_verification": None,
+            "live_checks": {"generated_at": None, "checks": []},
             "lifecycle": {
                 "deactivated_at": None,
                 "last_reconciled_at": None,
@@ -259,7 +260,7 @@ class StateStore:
         defaults = StateStore._new_state()
         for key in ("started_at", "updated_at", "last_verification"):
             data.setdefault(key, defaults[key])
-        for key in ("completed", "metadata", "interview", "action_runs"):
+        for key in ("completed", "metadata", "interview", "action_runs", "live_checks"):
             if not isinstance(data.get(key), dict):
                 data[key] = defaults[key]
         if not isinstance(data.get("lifecycle"), dict):
@@ -539,6 +540,53 @@ def verification_rollup(verification: dict[str, Any] | None) -> dict[str, str]:
     return result
 
 
+def _parsed_timestamp(value: Any) -> dt.datetime | None:
+    text = str(value or "")
+    if re.search(r"[+-][0-9]{4}$", text):
+        text = text[:-2] + ":" + text[-2:]
+    try:
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed
+
+
+def effective_verification(state: dict[str, Any]) -> dict[str, Any] | None:
+    """Merge newer focused checks into the last full verification snapshot."""
+    base = state.get("last_verification") or {}
+    live = state.get("live_checks") or {}
+    base_checks = [dict(item) for item in base.get("checks", []) if isinstance(item, dict)]
+    live_checks = [dict(item) for item in live.get("checks", []) if isinstance(item, dict)]
+    base_time = _parsed_timestamp(base.get("generated_at"))
+    live_time = _parsed_timestamp(live.get("generated_at"))
+    use_live = bool(live_checks) and (base_time is None or (live_time is not None and live_time >= base_time))
+    if use_live:
+        live_ids = {str(item.get("id", "")) for item in live_checks}
+        checks = [item for item in base_checks if str(item.get("id", "")) not in live_ids]
+        checks.extend(live_checks)
+        generated_at = live.get("generated_at") or base.get("generated_at")
+    else:
+        checks = base_checks
+        generated_at = base.get("generated_at")
+    if not checks:
+        return None
+    summary = {
+        "passed": sum(item.get("status") == "pass" for item in checks),
+        "failed": sum(item.get("status") == "fail" for item in checks),
+        "skipped": sum(item.get("status") == "skip" for item in checks),
+    }
+    return {
+        "schema_version": 1,
+        "machine": base.get("machine") or socket.gethostname().split(".")[0],
+        "generated_at": generated_at,
+        "quick": bool(base.get("quick", True)),
+        "summary": summary,
+        "checks": checks,
+    }
+
+
 def step_is_complete(
     step: dict[str, Any],
     state: dict[str, Any],
@@ -586,7 +634,7 @@ def redact_support_text(value: str) -> str:
 def support_summary(store: StateStore) -> dict[str, Any]:
     """Return a deliberately narrow, secret-free setup snapshot."""
     state = store.read()
-    verification = state.get("last_verification") or {}
+    verification = effective_verification(state) or {}
     checks = []
     for item in verification.get("checks", []):
         checks.append(
@@ -825,7 +873,8 @@ def deactivate_wideband(
 
 def build_record(store: StateStore) -> tuple[Path, str]:
     state = store.read()
-    rollup = verification_rollup(state.get("last_verification"))
+    verification = effective_verification(state) or {}
+    rollup = verification_rollup(verification)
 
     required = [
         step
@@ -834,7 +883,6 @@ def build_record(store: StateStore) -> tuple[Path, str]:
         if not step.get("optional")
     ]
     deviations = state.get("deviations", [])
-    verification = state.get("last_verification") or {}
     summary = verification.get("summary") or {}
     metadata = state.get("metadata") or {}
     interview = state.get("interview") or {}
@@ -900,10 +948,103 @@ class SetupApp:
         self.token = secrets.token_urlsafe(24)
         self.build_id = build_id
         self.started_at = now()
+        self.live_check_lock = threading.Lock()
+        self.embedded_mode = os.environ.get("WB_SETUP_EMBEDDED") == "1"
+        self.terminal_hosted = os.environ.get("WB_SETUP_TERMINAL_HOSTED") == "1"
         self.client_mode = (
             os.environ.get("WB_SETUP_CLIENT_MODE") == "1"
             or (store.directory / "client-package").is_file()
         )
+
+    @staticmethod
+    def _check(check_id: str, status: str, message: str) -> dict[str, str]:
+        return {"id": check_id, "status": status, "message": message}
+
+    def refresh_live_checks(self) -> dict[str, Any]:
+        """Refresh only the fast client-facing macOS checks without a full verify run."""
+        if platform.system() != "Darwin":
+            raise RuntimeError("live macOS checks are available only on macOS")
+        with self.live_check_lock:
+            checks: list[dict[str, str]] = []
+            status_path = self.store.directory / "agent-status.json"
+            permission_values: dict[str, Any] | None = None
+            if self.AGENT_EXECUTABLE.is_file() and os.access(self.AGENT_EXECUTABLE, os.X_OK):
+                nonce = f"live-{time.time_ns()}-{secrets.token_hex(4)}"
+                app = self.AGENT_EXECUTABLE.parents[2]
+                subprocess.run(
+                    ["open", "-n", str(app), "--args", "report", nonce],
+                    check=False,
+                    timeout=10,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                deadline = time.monotonic() + 5.0
+                while time.monotonic() < deadline:
+                    try:
+                        candidate = json.loads(status_path.read_text(encoding="utf-8"))
+                        if secrets.compare_digest(str(candidate.get("nonce", "")), nonce):
+                            permission_values = candidate
+                            break
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                    time.sleep(0.1)
+
+            permission_contract = (
+                ("P0-FDA", "full_disk_access", "Wideband Agent has Full Disk Access", "Wideband Agent does not have Full Disk Access"),
+                ("P0-AX", "accessibility", "Wideband Agent has Accessibility access", "Wideband Agent does not have Accessibility access"),
+                ("P0-SCREEN", "screen_capture", "Wideband Agent has Screen Recording access", "Wideband Agent does not have Screen Recording access"),
+                ("P0-AUTOMATION", "automation_messages", "Wideband Agent may automate Messages", "Wideband Agent may not automate Messages"),
+            )
+            for check_id, key, ready, missing in permission_contract:
+                if permission_values is None:
+                    checks.append(self._check(check_id, "fail", f"Wideband Agent did not produce a fresh {key.replace('_', ' ')} report"))
+                elif permission_values.get(key) is True:
+                    checks.append(self._check(check_id, "pass", ready))
+                else:
+                    checks.append(self._check(check_id, "fail", missing))
+
+            try:
+                disabled = subprocess.run(
+                    ["/bin/launchctl", "print-disabled", "system"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                ).stdout
+            except (OSError, subprocess.SubprocessError):
+                disabled = ""
+
+            for check_id, label, ready, missing in (
+                ("P0-SSH", "com.openssh.sshd", "Remote Login is on", "Remote Login is off — Settings → General → Sharing → Remote Login"),
+                ("P0-SCREENSHARING", "com.apple.screensharing", "Apple Screen Sharing is on", "Apple Screen Sharing is off — Settings → General → Sharing"),
+            ):
+                if re.search(rf'"{re.escape(label)}"\s*=>\s*enabled', disabled):
+                    checks.append(self._check(check_id, "pass", ready))
+                elif re.search(rf'"{re.escape(label)}"\s*=>\s*disabled', disabled):
+                    checks.append(self._check(check_id, "fail", missing))
+                else:
+                    checks.append(self._check(check_id, "skip", f"{ready.removesuffix(' is on')} state unreadable"))
+
+            try:
+                power = subprocess.run(
+                    ["/usr/bin/pmset", "-g"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                ).stdout
+            except (OSError, subprocess.SubprocessError):
+                power = ""
+            if re.search(r"(?m)^\s*sleep\s+0\b", power):
+                checks.append(self._check("P0-SLEEP", "pass", "system sleep disabled — scheduled loops will not miss their window"))
+            elif power:
+                checks.append(self._check("P0-SLEEP", "fail", "system sleeps — 'sudo pmset -a sleep 0' or overnight loops are unreliable"))
+            else:
+                checks.append(self._check("P0-SLEEP", "skip", "system sleep state unreadable"))
+
+            report = {"generated_at": now(), "checks": checks}
+            self.store.update(lambda data: data.update({"live_checks": report}))
+            return report
 
     def open_target(self, action: str) -> None:
         target = self.OPEN_TARGETS[action]
@@ -1003,7 +1144,7 @@ class LoopbackHTTPServer(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     app: SetupApp
-    server_version = "WidebandSetup/0.4"
+    server_version = "WidebandSetup/0.5"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Routine polling is intentionally silent: on a bare Mac this server
@@ -1076,6 +1217,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
             elif path == "/api/state":
                 state = self.app.store.read()
+                effective = effective_verification(state)
+                state["last_verification"] = effective
                 current_bootstrap_status = bootstrap_status(self.app.store.directory)
                 self._json(
                     HTTPStatus.OK,
@@ -1086,15 +1229,21 @@ class Handler(BaseHTTPRequestHandler):
                             "bootstrap_ready": current_bootstrap_status == "ready",
                             "bootstrap_status": current_bootstrap_status,
                             "client_mode": self.app.client_mode,
+                            "embedded_mode": self.app.embedded_mode,
+                            "terminal_hosted": self.app.terminal_hosted,
                             "client_name": str(os.environ.get("CLIENT_NAME", ""))[:120],
                             "personalized": private_marker_is(
                                 self.app.store.directory / "client-package-kind", "personalized"
                             ),
                             "wideband_agent_installed": self.app.AGENT_EXECUTABLE.is_file(),
+                            "setup_app_installed": (
+                                Path.home() / "Applications" / "Wideband Setup.app"
+                            ).is_dir() or Path("/Applications/Wideband Setup.app").is_dir(),
+                            "live_checks_at": (state.get("live_checks") or {}).get("generated_at"),
                             "deactivated": bool(state.get("lifecycle", {}).get("deactivated_at"))
                             or (self.app.store.directory / "deactivated").is_file(),
                         },
-                        "verification_rollup": verification_rollup(state.get("last_verification")),
+                        "verification_rollup": verification_rollup(effective),
                         "connection": {
                             "host": "127.0.0.1",
                             "port": self.server.server_address[1],
@@ -1237,6 +1386,20 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
 
+            if path == "/api/live-checks":
+                report = self.app.refresh_live_checks()
+                state = self.app.store.read()
+                effective = effective_verification(state)
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "live_checks": report,
+                        "verification": effective,
+                        "verification_rollup": verification_rollup(effective),
+                    },
+                )
+                return
+
             if path == "/api/deactivate":
                 if body.get("confirm") != "DEACTIVATE":
                     raise ValueError("type DEACTIVATE to confirm")
@@ -1295,7 +1458,10 @@ def serve(args: argparse.Namespace) -> None:
     if existing:
         url = f"http://127.0.0.1:{existing['port']}/#{existing['token']}"
         if args.no_open:
-            print(f"Wideband Setup already running: {url}", flush=True)
+            print(
+                f"Wideband Setup is already running privately on this Mac (port {existing['port']}; the app supplies access).",
+                flush=True,
+            )
         else:
             print(f"Wideband Setup is already open privately on this Mac (port {existing['port']}).", flush=True)
         if existing.get("stale"):
@@ -1336,7 +1502,7 @@ def serve(args: argparse.Namespace) -> None:
         + "\n",
     )
     if args.no_open:
-        print(f"Wideband Setup: {url}", flush=True)
+        print(f"Wideband Setup is ready privately on this Mac (port {port}; the app supplies access).", flush=True)
     else:
         print(f"Wideband Setup is opening privately on this Mac (port {port}).", flush=True)
     print(f"State: {store.path}", flush=True)
@@ -1354,6 +1520,11 @@ def serve(args: argparse.Namespace) -> None:
                 connection_path.unlink()
         except (OSError, json.JSONDecodeError):
             pass
+        if app.terminal_hosted:
+            try:
+                (store.directory / "terminal-hosted").unlink()
+            except OSError:
+                pass
 
 
 def main() -> None:
