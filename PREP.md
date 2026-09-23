@@ -113,9 +113,10 @@ not us.
   settings that can quietly conflict with the new ones, and we would
   rather plan for it than discover it.
 - **This Mac was recently upgraded from an older major macOS release.** Apple
-  Command Line Tools can need reinstalling or reselecting even when an old
-  Homebrew folder remains. Wideband will inspect both separately before making
-  changes; do not run a broad ownership command from an error message alone.
+  Command Line Tools can need updating, reinstalling, or reselecting even when
+  an old Homebrew folder remains. Wideband will inspect both separately before
+  making changes; do not run a broad ownership command from an error message
+  alone.
 - **The network is filtered** — a corporate, school, or guest network, or
   one with content filtering on the router. Some of these block the sites the
   setup downloads from, and it fails in a way that looks like our mistake

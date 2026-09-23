@@ -214,20 +214,37 @@ fi
 # shellcheck source=lib/bootstrap-homebrew.sh
 . "$ROOT/lib/bootstrap-homebrew.sh"
 
+explain_developer_tools_selection() {
+  bootstrap_status needs_developer_tools_selection
+  say "  ! Apple Command Line Tools exist but are not selected after the OS upgrade."
+  say "    Wideband will not change the system developer directory with sudo."
+  say "    The intended user must personally review and run:"
+  say ""
+  say "      sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools"
+  say ""
+  say "    Then reopen Wideband Setup."
+}
+
+explain_developer_tools_update() {
+  bootstrap_status needs_developer_tools_update
+  say "  ! Developer-tool files exist, but their Git cannot run after the OS upgrade."
+  say "    Wideband will not delete or replace Apple's tools automatically."
+  say "    Open System Settings → General → Software Update and install the"
+  say "    available Command Line Tools update, then reopen Wideband Setup."
+}
+
 ensure_developer_tools() {
   local waited=0 next_notice=60
   wb_hb_clt_probe
   [ "$WB_HB_CLT_READY" = 1 ] && return 0
 
   if [ "$WB_HB_CLT_STATE" = "installed_not_selected" ]; then
-    bootstrap_status needs_developer_tools_selection
-    say "  ! Apple Command Line Tools exist but are not selected after the OS upgrade."
-    say "    Wideband will not change the system developer directory with sudo."
-    say "    The intended user must personally review and run:"
-    say ""
-    say "      sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools"
-    say ""
-    say "    Then reopen Wideband Setup."
+    explain_developer_tools_selection
+    return 1
+  fi
+
+  if [ "$WB_HB_CLT_STATE" = "incompatible" ]; then
+    explain_developer_tools_update
     return 1
   fi
 
@@ -244,6 +261,14 @@ ensure_developer_tools() {
     if [ "$WB_HB_CLT_READY" = 1 ]; then
       say "  ✓ Apple Command Line Tools and developer Git are ready"
       return 0
+    fi
+    if [ "$WB_HB_CLT_STATE" = "installed_not_selected" ]; then
+      explain_developer_tools_selection
+      return 1
+    fi
+    if [ "$WB_HB_CLT_STATE" = "incompatible" ]; then
+      explain_developer_tools_update
+      return 1
     fi
     if [ "$waited" -ge "$next_notice" ]; then
       say "  … still waiting for the Apple installer (${waited}s); do not close Terminal"
@@ -322,6 +347,8 @@ else
   if [ "$DO_BREW" = 1 ] && ! ensure_developer_tools; then
     if [ "$WB_HB_CLT_STATE" = "installed_not_selected" ]; then
       BREW_BLOCK_REASON="developer_tools_selection"
+    elif [ "$WB_HB_CLT_STATE" = "incompatible" ]; then
+      BREW_BLOCK_REASON="developer_tools_update"
     else
       BREW_BLOCK_REASON="developer_tools"
     fi
@@ -728,6 +755,8 @@ elif [ "$BREW_BLOCK_REASON" = "developer_tools" ]; then
   bootstrap_status needs_developer_tools
 elif [ "$BREW_BLOCK_REASON" = "developer_tools_selection" ]; then
   bootstrap_status needs_developer_tools_selection
+elif [ "$BREW_BLOCK_REASON" = "developer_tools_update" ]; then
+  bootstrap_status needs_developer_tools_update
 elif [ -n "$BREW_BLOCK_REASON" ]; then
   bootstrap_status needs_attention
 elif [ -f "$VARS" ] \

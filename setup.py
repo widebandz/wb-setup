@@ -96,6 +96,7 @@ def bootstrap_status(state_directory: Path) -> str:
         "needs_admin_password",
         "needs_developer_tools",
         "needs_developer_tools_selection",
+        "needs_developer_tools_update",
         "needs_homebrew_ownership",
         "installing_tools",
         "collecting_identity",

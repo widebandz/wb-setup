@@ -152,8 +152,9 @@ does before you run it.
 4. **Verifies and starts Homebrew in the background**, logging to
    `/tmp/wb-bootstrap-brew.log`. It separately proves the intended user,
    `/opt/homebrew` ownership and writability, PATH, architecture, and Apple
-   Command Line Tools/Git. A partial post-upgrade prefix is stopped for review
-   instead of being accepted merely because `brew` exists.
+   Command Line Tools/Git. It runs the selected developer Git and reports the
+   Apple package receipt, so an incompatible post-upgrade toolchain is stopped
+   for Software Update instead of being accepted merely because files exist.
 5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
    package preloads the approved values; the generic client package asks six
    plain-language questions in native macOS popups. If that file already

@@ -28,22 +28,50 @@ wb_hb_identity_probe() {
   esac
 }
 
+wb_hb_classify_clt() {
+  WB_HB_CLT_READY=0
+  if [ "$WB_HB_CLT_SELECTED_WORKS" = 1 ]; then
+    WB_HB_CLT_READY=1
+    WB_HB_CLT_STATE="ready"
+  elif [ "$WB_HB_CLT_DEFAULT_WORKS" = 1 ]; then
+    WB_HB_CLT_STATE="installed_not_selected"
+  elif [ "$WB_HB_CLT_SELECTED_EXISTS" = 1 ] \
+    || [ "$WB_HB_CLT_DEFAULT_INSTALLED" = 1 ]; then
+    WB_HB_CLT_STATE="incompatible"
+  else
+    WB_HB_CLT_STATE="missing"
+  fi
+}
+
 wb_hb_clt_probe() {
   WB_HB_CLT_PATH="$(/usr/bin/xcode-select -p 2>/dev/null)"
-  WB_HB_CLT_READY=0
+  WB_HB_CLT_VERSION="$(
+    /usr/sbin/pkgutil --pkg-info=com.apple.pkg.CLTools_Executables 2>/dev/null \
+      | /usr/bin/awk -F': ' '$1 == "version" { print $2; exit }'
+  )"
   WB_HB_CLT_DEFAULT_INSTALLED=0
-  WB_HB_CLT_STATE="missing"
+  WB_HB_CLT_SELECTED_EXISTS=0
+  WB_HB_CLT_SELECTED_WORKS=0
+  WB_HB_CLT_DEFAULT_WORKS=0
+  WB_HB_GIT_VERSION=""
   if [ -x /Library/Developer/CommandLineTools/usr/bin/git ]; then
     WB_HB_CLT_DEFAULT_INSTALLED=1
   fi
   if [ -n "$WB_HB_CLT_PATH" ] \
      && [ -d "$WB_HB_CLT_PATH" ] \
      && [ -x "$WB_HB_CLT_PATH/usr/bin/git" ]; then
-    WB_HB_CLT_READY=1
-    WB_HB_CLT_STATE="ready"
-  elif [ "$WB_HB_CLT_DEFAULT_INSTALLED" = 1 ]; then
-    WB_HB_CLT_STATE="installed_not_selected"
+    WB_HB_CLT_SELECTED_EXISTS=1
   fi
+  if [ "$WB_HB_CLT_SELECTED_EXISTS" = 1 ] \
+     && WB_HB_GIT_VERSION="$("$WB_HB_CLT_PATH/usr/bin/git" --version 2>/dev/null)"; then
+    WB_HB_CLT_SELECTED_WORKS=1
+  elif [ "$WB_HB_CLT_DEFAULT_INSTALLED" = 1 ] \
+     && WB_HB_GIT_VERSION="$(/Library/Developer/CommandLineTools/usr/bin/git --version 2>/dev/null)"; then
+    WB_HB_CLT_DEFAULT_WORKS=1
+  else
+    WB_HB_GIT_VERSION="unavailable"
+  fi
+  wb_hb_classify_clt
 }
 
 wb_hb_classify_prefix() {
@@ -182,6 +210,8 @@ wb_hb_print_report() {
     "    PATH resolves   ${WB_HB_PATH_BREW:-not found}" \
     "    developer dir   ${WB_HB_CLT_PATH:-not selected}" \
     "    developer Git   $WB_HB_CLT_STATE" \
+    "    Git version     ${WB_HB_GIT_VERSION:-unavailable}" \
+    "    CLT receipt     ${WB_HB_CLT_VERSION:-not found}" \
     "    prefix          $WB_HB_PREFIX" \
     "    prefix state    $WB_HB_PREFIX_STATE" \
     "    prefix owner    $WB_HB_PREFIX_OWNER${WB_HB_PREFIX_UID:+ (uid $WB_HB_PREFIX_UID)}" \

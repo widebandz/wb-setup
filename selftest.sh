@@ -53,6 +53,22 @@ fi
 if bash - "$HERE/lib/bootstrap-homebrew.sh" <<'SH' >/dev/null 2>&1
 set -u
 . "$1"
+WB_HB_CLT_SELECTED_EXISTS=0
+WB_HB_CLT_DEFAULT_INSTALLED=0
+WB_HB_CLT_SELECTED_WORKS=0
+WB_HB_CLT_DEFAULT_WORKS=0
+wb_hb_classify_clt
+[ "$WB_HB_CLT_STATE" = missing ]
+WB_HB_CLT_DEFAULT_INSTALLED=1
+wb_hb_classify_clt
+[ "$WB_HB_CLT_STATE" = incompatible ]
+WB_HB_CLT_DEFAULT_WORKS=1
+wb_hb_classify_clt
+[ "$WB_HB_CLT_STATE" = installed_not_selected ]
+WB_HB_CLT_SELECTED_EXISTS=1
+WB_HB_CLT_SELECTED_WORKS=1
+wb_hb_classify_clt
+[ "$WB_HB_CLT_STATE" = ready ]
 WB_HB_USER=clientuser
 WB_HB_PREFIX_MARKER=1
 WB_HB_PREFIX_OWNER=old-owner
@@ -76,9 +92,9 @@ wb_hb_classify_prefix
 [ "$WB_HB_PREFIX_STATE" = unrecognized ]
 SH
 then
-  ok "Homebrew guard distinguishes stale ownership, permissions, and unknown prefixes"
+  ok "Homebrew guard distinguishes CLT and post-upgrade prefix states"
 else
-  no "Homebrew guard cannot classify post-upgrade prefix states"
+  no "Homebrew guard cannot classify post-upgrade CLT or prefix states"
 fi
 
 HB_FIXTURE="$(mktemp -d /tmp/wb-homebrew-selftest.XXXXXX)"
@@ -117,6 +133,7 @@ fi
 if grep -q -- '--diagnose-homebrew' "$HERE/bootstrap.sh" \
    && grep -q 'needs_developer_tools' "$HERE/bootstrap.sh" \
    && grep -q 'needs_developer_tools_selection' "$HERE/bootstrap.sh" \
+   && grep -q 'needs_developer_tools_update' "$HERE/bootstrap.sh" \
    && grep -q 'needs_homebrew_ownership' "$HERE/bootstrap.sh" \
    && grep -q '/usr/bin/find /opt/homebrew -xdev ! -uid' "$HERE/lib/bootstrap-homebrew.sh" \
    && grep -q '/usr/sbin/chown -h' "$HERE/lib/bootstrap-homebrew.sh" \
@@ -353,6 +370,8 @@ with tempfile.TemporaryDirectory() as directory:
     assert module.bootstrap_status(store.directory) == "needs_developer_tools"
     module.write_private(store.directory / "bootstrap-status", "needs_developer_tools_selection\n")
     assert module.bootstrap_status(store.directory) == "needs_developer_tools_selection"
+    module.write_private(store.directory / "bootstrap-status", "needs_developer_tools_update\n")
+    assert module.bootstrap_status(store.directory) == "needs_developer_tools_update"
     module.write_private(store.directory / "bootstrap-status", "needs_homebrew_ownership\n")
     assert module.bootstrap_status(store.directory) == "needs_homebrew_ownership"
     module.bootstrap_is_ready = original
@@ -622,6 +641,7 @@ PY
      && grep -q 'function pollState' "$HERE/installer/app.js" \
      && grep -q 'needs_admin_password' "$HERE/installer/app.js" \
      && grep -q 'needs_developer_tools_selection' "$HERE/installer/app.js" \
+     && grep -q 'needs_developer_tools_update' "$HERE/installer/app.js" \
      && grep -q 'setView(viewMode, false)' "$HERE/installer/app.js"; then
     ok "client UI distinguishes proof sources, polls live state, and explains reconnection"
   else

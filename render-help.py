@@ -41,8 +41,9 @@ CARDS = [
 
     ("Homebrew is not writable or Git is unavailable",
      "This often appears after a major macOS upgrade leaves an old Homebrew "
-     "folder but removes or deselects Apple Command Line Tools. Ownership and "
-     "Git are separate checks; do not run a broad chown from the error text.",
+     "folder but removes, deselects, or leaves incompatible Apple Command Line "
+     "Tools. Ownership and Git are separate checks; do not run a broad chown "
+     "from the error text.",
      "bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew",
      "Send the read-only report to Wideband. Run a sudo repair only when the "
      "report proves the intended user and prints the exact scoped command."),

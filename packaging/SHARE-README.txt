@@ -63,8 +63,9 @@ localhost link or technical setup guide.
 17. If this Mac was upgraded from an older macOS release and Terminal reports
     that /opt/homebrew is not writable or Git is unavailable, do not run a
     broad chown command from the error. Leave the app open and contact
-    Wideband; release 0.5.1 verifies the intended user, Apple developer tools,
-    and exact Homebrew prefix before it prints any repair for you to approve.
+    Wideband; release 0.5.1 verifies the intended user, runs the selected Apple
+    developer Git, and checks the exact Homebrew prefix before it prints any
+    repair for you to approve.
 
 Requirements
 • Apple silicon Mac

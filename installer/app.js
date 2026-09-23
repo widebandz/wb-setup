@@ -490,6 +490,8 @@ function renderMachineState() {
             ? "Action needed: approve Apple's Command Line Tools installer; Wideband checks it automatically."
             : bootstrapStatus === "needs_developer_tools_selection"
               ? "Apple's tools are installed but no longer selected. Terminal shows the exact reselect command."
+            : bootstrapStatus === "needs_developer_tools_update"
+              ? "Apple's developer-tool files remain, but Git cannot run after the macOS upgrade."
             : bootstrapStatus === "needs_homebrew_ownership"
               ? "Homebrew was left by another ownership context. Terminal shows the verified repair boundary."
           : bootstrapStatus === "collecting_identity"
@@ -497,7 +499,7 @@ function renderMachineState() {
             : bootstrapStatus === "needs_attention"
               ? "The core tool install needs review in Terminal."
               : "Homebrew and the core tools are installing in Terminal.",
-      !bootstrapDone && !["needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
+      !bootstrapDone && !["needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
     ),
     machineRow(installDone, "Wideband layer", installDone ? "Agent context, workspace, and standing services installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : running?.action === "run_install" ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", running?.action === "run_install"),
     machineRow(Boolean(verification) && !verification.failed, "Machine checks", verification ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred` : "Checks run automatically after installation.", running?.action?.includes("verify")),
@@ -538,6 +540,12 @@ function renderMachineState() {
     badge.classList.add("attention");
     badge.querySelector("strong").textContent = "Reselect Apple Command Line Tools";
     badge.querySelector("small").textContent = "Review the exact sudo command in Terminal, run it in a new Terminal window, then reopen Wideband Setup.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_developer_tools_update") {
+    state.textContent = "Your action";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Update Apple Command Line Tools";
+    badge.querySelector("small").textContent = "Open System Settings → General → Software Update. Wideband will not delete or replace Apple's tools automatically.";
   } else if (!bootstrapDone && bootstrapStatus === "needs_homebrew_ownership") {
     state.textContent = "Operator review";
     state.classList.add("attention");

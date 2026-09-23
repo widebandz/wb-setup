@@ -133,9 +133,9 @@ bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew
 ```
 
 It reports the invoking user and UID, home owner, GUI console user,
-architecture, PATH, selected developer directory and Git, exact prefix owner
-and mode, and the number of objects owned by another UID. It does not use
-`sudo` or change the machine.
+architecture, PATH, selected developer directory, runnable Git version, Apple
+Command Line Tools receipt, exact prefix owner and mode, and the number of
+objects owned by another UID. It does not use `sudo` or change the machine.
 
 Do not copy a generic `sudo chown -R <name> /opt/homebrew` from an error. The
 bootstrap prints a repair only when all of these are true:
@@ -164,9 +164,16 @@ That package is not the full Xcode application. The message saying an install
 was requested is not proof the download started; select **Install** and leave
 Terminal open while Wideband waits for the Git executable to appear.
 
-**Proof:** a second diagnostic reports `developer Git ready`, `prefix state
-healthy`, the intended user and console user agree, and reopening Wideband
-Setup advances the Core tools row without another ownership error.
+If it says `developer Git incompatible`, the files remain but the selected Git
+cannot run. This is a known post-upgrade class: Apple advises checking Software
+Update for a Command Line Tools release compatible with the new macOS. Open
+**System Settings → General → Software Update**, install that update, and reopen
+Wideband Setup. Wideband does not delete the existing Apple toolchain or run a
+destructive reinstall command automatically.
+
+**Proof:** a second diagnostic reports `developer Git ready` with a Git version,
+`prefix state healthy`, the intended user and console user agree, and reopening
+Wideband Setup advances the Core tools row without another ownership error.
 
 ## A permission was approved but remains red
 

@@ -17,6 +17,10 @@ recorded here.
   this is not full Xcode, requests the Apple installer when the tools are
   absent, waits for real Git evidence, and detects the post-upgrade case where
   the tools exist but are not selected.
+- Verifies that the selected developer Git actually executes and reports the
+  Apple CLT receipt version. Files that survive an upgrade but cannot run now
+  stop in a separate Software Update state; Wideband never deletes or forcibly
+  reinstalls Apple's toolchain.
 - Added a guarded ownership state for a recognized but non-writable Homebrew
   prefix. Wideband never executes `chown`; it prints a same-filesystem,
   no-symlink-follow repair only after the intended user and exact prefix have

@@ -113,6 +113,11 @@ machines upgraded from an older macOS release: the prefix can survive while
 Command Line Tools is removed or deselected, and a previous ownership context
 can make `brew` executable but unusable.
 
+The developer-tools probe executes the selected Git binary and reports the CLT
+package receipt version. A present-but-unrunnable toolchain is a separate
+`needs_developer_tools_update` state. It directs the client to Apple's Software
+Update and never deletes or forcibly reinstalls `/Library/Developer`.
+
 The bootstrap never runs an ownership repair. It can print a scoped repair only
 when `/opt/homebrew` is a real, recognized Homebrew directory on arm64; the
 current user owns their unsymlinked home; the GUI console user matches; and the
@@ -377,7 +382,8 @@ configuration:
   correctly, while both nonstandard repair targets were denied;
 - a fresh authenticated localhost/browser run completed the client and operator
   journey and rendered distinct, actionable states for missing developer tools,
-  installed-but-not-selected tools, and Homebrew ownership review; and
+  installed-but-not-selected tools, incompatible tools, and Homebrew ownership
+  review; and
 - the source self-test passed 59 checks with zero failures.
 
 These tests prove the branching and safety behavior. They do not substitute for
@@ -405,8 +411,8 @@ observed before that client runs any repair.
    automation. The guide should make ownership and next action unmistakable.
 9. A major macOS upgrade can leave `/opt/homebrew` behind while invalidating
    Command Line Tools/Git or its ownership context. Bootstrap must diagnose the
-   three layers independently and stop safely instead of calling that state
-   “already installed.”
+   three layers independently, execute the selected Git as proof, and stop
+   safely instead of calling that state “already installed.”
 
 ## Documentation map
 
