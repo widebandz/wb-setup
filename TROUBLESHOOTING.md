@@ -143,13 +143,20 @@ bootstrap prints a repair only when all of these are true:
 - the machine is arm64 and the target is exactly `/opt/homebrew`;
 - the target is a real directory, not a symlink, and contains Homebrew markers;
 - the invoking user owns their unsymlinked home and is an administrator; and
-- the GUI console user is the same intended user.
+- the GUI console user is the same intended user; and
+- the standard Homebrew directories have no extended ACL or file-flag state
+  that a scoped ownership/mode repair cannot safely explain.
 
 The printed repair uses `find -xdev`, changes ownership only on objects whose
 UID differs, uses `chown -h` so symlinks are not followed, and restores owner
 access only on directories already owned by that UID. It does not make every
 file writable. Wideband never runs it. The client must personally review and
 execute the two printed commands, then reopen Wideband Setup.
+
+If the report shows ACL entries, file flags, or effective non-writability that
+is not explained by ownership or owner-write bits, no repair command is
+printed. That state requires operator review; a generic `chown` or `chmod`
+would be guesswork and may not fix the actual restriction.
 
 If the report says `developer Git installed_not_selected`, the files already
 exist and the client may personally run the exact selection shown by the

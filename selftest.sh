@@ -90,6 +90,20 @@ wb_hb_classify_prefix
 WB_HB_PREFIX_MARKER=0
 wb_hb_classify_prefix
 [ "$WB_HB_PREFIX_STATE" = unrecognized ]
+WB_HB_ARCH=arm64
+WB_HB_PREFIX=/opt/homebrew
+WB_HB_PREFIX_MARKER=1
+WB_HB_PREFIX_STATE=wrong_owner
+WB_HB_MISMATCH_COUNT=1
+WB_HB_IDENTITY_SAFE=1
+WB_HB_ADMIN=1
+WB_HB_CONSOLE_USER=clientuser
+WB_HB_ACL_ENTRY_COUNT=1
+WB_HB_FLAGGED=""
+! wb_hb_repair_available
+WB_HB_ACL_ENTRY_COUNT=0
+WB_HB_FLAGGED=/opt/homebrew:uchg
+! wb_hb_repair_available
 SH
 then
   ok "Homebrew guard distinguishes CLT and post-upgrade prefix states"
@@ -138,6 +152,8 @@ if grep -q -- '--diagnose-homebrew' "$HERE/bootstrap.sh" \
    && grep -q '/usr/bin/find /opt/homebrew -xdev ! -uid' "$HERE/lib/bootstrap-homebrew.sh" \
    && grep -q '/usr/sbin/chown -h' "$HERE/lib/bootstrap-homebrew.sh" \
    && grep -q '/usr/bin/find /opt/homebrew -xdev -type d -uid' "$HERE/lib/bootstrap-homebrew.sh" \
+   && grep -q 'WB_HB_ACL_ENTRY_COUNT' "$HERE/lib/bootstrap-homebrew.sh" \
+   && grep -q 'WB_HB_FLAGGED' "$HERE/lib/bootstrap-homebrew.sh" \
    && ! grep -qE 'chown[[:space:]]+-R.*(/opt/homebrew|\$WB_HB_PREFIX)' "$HERE/bootstrap.sh" "$HERE/lib/bootstrap-homebrew.sh"; then
   ok "Homebrew recovery is diagnostic-first and never runs a broad recursive chown"
 else

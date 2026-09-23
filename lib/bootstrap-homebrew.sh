@@ -101,6 +101,8 @@ wb_hb_prefix_probe() {
   WB_HB_NONWRITABLE=""
   WB_HB_MISMATCH_COUNT=0
   WB_HB_NONWRITABLE_DIR_COUNT=0
+  WB_HB_ACL_ENTRY_COUNT=0
+  WB_HB_FLAGGED=""
   WB_HB_PATH_READY=0
   WB_HB_PATH_BREW="$(command -v brew 2>/dev/null)"
 
@@ -132,7 +134,7 @@ wb_hb_prefix_probe() {
     WB_HB_PREFIX_MARKER=1
   fi
 
-  local candidate
+  local candidate candidate_acls candidate_flags
   for candidate in \
     "$WB_HB_PREFIX" \
     "$WB_HB_PREFIX/bin" \
@@ -148,6 +150,17 @@ wb_hb_prefix_probe() {
     "$WB_HB_PREFIX/var"; do
     if [ -d "$candidate" ] && [ ! -w "$candidate" ]; then
       WB_HB_NONWRITABLE="${WB_HB_NONWRITABLE}${WB_HB_NONWRITABLE:+ }$candidate"
+    fi
+    if [ -d "$candidate" ]; then
+      candidate_acls="$(
+        /bin/ls -lde "$candidate" 2>/dev/null \
+          | /usr/bin/awk 'NR > 1 && /^[[:space:]]*[0-9]+:/ { count++ } END { print count + 0 }'
+      )"
+      WB_HB_ACL_ENTRY_COUNT=$((WB_HB_ACL_ENTRY_COUNT + candidate_acls))
+      candidate_flags="$(/usr/bin/stat -f '%Sf' "$candidate" 2>/dev/null)"
+      if [ -n "$candidate_flags" ] && [ "$candidate_flags" != "-" ]; then
+        WB_HB_FLAGGED="${WB_HB_FLAGGED}${WB_HB_FLAGGED:+ }$candidate($candidate_flags)"
+      fi
     fi
   done
 
@@ -174,8 +187,12 @@ wb_hb_repair_available() {
     && [ "$WB_HB_IDENTITY_SAFE" = 1 ] \
     && [ "$WB_HB_ADMIN" = 1 ] \
     && [ "$WB_HB_CONSOLE_USER" = "$WB_HB_USER" ] \
-    && { [ "$WB_HB_PREFIX_STATE" = "wrong_owner" ] \
-      || [ "$WB_HB_PREFIX_STATE" = "not_writable" ]; }
+    && [ "$WB_HB_ACL_ENTRY_COUNT" = 0 ] \
+    && [ -z "$WB_HB_FLAGGED" ] \
+    && { { [ "$WB_HB_PREFIX_STATE" = "wrong_owner" ] \
+        && [ "$WB_HB_MISMATCH_COUNT" -gt 0 ] 2>/dev/null; } \
+      || { [ "$WB_HB_PREFIX_STATE" = "not_writable" ] \
+        && [ "$WB_HB_NONWRITABLE_DIR_COUNT" -gt 0 ] 2>/dev/null; }; }
 }
 
 wb_hb_print_repair() {
@@ -186,6 +203,7 @@ wb_hb_print_repair() {
     "    console user   $WB_HB_CONSOLE_USER" \
     "    private prefix /opt/homebrew (not a symlink)" \
     "    current owner  $WB_HB_PREFIX_OWNER (uid ${WB_HB_PREFIX_UID:-unknown})" \
+    "    ACLs / flags   none on standard Homebrew directories" \
     "" \
     "  Wideband will NOT run the ownership repair automatically." \
     "  If /opt/homebrew is intentionally this user's Homebrew installation," \
@@ -218,7 +236,9 @@ wb_hb_print_report() {
     "    prefix group    ${WB_HB_PREFIX_GROUP:-unknown}" \
     "    prefix mode     ${WB_HB_PREFIX_MODE:-unknown}" \
     "    mismatched objs $WB_HB_MISMATCH_COUNT" \
-    "    locked dirs     $WB_HB_NONWRITABLE_DIR_COUNT"
+    "    locked dirs     $WB_HB_NONWRITABLE_DIR_COUNT" \
+    "    ACL entries     $WB_HB_ACL_ENTRY_COUNT" \
+    "    file flags      ${WB_HB_FLAGGED:-none}"
   if [ -n "$WB_HB_NONWRITABLE" ]; then
     printf '    non-writable    %s\n' "$WB_HB_NONWRITABLE"
   fi

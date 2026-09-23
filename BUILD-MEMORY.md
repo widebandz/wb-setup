@@ -129,6 +129,10 @@ writable file by file. A blocked health state is authoritative even when stale
 tool executables remain in `bin`; those files must never turn the final state
 back into a false `ready` or be invoked as a fallback.
 
+Extended ACLs and file flags on the standard Homebrew directories are a hard
+stop for generated ownership advice. The scoped repair is printed only when
+plain owner/UID or owner-write bits fully explain the failure.
+
 ### Private setup engine
 
 `setup.py` serves the UI and API on `127.0.0.1`. Port `8803` is preferred; a

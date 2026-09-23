@@ -25,6 +25,8 @@ recorded here.
   prefix. Wideband never executes `chown`; it prints a same-filesystem,
   no-symlink-follow repair only after the intended user and exact prefix have
   been proven, and requires the client to approve it personally.
+- Refuses to generate ownership commands when extended ACLs or file flags make
+  the permission state more complex than the scoped UID/directory-mode repair.
 - Made a blocked preflight authoritative: stale `git`, `jq`, or `tmux`
   executables can no longer overwrite the ownership/developer-tools state with
   a false `ready`, and no Homebrew fallback runs after the guard stops it.
