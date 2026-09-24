@@ -21,6 +21,12 @@ private final class SetupAppDelegate: NSObject, NSApplicationDelegate, WKNavigat
     private var dashboardURL: URL?
     private var activeConnection: SetupConnection?
     private var startupBegan = Date()
+    private var updateCheckInFlight = false
+    private var updateSession: URLSession?
+    private var checkForUpdatesMenuItem: NSMenuItem?
+    private var automaticUpdatesMenuItem: NSMenuItem?
+
+    private let updatePreferenceKey = "WBCheckForUpdatesAtStartup"
 
     private var connectionURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -43,6 +49,9 @@ private final class SetupAppDelegate: NSObject, NSApplicationDelegate, WKNavigat
         NSApp.activate(ignoringOtherApps: true)
         startPackagedLauncher()
         startConnectionPolling()
+        DispatchQueue.main.async { [weak self] in
+            self?.offerUpdatePreferenceOrCheck()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -65,6 +74,14 @@ private final class SetupAppDelegate: NSObject, NSApplicationDelegate, WKNavigat
         let browser = applicationMenu.addItem(withTitle: "Open Guide in Browser", action: #selector(openInBrowser), keyEquivalent: "o")
         browser.keyEquivalentModifierMask = [.command, .shift]
         applicationMenu.addItem(withTitle: "Reload Guide", action: #selector(reloadGuide), keyEquivalent: "r")
+        applicationMenu.addItem(.separator())
+        checkForUpdatesMenuItem = applicationMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdatesManually), keyEquivalent: "")
+        checkForUpdatesMenuItem?.target = self
+        automaticUpdatesMenuItem = applicationMenu.addItem(withTitle: "Check for Updates When Starting", action: #selector(toggleAutomaticUpdateChecks), keyEquivalent: "")
+        automaticUpdatesMenuItem?.target = self
+        let history = applicationMenu.addItem(withTitle: "View Version History…", action: #selector(openVersionHistory), keyEquivalent: "")
+        history.target = self
+        refreshUpdateMenuState()
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Quit Wideband Setup", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = applicationMenu
@@ -317,6 +334,203 @@ private final class SetupAppDelegate: NSObject, NSApplicationDelegate, WKNavigat
         } else {
             dashboardURL = nil
             startConnectionPolling()
+        }
+    }
+
+    private var currentRelease: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+    }
+
+    private var configuredUpdateFeedURL: URL? {
+        guard
+            let value = Bundle.main.object(forInfoDictionaryKey: "WBUpdateFeedURL") as? String,
+            let url = URL(string: value),
+            wbTrustedUpdateFeedURL(url)
+        else { return nil }
+        return url
+    }
+
+    private var configuredVersionHistoryURL: URL? {
+        guard
+            let value = Bundle.main.object(forInfoDictionaryKey: "WBUpdateHistoryURL") as? String,
+            let url = URL(string: value),
+            url.scheme?.lowercased() == "https",
+            url.host?.lowercased() == "github.com",
+            url.path == "/widebandz/wb-setup/releases"
+        else { return nil }
+        return url
+    }
+
+    private func offerUpdatePreferenceOrCheck() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: updatePreferenceKey) == nil else {
+            refreshUpdateMenuState()
+            if defaults.bool(forKey: updatePreferenceKey) {
+                checkForUpdates(showUpToDate: false)
+            }
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Would you like to check for updates when Wideband Setup starts?"
+        alert.informativeText = "Checking for updates requires an Internet connection.\n\nURL:\nhttps://os.wideband.ai/version\n\nNo client details, setup answers, or machine identifiers are sent. You can change this later from the Wideband Setup menu."
+        alert.addButton(withTitle: "Check Automatically")
+        alert.addButton(withTitle: "Not Now")
+        present(alert) { [weak self] response in
+            guard let self else { return }
+            let enabled = response == .alertFirstButtonReturn
+            defaults.set(enabled, forKey: self.updatePreferenceKey)
+            self.refreshUpdateMenuState()
+            if enabled {
+                self.checkForUpdates(showUpToDate: false)
+            }
+        }
+    }
+
+    @objc private func checkForUpdatesManually() {
+        checkForUpdates(showUpToDate: true)
+    }
+
+    @objc private func toggleAutomaticUpdateChecks() {
+        let enabled = !UserDefaults.standard.bool(forKey: updatePreferenceKey)
+        UserDefaults.standard.set(enabled, forKey: updatePreferenceKey)
+        refreshUpdateMenuState()
+    }
+
+    @objc private func openVersionHistory() {
+        guard let url = configuredVersionHistoryURL else {
+            showFailure("The version-history link is missing or damaged. Download a fresh copy or contact Wideband.")
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func refreshUpdateMenuState() {
+        automaticUpdatesMenuItem?.state = UserDefaults.standard.bool(forKey: updatePreferenceKey) ? .on : .off
+        checkForUpdatesMenuItem?.isEnabled = !updateCheckInFlight
+        checkForUpdatesMenuItem?.title = updateCheckInFlight ? "Checking for Updates…" : "Check for Updates…"
+    }
+
+    private func checkForUpdates(showUpToDate: Bool) {
+        guard !updateCheckInFlight else { return }
+        guard currentRelease != "unknown", let feedURL = configuredUpdateFeedURL else {
+            if showUpToDate {
+                showFailure("The update checker is missing its trusted Wideband URL. Download a fresh copy or contact Wideband.")
+            }
+            return
+        }
+
+        updateCheckInFlight = true
+        refreshUpdateMenuState()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 12
+        let session = URLSession(configuration: configuration)
+        updateSession = session
+
+        var request = URLRequest(url: feedURL)
+        request.timeoutInterval = 8
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Wideband-Setup/\(currentRelease)", forHTTPHeaderField: "User-Agent")
+
+        session.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.updateCheckInFlight = false
+                self.refreshUpdateMenuState()
+                session.finishTasksAndInvalidate()
+                self.updateSession = nil
+
+                guard error == nil,
+                      let http = response as? HTTPURLResponse,
+                      http.statusCode == 200,
+                      let responseURL = http.url,
+                      let data else {
+                    if showUpToDate {
+                        self.showUpdateCheckError("Wideband Setup could not reach https://os.wideband.ai/version. Your setup was not changed. Check the connection and try again.")
+                    }
+                    return
+                }
+
+                do {
+                    let update = try wbValidateUpdateFeed(
+                        data: data,
+                        responseURL: responseURL,
+                        currentVersion: self.currentRelease
+                    )
+                    if update.isNewer {
+                        self.showAvailableUpdate(update)
+                    } else if showUpToDate {
+                        self.showUpToDate()
+                    }
+                } catch {
+                    if showUpToDate {
+                        self.showUpdateCheckError(error.localizedDescription)
+                    }
+                }
+            }
+        }.resume()
+    }
+
+    private func showAvailableUpdate(_ update: WBValidatedUpdate) {
+        let megabytes = Double(update.sizeBytes) / 1_048_576.0
+        let gatekeeper = update.requiresGatekeeperException
+            ? "This pilot is not notarized, so macOS may require Privacy & Security → Open Anyway."
+            : "This release is signed and notarized for macOS."
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Wideband Setup \(update.version) is available"
+        alert.informativeText = "You have \(currentRelease).\n\n\(update.summary)\n\n\(gatekeeper) Wideband will open the public release page; it will never install an update without you.\n\nDownload: \(update.artifactName) (\(String(format: "%.1f", megabytes)) MB)\nSHA-256: \(update.sha256)"
+        alert.addButton(withTitle: "View & Download")
+        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: "Version History")
+        present(alert) { response in
+            if response == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(update.releaseNotesURL)
+            } else if response == .alertThirdButtonReturn {
+                NSWorkspace.shared.open(update.historyURL)
+            }
+        }
+    }
+
+    private func showUpToDate() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Wideband Setup is up to date"
+        alert.informativeText = "This Mac is running Wideband Setup \(currentRelease), the newest published release."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Version History")
+        present(alert) { [weak self] response in
+            if response == .alertSecondButtonReturn {
+                self?.openVersionHistory()
+            }
+        }
+    }
+
+    private func showUpdateCheckError(_ detail: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn’t check for updates"
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Version History")
+        present(alert) { [weak self] response in
+            if response == .alertSecondButtonReturn {
+                self?.openVersionHistory()
+            }
+        }
+    }
+
+    private func present(_ alert: NSAlert, completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window, window.isVisible {
+            alert.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            completion(alert.runModal())
         }
     }
 

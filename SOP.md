@@ -18,7 +18,7 @@ subscription (Claude Pro/Max, or Console API key).
 ## Release implementation context
 
 This SOP defines the desired machine. [BUILD-MEMORY.md](BUILD-MEMORY.md)
-defines how the 0.5 installer delivers it: native shell, local authenticated
+defines how the 0.6 installer delivers it: native shell, local authenticated
 engine, client/operator views, ownership boundaries, permission principal,
 packaging, recovery, security invariants, and the release E2E matrix.
 [CHANGELOG.md](CHANGELOG.md) is the release history.
@@ -27,6 +27,12 @@ Future software work must update those files when it changes architecture,
 client responsibility, trust, persisted state, release procedure, or proven
 behavior. Client-day preparation lives in [PREP.md](PREP.md); the instructions
 embedded in the DMG live in `packaging/SHARE-README.txt`.
+
+The native app offers an opt-in startup update check against
+`https://os.wideband.ai/version`; manual checking and the public GitHub Release
+history remain available when startup checks are disabled. The feed carries
+only public release metadata. Updates are never silently installed, and the
+release page must state the exact trust/Gatekeeper condition of its DMG.
 
 ---
 
@@ -880,7 +886,7 @@ reboot. Eight durable lessons came from that run:
    boundary.
 9. **An OS upgrade creates a third Homebrew state.** The machine is neither
    clean nor ready when `/opt/homebrew` survives but Apple Command Line Tools,
-   Git compatibility/selection, or prefix ownership does not. Release 0.5.1
+   Git compatibility/selection, or prefix ownership does not. Release 0.6.0
    diagnoses the actual user, executes developer Git, and checks the prefix
    independently; it never runs `chown` itself and resumes only after the owner
    approves a verified scoped repair.

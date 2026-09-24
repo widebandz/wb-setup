@@ -20,6 +20,10 @@ Preserve these invariants:
 - A bare Mac cannot be assumed to have Git, Python, Homebrew, or modern Bash.
 - An existing `brew` executable is not a health check. Preserve the read-only
   user/prefix/CLT guard and never automate a broad ownership change.
+- Update checks require prior client consent, accept metadata only from
+  `https://os.wideband.ai/version`, pin all release links to the public
+  `widebandz/wb-setup` GitHub repository, and never install or execute an
+  update automatically.
 - `help.html` is generated from `TROUBLESHOOTING.md`; run
   `python3 render-help.py` after changing the source guide.
 

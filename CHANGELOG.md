@@ -5,6 +5,28 @@ recorded here.
 
 ## Unreleased
 
+## 0.6.0 — 2026-09-23
+
+### Client-controlled updates
+
+- Added a one-time native consent prompt before Wideband Setup makes any
+  Internet request. Clients can allow a lightweight check at app startup,
+  decline it, change the preference from the app menu, or run **Check for
+  Updates…** manually.
+- Added the public schema-1 feed at `https://os.wideband.ai/version`. The app
+  accepts only that HTTPS endpoint, a bounded JSON response for
+  `wideband-setup`, and release/download links under the public
+  `widebandz/wb-setup` GitHub repository.
+- Update notices show the installed and available versions, release summary,
+  artifact name and size, SHA-256, and the correct Gatekeeper state. Wideband
+  opens the public release page but never silently downloads, installs, or
+  executes an update.
+- Added **View Version History…** and made GitHub Releases the public artifact
+  history while this changelog remains the source history.
+- Added deterministic feed generation, validation tests, and a GitHub Pages
+  deployment workflow. Publishing a release now binds one version, build ID,
+  trust state, exact DMG name, size, and checksum together.
+
 ### Session identity and agent memory
 
 - Added `bin/tm-memory`: durable identity and handoff state for tmux/SSH agent

@@ -19,6 +19,11 @@
 # Exit code is the number of failures.
 set -uo pipefail
 
+# The release suite is also run from inside the sealed app bundle. Importing
+# setup.py must never create __pycache__ beside the signed resources and thereby
+# invalidate the artifact merely by testing it.
+export PYTHONDONTWRITEBYTECODE=1
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0; FAIL=0
 
@@ -711,7 +716,9 @@ PY
   fi
 
   if [ -f "$HERE/packaging/WidebandSetupLauncher.swift" ] \
+     && [ -f "$HERE/packaging/UpdateFeed.swift" ] \
      && grep -q 'WidebandSetupLauncher.swift' "$HERE/packaging/build-app.sh" \
+     && grep -q 'UpdateFeed.swift' "$HERE/packaging/build-app.sh" \
      && grep -q 'RESOURCES/app-launcher' "$HERE/packaging/build-app.sh" \
      && grep -q 'wb-setup-engine' "$HERE/packaging/build-app.sh" \
      && ! grep -q 'codesign --force --options runtime --sign -.*wb-setup-engine' "$HERE/packaging/build-app.sh" \
@@ -722,10 +729,14 @@ PY
      && grep -q 'WKWebView' "$HERE/packaging/WidebandSetupLauncher.swift" \
      && grep -q 'expectedBuildID' "$HERE/packaging/WidebandSetupLauncher.swift" \
      && grep -q 'activeConnection' "$HERE/packaging/WidebandSetupLauncher.swift" \
+     && grep -q 'Would you like to check for updates when Wideband Setup starts?' "$HERE/packaging/WidebandSetupLauncher.swift" \
+     && grep -q 'https://os.wideband.ai/version' "$HERE/packaging/Info.plist" \
      && grep -q 'WB_SETUP_ROOT' "$HERE/packaging/run-setup.command"; then
     if command -v xcrun >/dev/null 2>&1; then
       xcrun swiftc -parse-as-library -typecheck -target arm64-apple-macos13.0 \
-        -framework AppKit -framework WebKit "$HERE/packaging/WidebandSetupLauncher.swift" >/dev/null 2>&1 \
+        -framework AppKit -framework WebKit \
+        "$HERE/packaging/UpdateFeed.swift" \
+        "$HERE/packaging/WidebandSetupLauncher.swift" >/dev/null 2>&1 \
         && ok "Wideband Setup embedded native guide compiles" \
         || no "Wideband Setup embedded native guide does not compile"
     else
@@ -733,6 +744,64 @@ PY
     fi
   else
     no "Wideband Setup launcher or bare-Mac engine packaging is incomplete"
+  fi
+
+  if command -v xcrun >/dev/null 2>&1; then
+    UPDATE_TEST_BIN="$(mktemp /tmp/wb-update-feed-test.XXXXXX)"
+    if xcrun swiftc -parse-as-library -target arm64-apple-macos13.0 \
+         "$HERE/packaging/UpdateFeed.swift" "$HERE/tests/update-feed-tests.swift" \
+         -o "$UPDATE_TEST_BIN" >/dev/null 2>&1 \
+       && "$UPDATE_TEST_BIN" >/dev/null 2>&1; then
+      ok "update feed accepts only the pinned Wideband endpoint and release repository"
+    else
+      no "update feed validation or version comparison failed"
+    fi
+    /bin/rm -f "$UPDATE_TEST_BIN"
+  else
+    ok "update feed validation test is present (compile deferred)"
+  fi
+
+  if [ -f "$HERE/updates/version.json" ]; then
+    if python3 - "$HERE" <<'PY' >/dev/null 2>&1
+import hashlib, importlib.util, json, pathlib, plistlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("release_feed", root / "updates" / "release_feed.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+feed = json.loads((root / "updates" / "version.json").read_text(encoding="utf-8"))
+module.validate_feed(feed)
+manifest = json.loads((root / "installer" / "manifest.json").read_text(encoding="utf-8"))
+assert feed["latest"]["version"] == manifest["release"]
+artifact = root / "dist" / feed["latest"]["artifact_name"]
+app = root / "dist" / "Wideband Setup.app"
+if artifact.is_file() and app.is_dir():
+    with (app / "Contents" / "Info.plist").open("rb") as handle:
+        info = plistlib.load(handle)
+    build_id = (app / "Contents" / "Resources" / "build-id.txt").read_text().strip()
+    assert info["CFBundleShortVersionString"] == feed["latest"]["version"]
+    assert build_id == feed["latest"]["build_id"]
+    assert artifact.stat().st_size == feed["latest"]["size_bytes"]
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == feed["latest"]["sha256"]
+PY
+    then
+      ok "published update feed matches the manifest and exact local release artifact"
+    else
+      no "published update feed is invalid or stale"
+    fi
+  elif grep -q -- "--exclude 'updates/'" "$HERE/packaging/build-app.sh"; then
+    ok "release feed is intentionally excluded from the client payload"
+  else
+    no "update feed is missing without a packaging boundary"
+  fi
+
+  if [ -f "$HERE/.github/workflows/publish-update-feed.yml" ] \
+     && grep -q 'updates/build_site.py' "$HERE/.github/workflows/publish-update-feed.yml" \
+     && grep -q 'actions/deploy-pages@' "$HERE/.github/workflows/publish-update-feed.yml"; then
+    ok "GitHub Pages publishes only a validated update site"
+  elif [ ! -d "$HERE/.git" ] && grep -q -- "--exclude '.github/'" "$HERE/packaging/build-app.sh"; then
+    ok "release workflow is intentionally excluded from the client payload"
+  else
+    no "update feed deployment workflow is missing or bypasses validation"
   fi
 
   if grep -q -- '--sign-identity' "$HERE/packaging/build-app.sh" \

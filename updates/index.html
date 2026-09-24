@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Wideband Setup Updates</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #07070b; color: #f5f7f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 28px; background: radial-gradient(circle at 50% 0%, #12332f 0, #07070b 48%); }
+    main { width: min(680px, 100%); border: 1px solid #273735; border-radius: 24px; padding: clamp(28px, 7vw, 56px); background: rgba(10, 12, 16, .92); box-shadow: 0 32px 90px rgba(0, 0, 0, .48); }
+    img { width: 72px; height: 72px; border-radius: 17px; }
+    .brand { margin: 18px 0 44px; color: #00ffd1; font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; }
+    .eyebrow { color: #83a59f; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 10px 0 14px; font-size: clamp(36px, 8vw, 62px); line-height: .98; letter-spacing: -.045em; }
+    p { color: #b5c2c0; font-size: 17px; line-height: 1.62; }
+    .meta { margin: 30px 0; padding: 18px 0; border-block: 1px solid #26302f; display: grid; gap: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: #9cb2ae; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 18px; border-radius: 999px; color: #06110f; background: #00ffd1; text-decoration: none; font-weight: 750; }
+    a.secondary { color: #d8e3e1; background: #1b2423; }
+    .foot { margin-top: 34px; color: #71817e; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="wideband-mark.png" alt="Wideband hex mark" width="72" height="72">
+    <div class="brand">WIDEBAND.AI</div>
+    <div class="eyebrow">Verified release channel</div>
+    <h1>Wideband Setup</h1>
+    <p id="summary">Loading the current public release…</p>
+    <div class="meta">
+      <span id="version">Version —</span>
+      <span id="published">Published —</span>
+      <span>Apple silicon · macOS 13+</span>
+    </div>
+    <div class="actions">
+      <a id="release" href="https://github.com/widebandz/wb-setup/releases">View current release</a>
+      <a class="secondary" href="https://github.com/widebandz/wb-setup/releases">Version history</a>
+    </div>
+    <p class="foot">The app checks this public feed only after the client opts in. Wideband Setup never installs an update without the client.</p>
+  </main>
+  <script>
+    fetch("version", { cache: "no-store", headers: { "Accept": "application/json" } })
+      .then((response) => {
+        if (!response.ok) throw new Error("feed unavailable");
+        return response.json();
+      })
+      .then((feed) => {
+        document.querySelector("#summary").textContent = feed.latest.summary;
+        document.querySelector("#version").textContent = `Version ${feed.latest.version} · ${feed.channel}`;
+        document.querySelector("#published").textContent = `Published ${feed.latest.published_at.slice(0, 10)}`;
+        const release = document.querySelector("#release");
+        if (feed.latest.release_notes_url.startsWith("https://github.com/widebandz/wb-setup/releases/")) {
+          release.href = feed.latest.release_notes_url;
+        }
+      })
+      .catch(() => {
+        document.querySelector("#summary").textContent = "The release feed is temporarily unavailable. The public version history remains available on GitHub.";
+      });
+  </script>
+</body>
+</html>

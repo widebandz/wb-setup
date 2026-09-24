@@ -1,0 +1,44 @@
+name: Publish update feed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-update-feed.yml"
+      - "installer/wideband-mark.png"
+      - "updates/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: wideband-update-feed
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the release repository
+        uses: actions/checkout@v4
+
+      - name: Build and validate the public feed
+        run: python3 updates/build_site.py --output "$RUNNER_TEMP/wideband-update-site"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the static site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/wideband-update-site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

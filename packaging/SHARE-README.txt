@@ -17,6 +17,10 @@ localhost link or technical setup guide.
    (On older macOS versions, Control-click → Open may offer the exception
    directly; if it does, use that instead.)
 5. Select Begin guided setup in the branded Wideband Setup window.
+   On first launch, choose whether the app may check
+   https://os.wideband.ai/version when it starts. The check sends no setup
+   answers or machine identifiers and can be changed later from the Wideband
+   Setup menu.
 6. In a generic build, answer the six plain-language setup popups. A build
    prepared specifically for your company skips these questions.
 7. The guide stays inside the Wideband app and shows live machine progress.
@@ -63,9 +67,13 @@ localhost link or technical setup guide.
 17. If this Mac was upgraded from an older macOS release and Terminal reports
     that /opt/homebrew is not writable or Git is unavailable, do not run a
     broad chown command from the error. Leave the app open and contact
-    Wideband; release 0.5.1 verifies the intended user, runs the selected Apple
+    Wideband; release 0.6.0 verifies the intended user, runs the selected Apple
     developer Git, and checks the exact Homebrew prefix before it prints any
     repair for you to approve.
+18. When an update is available, Wideband Setup shows the version, checksum,
+    and Gatekeeper state, then opens the public Wideband GitHub Release for
+    review. It never installs or runs an update without you. Use Wideband Setup
+    → View Version History for every published version.
 
 Requirements
 • Apple silicon Mac

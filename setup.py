@@ -1148,7 +1148,7 @@ class LoopbackHTTPServer(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     app: SetupApp
-    server_version = "WidebandSetup/0.5"
+    server_version = "WidebandSetup/0.6"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Routine polling is intentionally silent: on a bare Mac this server

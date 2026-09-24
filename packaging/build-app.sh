@@ -79,6 +79,7 @@ BUILD_ID="$VERSION-$BUILD_NUMBER"
 /bin/chmod 755 "$RESOURCES/app-launcher" "$RESOURCES/run-setup.command"
 /usr/bin/xcrun swiftc -parse-as-library -target arm64-apple-macos13.0 \
   -framework AppKit -framework WebKit \
+  "$ROOT/packaging/UpdateFeed.swift" \
   "$ROOT/packaging/WidebandSetupLauncher.swift" -o "$CONTENTS/MacOS/Wideband Setup"
 /bin/chmod 755 "$CONTENTS/MacOS/Wideband Setup"
 printf '%s\n' "$BUILD_ID" > "$RESOURCES/build-id.txt"
@@ -88,7 +89,9 @@ fi
 
 /usr/bin/rsync -a \
   --exclude '.git/' \
+  --exclude '.github/' \
   --exclude 'dist/' \
+  --exclude 'updates/' \
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.DS_Store' \

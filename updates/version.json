@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "product": "wideband-setup",
+  "channel": "pilot",
+  "generated_at": "2026-09-24T00:23:52Z",
+  "latest": {
+    "version": "0.6.0",
+    "build_id": "0.6.0-20260924002330",
+    "published_at": "2026-09-24T00:23:52Z",
+    "minimum_macos": "13.0",
+    "architecture": "arm64",
+    "trust": "ad-hoc",
+    "requires_gatekeeper_exception": true,
+    "artifact_name": "Wideband-Setup-unsigned.dmg",
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.6.0/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.6.0",
+    "sha256": "6342c3bde3a621f0282886203d544dc91740653f29caeccacda21c3284511b69",
+    "size_bytes": 22235609,
+    "summary": "Adds client-controlled update checks, public release history, and durable SSH agent-session memory."
+  },
+  "history_url": "https://github.com/widebandz/wb-setup/releases"
+}

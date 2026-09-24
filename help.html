@@ -146,6 +146,20 @@ bash verify.sh          # what is wrong, each failure tagged [P0-FDA] etc.</code
 plutil -extract build_id raw -o - ~/.wideband/setup/connection.json</code></pre>
 <p>Never print or share the <code>token</code> field. Do not kill an unknown process merely to reclaim 8803.</p>
 <p><strong>Proof:</strong> the app reports the selected port and remains connected. Reopening after 8803 becomes free may return to the preferred port.</p>
+<h2 id="the-app-asks-whether-it-may-check-for-updates">The app asks whether it may check for updates</h2>
+<p>This is a one-time consent prompt from the native Wideband Setup app. No update request is made before the client chooses. If enabled, startup checks contact only:</p>
+<pre><code>https://os.wideband.ai/version</code></pre>
+<p>The request contains the installed app version as a normal user-agent but no setup answers, client profile, local token, or machine identifier. Change the preference from <strong>Wideband Setup → Check for Updates When Starting</strong>. A manual <strong>Check for Updates…</strong> remains available whether or not startup checks are enabled.</p>
+<p><strong>Proof:</strong> the menu item shows a checkmark only when startup checks are enabled.</p>
+<h2 id="couldn-t-check-for-updates-appears">“Couldn’t check for updates” appears</h2>
+<p>The installer and saved setup continue normally; an update check never blocks the local guide. Confirm the Mac can resolve and reach the public endpoint:</p>
+<pre><code>curl -fsS https://os.wideband.ai/version</code></pre>
+<p>The response must be schema-1 JSON for <code>wideband-setup</code>. The app refuses an oversized response, a response redirected away from the Wideband hostname, an unknown product/trust state, a malformed checksum, or release links outside <code>github.com/widebandz/wb-setup/releases</code>. Do not work around that refusal with an alternate download link. Use <strong>View Version History…</strong> or contact Wideband.</p>
+<p><strong>Proof:</strong> a manual check reports either the newest published version or that the installed release is current.</p>
+<h2 id="an-update-is-available">An update is available</h2>
+<p>Select <strong>View &amp; Download</strong> to open the public GitHub Release. Review the release notes, exact DMG name, SHA-256, and whether the build is unsigned or notarized. Wideband Setup does not silently download, mount, install, or execute the new app. Opening the newer DMG replaces the managed installer payload while keeping the client&#x27;s saved setup state and curated identity.</p>
+<p>Unsigned pilots still require the Privacy &amp; Security → Open Anyway handoff. Once production builds are Developer ID signed and notarized, the update notice must say so and the release must use <code>Wideband-Setup.dmg</code> rather than an <code>unsigned</code> filename.</p>
+<p><strong>Proof:</strong> after opening the new release, <strong>About Wideband Setup</strong> and a manual update check report the same version shown on the public release page.</p>
 <h2 id="terminal-appeared-behind-the-app">Terminal appeared behind the app</h2>
 <p>On a genuinely bare Mac, this is the one intentional exception to the quiet embedded experience. Homebrew requires an interactive administrator-password prompt. Enter the password in Terminal; no dots or characters appear while typing. Leave that window open until the guide says the foundation is ready.</p>
 <p>On an established machine, reopening Wideband Setup should run quietly. If the readiness screen already says the foundation is installed but every launch opens Terminal, export a support bundle for the operator.</p>

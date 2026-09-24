@@ -33,5 +33,9 @@
   </dict>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>WBUpdateFeedURL</key>
+  <string>https://os.wideband.ai/version</string>
+  <key>WBUpdateHistoryURL</key>
+  <string>https://github.com/widebandz/wb-setup/releases</string>
 </dict>
 </plist>

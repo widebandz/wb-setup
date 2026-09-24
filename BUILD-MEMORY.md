@@ -8,7 +8,7 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Release: **0.5.1**.
+- Release: **0.6.0**.
 - Functional release checkpoint: `018f829` (`ship embedded Wideband setup
   0.5`).
 - Platform: Apple silicon, macOS 13 or newer.
@@ -17,6 +17,9 @@ build without reconstructing decisions from chat history.
 - Distribution: one DMG; the current pilot is ad-hoc signed and intentionally
   labeled `unsigned` until Wideband supplies its Developer ID and notarization
   credentials.
+- Updates: client-controlled startup or manual checks against
+  `https://os.wideband.ai/version`; artifacts and public version history live
+  in GitHub Releases. The app never silently installs an update.
 - Last full Apple Silicon VM run: 2026-09-23. It covered installation, the real
   macOS permission prompt, repair, port fallback, disconnect recovery, support
   export, reboot, and resume from the installed app.
@@ -85,6 +88,21 @@ Wideband-Setup*.dmg
 `WKWebView`. It shows a branded loading state while the engine starts, then
 loads the authenticated local guide. External provider and System Settings
 links open outside the embedded view.
+
+The native shell also owns update consent. On the first launch it asks before
+making an Internet request. If the client opts in, later launches perform one
+asynchronous check without delaying the local setup engine; automatic network
+errors stay quiet, while the manual menu action reports them. The menu also
+lets the client disable startup checks and open the complete version history.
+
+The schema-1 feed is capped at 64 KiB and accepted only from the exact HTTPS
+host/path `os.wideband.ai/version` (including the Pages trailing-slash form).
+It must identify `wideband-setup`, Apple silicon, a known artifact trust state,
+a numeric release/build ID, and a lowercase SHA-256. Download, release-note,
+and history links are pinned to `github.com/widebandz/wb-setup/releases` with
+the version and artifact name embedded in the exact path. An update notice
+opens the public release page for human review; it does not download, mount,
+install, or execute the asset.
 
 The shell reads `~/.wideband/setup/connection.json`, waits for the exact build
 ID packaged with the app, and continues polling after the first load. If an
@@ -319,6 +337,13 @@ approval, operator interview, and real-world phone/message proofs.
 - Never add arbitrary command execution to the API.
 - Keep state, interview answers, backups, records, and bundles private.
 - Never collect passwords or two-factor codes.
+- Never contact the public update feed before the client opts in, never include
+  setup answers or a machine identifier in the request, and never turn an
+  update notice into unattended code execution.
+- Accept update metadata only from the pinned Wideband endpoint and accept
+  artifacts/history only from the pinned public release repository. Treat the
+  checksum as integrity metadata, not as a substitute for Developer ID signing
+  and notarization.
 - Never treat an executable `brew` file as proof that Homebrew is healthy.
 - Never run recursive ownership changes automatically; prove the user and
   prefix first, print the scoped command, and require personal approval.
@@ -396,17 +421,25 @@ For an app release:
 1. Update `installer/manifest.json` and `CHANGELOG.md`.
 2. Update this memory when architecture, responsibility, security, or release
    behavior changes.
-3. Run the source self-test.
+3. Run the source self-test, including the pure Swift update-feed validation
+   cases.
 4. Run `./packaging/build-app.sh` with the intended profile and trust mode.
 5. Verify the app recursively with `codesign --verify --deep --strict`.
 6. Confirm setup app, engine, and agent are arm64.
 7. Verify the DMG with `hdiutil verify` and preserve `dist/SHA256SUMS.txt`.
-8. Run the self-test embedded in the packaged payload.
-9. Install the exact DMG in a clean Apple Silicon VM and compare its hash.
-10. Run `tests/browser-e2e.mjs` with a fresh browser profile.
-11. Exercise repair, disconnect recovery, port collision, support export, and
+8. Generate `updates/version.json` from that exact app and DMG with
+   `updates/release_feed.py`; never hand-type the build ID, size, or checksum.
+9. Run the self-test embedded in the packaged payload.
+10. Install the exact DMG in a clean Apple Silicon VM and compare its hash.
+11. Run `tests/browser-e2e.mjs` with a fresh browser profile.
+12. Exercise repair, disconnect recovery, port collision, support export, and
     resume from `~/Applications` after a reboot.
-12. For production, additionally validate Gatekeeper, notarization, and the
+13. Push the versioned source and feed, tag the same version, create the public
+    GitHub Release, and upload the exact DMG plus `SHA256SUMS.txt`.
+14. Require the Pages workflow to succeed, fetch
+    `https://os.wideband.ai/version` from a separate network, and compare its
+    release URL and SHA-256 to the published asset before telling clients.
+15. For production, additionally validate Gatekeeper, notarization, and the
     stapled ticket on a clean machine.
 
 The browser E2E runner requires:
@@ -473,6 +506,29 @@ the read-only diagnostic from the affected client Mac, whose actual UID,
 console user, prefix ownership, and developer-tools state must still be
 observed before that client runs any repair.
 
+### 0.6.0 update-channel validation
+
+The update system is intentionally smaller than the installer and has no
+privileged action:
+
+- the pure Swift tests cover valid/newer/equal and numeric version comparison,
+  the GitHub Pages trailing slash, wrong response hosts, wrong products,
+  off-repository downloads, malformed checksums, missing unsigned-build
+  warnings, and oversized responses;
+- the native launcher is typechecked with the same `UpdateFeed.swift` compiled
+  into the app;
+- the feed generator derives the release, build ID, artifact size, trust state,
+  and SHA-256 from the exact packaged files and refuses disagreement;
+- the Pages builder revalidates the feed before it can upload either `/version`
+  or the branded human-readable root; and
+- the app makes automatic failures non-blocking, exposes a manual check, and
+  never downloads or executes the advertised DMG.
+
+Those tests do not prove public delivery. A release is not complete until the
+GitHub Release asset exists, the Pages deployment succeeds, DNS and HTTPS for
+`os.wideband.ai` resolve from outside the studio network, and the live feed's
+checksum matches the downloaded public DMG.
+
 ## Lessons that must not regress
 
 1. A native app must follow the exact packaged build ID, not the first live
@@ -495,6 +551,10 @@ observed before that client runs any repair.
    Command Line Tools/Git or its ownership context. Bootstrap must diagnose the
    three layers independently, execute the selected Git as proof, and stop
    safely instead of calling that state “already installed.”
+10. An update channel is an execution trust boundary. Ask before the first
+    network request, pin both metadata and artifact authorities, keep the
+    update human-approved, and do not describe an unsigned checksum as code
+    signing.
 
 ## Documentation map
 
@@ -510,6 +570,7 @@ observed before that client runs any repair.
 | `help.html` | Generated client-friendly rendering of troubleshooting content. |
 | `interview/README.md` | Judgment-layer status and ownership. |
 | `skills/agent-session-memory/` | Session identity, recovery boundaries, and fleet migration for every agent on the machine. |
+| `updates/` | Public update-feed schema, deterministic generator, branded Pages root, and release runbook. |
 | `AGENTS.md` | Short mandatory context for future software agents. |
 
 When behavior changes, update the authoritative source above rather than

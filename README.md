@@ -6,7 +6,7 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.5.1. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
+**Current release:** 0.6.0. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and
 proven E2E behavior. [CHANGELOG.md](CHANGELOG.md) records what changed by
 release; [AGENTS.md](AGENTS.md) carries the non-negotiable context for future
@@ -112,6 +112,17 @@ launch attempt followed by **System Settings → Privacy & Security → Open
 Anyway**. The DMG includes both `READ ME FIRST.txt` and a direct **Open Privacy
 & Security** shortcut for that handoff. A signed and notarized production build
 will remove this exception step.
+
+On first launch, the native app asks whether the client wants it to check for
+updates when it starts. No network request is made until the client chooses.
+The preference can be changed from the **Wideband Setup** menu, which also has
+**Check for Updates…** and **View Version History…**. The public feed is
+`https://os.wideband.ai/version`; it contains release metadata only and sends
+no setup answers or machine identifiers. An available update opens the public
+[GitHub Release history](https://github.com/widebandz/wb-setup/releases) for
+review and download. The app never installs or runs an update without the
+client, and unsigned pilots continue to require the documented Gatekeeper
+handoff.
 
 Machine-owned reconciliation starts automatically in packaged client mode.
 Client-owned steps remain deliberate because macOS privacy grants, account

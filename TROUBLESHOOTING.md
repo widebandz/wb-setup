@@ -104,6 +104,58 @@ to reclaim 8803.
 **Proof:** the app reports the selected port and remains connected. Reopening
 after 8803 becomes free may return to the preferred port.
 
+## The app asks whether it may check for updates
+
+This is a one-time consent prompt from the native Wideband Setup app. No update
+request is made before the client chooses. If enabled, startup checks contact
+only:
+
+```text
+https://os.wideband.ai/version
+```
+
+The request contains the installed app version as a normal user-agent but no
+setup answers, client profile, local token, or machine identifier. Change the
+preference from **Wideband Setup → Check for Updates When Starting**. A manual
+**Check for Updates…** remains available whether or not startup checks are
+enabled.
+
+**Proof:** the menu item shows a checkmark only when startup checks are enabled.
+
+## “Couldn’t check for updates” appears
+
+The installer and saved setup continue normally; an update check never blocks
+the local guide. Confirm the Mac can resolve and reach the public endpoint:
+
+```bash
+curl -fsS https://os.wideband.ai/version
+```
+
+The response must be schema-1 JSON for `wideband-setup`. The app refuses an
+oversized response, a response redirected away from the Wideband hostname, an
+unknown product/trust state, a malformed checksum, or release links outside
+`github.com/widebandz/wb-setup/releases`. Do not work around that refusal with
+an alternate download link. Use **View Version History…** or contact Wideband.
+
+**Proof:** a manual check reports either the newest published version or that
+the installed release is current.
+
+## An update is available
+
+Select **View & Download** to open the public GitHub Release. Review the release
+notes, exact DMG name, SHA-256, and whether the build is unsigned or notarized.
+Wideband Setup does not silently download, mount, install, or execute the new
+app. Opening the newer DMG replaces the managed installer payload while keeping
+the client's saved setup state and curated identity.
+
+Unsigned pilots still require the Privacy & Security → Open Anyway handoff.
+Once production builds are Developer ID signed and notarized, the update notice
+must say so and the release must use `Wideband-Setup.dmg` rather than an
+`unsigned` filename.
+
+**Proof:** after opening the new release, **About Wideband Setup** and a manual
+update check report the same version shown on the public release page.
+
 ## Terminal appeared behind the app
 
 On a genuinely bare Mac, this is the one intentional exception to the quiet

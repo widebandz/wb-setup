@@ -30,6 +30,11 @@ The guide labels every step as **Wideband installs**, **You approve**, or **We
 customize together**. macOS permission checks update automatically after you
 approve them.
 
+The first time Wideband Setup opens, it also asks whether it may check
+`https://os.wideband.ai/version` when the app starts. That optional request
+sends no setup answers or machine identifiers. You can decline and use the
+manual **Check for Updates…** menu item later.
+
 ---
 
 ## Four answers we need
