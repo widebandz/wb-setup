@@ -199,6 +199,80 @@ The completion surface reports three independent areas:
 Setup tools provide **Check this Mac**, **Repair Wideband**, **Copy
 diagnostics**, **Export support bundle**, and confirmed deactivation.
 
+## Session identity and agent memory
+
+A tmux session outlives the agent inside it. `tmux-resurrect`/`continuum`
+restore panes and scrollback; `tm-standard` restores names and project roots.
+Neither restores what the agent in that session was *for*, so a session that is
+killed, restored, recreated, or rebuilt on another Mac comes back nameless in
+every way that matters.
+
+`bin/tm-memory` holds that missing layer, in two files per session under
+`~/.config/agent-session-memory` (directory `0700`, files `0600`):
+
+| Path | Lifetime | Holds |
+|---|---|---|
+| `identity/<session>.md` | stable | concern, responsibilities, exclusions, root, routing, chat binding, allowed tools, approval boundaries, owning project, bootstrap, recovery checks |
+| `state/<session>.md` | mutable | current assignment, status, last verified evidence, blockers, next safe action, related files and tickets |
+
+The split is the design. Identity that absorbs progress notes stops being read,
+and an agent that skims its own card stops honouring its exclusions. One card
+per durable concern, never one per task.
+
+Not every session has a concern, so a card declares `role: assigned` or
+`role: unassigned`. An unassigned session is all state and no identity: it can
+be doing real work today without owning anything durable, and it recovers as a
+fresh start that is explicitly told not to infer a mission from its scrollback,
+directory, or name — the failure mode for a roleless agent is inventing a role,
+not forgetting one. `check` holds an assigned card to a higher bar: a concern,
+non-empty responsibilities and exclusions, and no `UNVERIFIED` anywhere. That
+gate is the only thing promotion means, which is why there is no `assign`
+command — flipping the field is trivial, deciding the two lists is the work.
+
+`sessions.conf` is deliberately **not** extended. It stays name + root and
+`tm-standard` keeps owning it; identity lives beside it, not inside it. The
+cards are operator data: `install.sh` never seeds, reads, or backs them up.
+
+### Recovery boundaries
+
+- **A bare shell is not an agent.** Keystrokes in `zsh`/`bash`/`sh`/`fish`
+  execute as shell commands. `tm-memory resume` refuses (exit 5) unless
+  `--start` runs the card's `bootstrap:`, which is allowlisted to approved
+  launchers and rejected outright if it contains shell metacharacters. A card is
+  data an agent can edit, so it must not be able to become arbitrary execution.
+- **Restored scrollback is not authorization.** A restored pane can display a
+  complete agent prompt while running nothing. Classification reads
+  `pane_current_command` and never `capture-pane`, and the injected brief tells
+  the recovered agent the same thing about text it finds above it.
+- **`=name` is a target-session, not a target-pane.** `send-keys` and
+  `display-message` reject it, and `display-message` rejects it by printing
+  nothing — which reads as a healthy empty answer. Everything that touches a
+  pane resolves the active `%id` through `list-panes -s` first.
+- An agent pane is recognised from `~/.imsg-routing.json` when it exists, so the
+  router and recovery cannot disagree. The fallback additionally treats a bare
+  version number as an agent: Claude Code reports its own version as the process
+  name, so a fixed list silently stops recognising every Claude pane on upgrade.
+- `tmux-boot` runs `tm-memory prime --quiet`, which publishes
+  `WB_SESSION_IDENTITY` into each session's tmux environment. It starts no agent
+  and types into no pane — login is unattended, and `selftest.sh` asserts that
+  `tmux-boot` contains no `send-keys`. Recovery into a live pane stays
+  human-initiated.
+
+`tm-memory doctor` reconciles live tmux, `sessions.conf`, `~/.imsg-routing.json`
+and the cards, and reports every gap without changing anything, including
+unassigned sessions that have been alive over a week and probably have a de
+facto concern. `tm-memory adopt` drafts cards for uncovered live sessions from
+evidence only — always `unassigned`, the router's description kept as evidence
+rather than as a decision, and a bootstrap only when a pane is already running
+an approved agent — and never overwrites or deletes a card.
+
+The skill that teaches an agent to use all of this is
+`skills/agent-session-memory`, installed to `~/.claude/skills/` and, when
+`~/.codex` exists, `~/.codex/skills/`. Validate the whole recovery path with
+`skills/agent-session-memory/scripts/selfcheck.sh`, which runs against an
+isolated `tmux -L` server and a temporary memory directory so it is safe on a
+live machine.
+
 ## macOS permission design
 
 macOS privacy grants attach to a concrete code identity and resolved binary
@@ -250,6 +324,10 @@ approval, operator interview, and real-world phone/message proofs.
   prefix first, print the scoped command, and require personal approval.
 - Never put credentials, client profile answers, `.sop-vars` values, raw logs,
   or common contact identifiers in the support bundle.
+- Never let a session identity card or handoff state hold a secret, token,
+  credential, raw customer message, or an unverified assumption. Name the
+  variable, never the value; `tm-memory check` rejects the common shapes, and
+  the rule is broader than the regex.
 - Preserve existing identity and client-owned work during install and repair.
 - Deactivation may stop and move only the three managed LaunchAgents and
   Wideband Agent. It must not delete work or silently alter Apple sharing and
@@ -431,6 +509,7 @@ observed before that client runs any repair.
 | `TROUBLESHOOTING.md` | Installer recovery, check-ID fixes, and day-two operations. |
 | `help.html` | Generated client-friendly rendering of troubleshooting content. |
 | `interview/README.md` | Judgment-layer status and ownership. |
+| `skills/agent-session-memory/` | Session identity, recovery boundaries, and fleet migration for every agent on the machine. |
 | `AGENTS.md` | Short mandatory context for future software agents. |
 
 When behavior changes, update the authoritative source above rather than

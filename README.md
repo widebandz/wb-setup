@@ -247,9 +247,10 @@ packaging/          branded app/DMG builder and client-profile renderer
 tests/              browser and end-to-end release checks
 Brewfile           core CLIs, declarative
 vars.example       template for ~/.sop-vars
-bin/               tm, tm-standard → copied to ~/bin
+bin/               tm, tm-standard, tm-memory → copied to ~/bin
 dotfiles/          byte-identical artifacts: statusline, shell.zsh
 templates/         __TOKEN__ files rendered by install.sh
+skills/            agent skills installed for Claude and Codex
 loops/             LaunchAgent jobs — cost-watch, tmux-boot, healthcheck
 lib/               bare-Mac-safe Homebrew and developer-tools health guard
 interview/         judgment-layer status and future interview designs

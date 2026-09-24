@@ -28,7 +28,11 @@ Status:
   The rule is "one session per concern, never one per task"; which
   concerns a given operator has is not derivable, which is exactly why
   this is an interview and not a file. Not yet implemented as a standalone
-  interview.
+  interview. What each session *is* now has a home either way:
+  `skills/agent-session-memory` and `bin/tm-memory` store one identity card
+  per durable concern. `tm-memory adopt` drafts them from live evidence and
+  marks everything it could not verify, which is the same boundary — the
+  derivable half becomes a file, the judgment half stays a question.
 - **`fleetdeck.md`** — the values in fleetdeck's `config.json`. Not yet
   implemented as a standalone interview.
 

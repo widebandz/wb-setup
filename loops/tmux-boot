@@ -46,4 +46,14 @@ else
   echo "tmux-boot: tm-standard not found — only 'main' was created" >&2
 fi
 
+# Publish each session's identity card path into its tmux environment, so a
+# process started there later can find out what the session is for.
+#
+# This deliberately does not start agents and does not type into any pane. At
+# login nobody is watching: an agent is a running cost, and keystrokes sent to
+# a fleet no one is looking at are how a wrong instruction lands unobserved.
+# Recovery into a live pane stays a human-initiated act (`tm-memory resume`).
+TM_MEMORY="$(command -v tm-memory || echo "$HOME/bin/tm-memory")"
+[ -x "$TM_MEMORY" ] && "$TM_MEMORY" prime --quiet 2>/dev/null
+
 "$TMUX_BIN" ls 2>/dev/null

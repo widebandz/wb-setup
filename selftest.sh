@@ -14,6 +14,7 @@
 #   8. generated help is current
 #   9. guided-installer manifest and JSON verification contract agree
 #  10. source syntax parses
+#  11. the agent-session-memory skill stays discoverable
 #
 # Exit code is the number of failures.
 set -uo pipefail
@@ -887,13 +888,16 @@ fi
 head_ "10 · syntax"
 for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh setup.sh \
          packaging/app-launcher packaging/build-app.sh packaging/run-setup.command \
-         lib/bootstrap-homebrew.sh; do
+         lib/bootstrap-homebrew.sh \
+         skills/agent-session-memory/scripts/selfcheck.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"
 done
 if command -v python3 >/dev/null 2>&1; then
   python3 -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' "$HERE/setup.py" \
     && ok "setup.py parses" || no "setup.py has a syntax error"
+  python3 -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' "$HERE/bin/tm-memory" \
+    && ok "tm-memory parses" || no "tm-memory has a syntax error"
 fi
 if command -v node >/dev/null 2>&1; then
   node --check "$HERE/installer/app.js" >/dev/null 2>&1 \
@@ -916,6 +920,46 @@ if command -v shellcheck >/dev/null 2>&1; then
       && ok "shellcheck $s (errors)" \
       || no "shellcheck found errors in $s"
   done
+fi
+
+# ── 11. the session-memory skill ─────────────────────────────────────────────
+# A skill is chosen from its name and description before anything else is read,
+# and a reference nothing links to is a file that never loads. Both fail
+# silently at the moment they matter, so they are asserted here.
+head_ "11 · agent-session-memory skill"
+SK="$HERE/skills/agent-session-memory"
+if [ ! -f "$SK/SKILL.md" ]; then
+  no "skills/agent-session-memory/SKILL.md missing"
+else
+  if head -1 "$SK/SKILL.md" | grep -q '^---$' \
+     && grep -q '^name: agent-session-memory$' "$SK/SKILL.md" \
+     && grep -q '^description: .\{40,\}' "$SK/SKILL.md"; then
+    ok "SKILL.md carries the frontmatter a skill is selected by"
+  else
+    no "SKILL.md is missing name or a usable description"
+  fi
+  unlinked=0
+  for r in "$SK"/references/*.md; do
+    [ -f "$r" ] || continue
+    grep -q "references/$(basename "$r")" "$SK/SKILL.md" \
+      || { no "references/$(basename "$r") is linked from nothing — it will never load"; unlinked=1; }
+  done
+  [ "$unlinked" = 0 ] && ok "every reference is reachable from SKILL.md"
+fi
+[ -x "$HERE/bin/tm-memory" ] \
+  && ok "tm-memory is executable" || no "bin/tm-memory is not executable"
+[ -x "$SK/scripts/selfcheck.sh" ] \
+  && ok "the recovery selfcheck is executable" || no "selfcheck.sh is not executable"
+grep -q 'tm-memory' "$HERE/install.sh" \
+  && ok "install.sh places tm-memory" || no "install.sh never installs tm-memory"
+grep -q 'place_skill "$HERE/skills/agent-session-memory"' "$HERE/install.sh" \
+  && ok "install.sh installs the skill for the agents" || no "the skill is never installed"
+grep -q 'tm-memory' "$HERE/loops/tmux-boot" \
+  && ok "tmux-boot primes session identity at login" || no "tmux-boot never primes identity"
+if grep -q 'send-keys' "$HERE/loops/tmux-boot"; then
+  no "tmux-boot types into panes — login is unattended; it must not"
+else
+  ok "tmux-boot types into no pane"
 fi
 
 printf '\n\033[1m%s\033[0m\n' "─────────────────────────────────────────"

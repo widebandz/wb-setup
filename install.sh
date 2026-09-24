@@ -92,6 +92,21 @@ place() {
   cp "$src" "$dest" && chmod "$mode" "$dest" && echo "  + $dest"
 }
 
+# place_skill SRC_DIR DEST_DIR — copy a skill folder file by file. Not a
+# directory sync: the operator's other skills, and anything they added inside
+# this one, are never removed by a re-run.
+place_skill() {
+  local src="$1" dest="$2" f rel
+  [ -d "$src" ] || { echo "  ~ missing in repo: $src"; return; }
+  while IFS= read -r f; do
+    rel="${f#"$src"/}"
+    case "$rel" in
+      *.sh|*/scripts/*) place "$f" "$dest/$rel" 755 ;;
+      *)                place "$f" "$dest/$rel" 644 ;;
+    esac
+  done < <(find "$src" -type f ! -name '.DS_Store' | sort)
+}
+
 # render TMPL DEST [mode] — substitute, then place only on difference.
 sed_replacement() {
   # Values are data, not sed programs. Escape the replacement metacharacters
@@ -225,6 +240,7 @@ render "$HERE/templates/tmux.conf.tmpl" "$HOME/.config/tmux/tmux.conf"
 mkdir -p "$HOME/bin"
 place "$HERE/bin/tm"          "$HOME/bin/tm"          755
 place "$HERE/bin/tm-standard" "$HOME/bin/tm-standard" 755
+place "$HERE/bin/tm-memory"   "$HOME/bin/tm-memory"   755
 place "$HERE/dotfiles/shell.zsh" "$HOME/.config/wb-setup/shell.zsh"
 if ! grep -qs 'wb-setup/shell.zsh' "$HOME/.zshrc" 2>/dev/null; then
   printf '\n# added by wb-setup\n[ -f ~/.config/wb-setup/shell.zsh ] && source ~/.config/wb-setup/shell.zsh\n' >> "$HOME/.zshrc"
@@ -255,6 +271,19 @@ else
   else
     echo "  ! could not clone tpm — plugins will not load"
   fi
+fi
+
+# ── agent skills ─────────────────────────────────────────────────────────────
+# Product code, so it updates on every run — unlike sessions.conf and the
+# identity cards themselves, which belong to the operator. The cards live in
+# ~/.config/agent-session-memory and are never seeded, backed up, or read here.
+echo
+echo "agent skills"
+place_skill "$HERE/skills/agent-session-memory" "$HOME/.claude/skills/agent-session-memory"
+if [ -d "$HOME/.codex" ]; then
+  place_skill "$HERE/skills/agent-session-memory" "$HOME/.codex/skills/agent-session-memory"
+else
+  echo "  ~ no ~/.codex — Codex copy skipped; re-run install.sh after installing Codex"
 fi
 
 # ── loops ────────────────────────────────────────────────────────────────────

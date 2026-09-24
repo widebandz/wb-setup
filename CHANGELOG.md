@@ -3,6 +3,43 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## Unreleased
+
+### Session identity and agent memory
+
+- Added `bin/tm-memory`: durable identity and handoff state for tmux/SSH agent
+  sessions, split into a stable `identity/<session>.md` (concern,
+  responsibilities, exclusions, root, routing, chat binding, allowed tools,
+  approval boundaries, owning project, bootstrap, recovery checks) and a mutable
+  `state/<session>.md` (assignment, status, verified evidence, blockers, next
+  safe action). Stored under `~/.config/agent-session-memory`, directory `0700`
+  and files `0600`.
+- `sessions.conf` is unchanged and still owned by `tm-standard`: name and root
+  only. Identity lives beside it, never inside it.
+- Cards declare `role: assigned` or `role: unassigned`, because not every
+  session owns a durable concern. An unassigned card may be sparse; an assigned
+  one must state a concern, responsibilities and exclusions and carry no
+  `UNVERIFIED`. An unassigned session recovers as a fresh start and is told not
+  to infer a mission from its scrollback, directory, or name. `adopt` always
+  drafts `unassigned`; promotion is a human edit.
+- Recovery refuses to type into a bare shell. `tm-memory resume` classifies a
+  pane from its live process, never from restored scrollback, and only the
+  explicit `--start` flow may type — and only an allowlisted agent launcher with
+  no shell metacharacters, so an identity card cannot become arbitrary
+  execution.
+- An agent pane is recognised from `~/.imsg-routing.json` when present, plus a
+  bare-version-number fallback so a Claude Code upgrade cannot silently make
+  every Claude pane unrecognisable.
+- `tmux-boot` now runs `tm-memory prime --quiet`, publishing
+  `WB_SESSION_IDENTITY` into each session's tmux environment. It starts no agent
+  and types into no pane; `selftest.sh` asserts the absence of `send-keys`.
+- Added `tm-memory doctor` (drift across live tmux, `sessions.conf`, the router
+  config and the cards), `adopt` (evidence-only drafts marked `UNVERIFIED`,
+  never overwriting or deleting), and `backup`/`rollback`.
+- Added the `agent-session-memory` skill, installed for Claude and — when
+  `~/.codex` exists — Codex, with a recovery selfcheck that runs against an
+  isolated `tmux -L` server so it is safe on a live machine.
+
 ## 0.5.1 — 2026-09-23
 
 ### Post-upgrade bootstrap recovery
