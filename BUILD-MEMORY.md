@@ -20,6 +20,12 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
+- Update delivery status on 2026-09-23: the validated Pages deployment is live
+  at `https://widebandz.github.io/wb-setup/`, the 0.6.0 GitHub Release and its
+  three assets are public, and GitHub Pages is configured for
+  `os.wideband.ai`. The exact branded hostname still needs the Cloudflare
+  DNS-only CNAME `os` → `widebandz.github.io` before it can resolve and receive
+  its HTTPS certificate.
 - Last full Apple Silicon VM run: 2026-09-23. It covered installation, the real
   macOS permission prompt, repair, port fallback, disconnect recovery, support
   export, reboot, and resume from the installed app.
@@ -528,6 +534,19 @@ Those tests do not prove public delivery. A release is not complete until the
 GitHub Release asset exists, the Pages deployment succeeds, DNS and HTTPS for
 `os.wideband.ai` resolve from outside the studio network, and the live feed's
 checksum matches the downloaded public DMG.
+
+For 0.6.0, source and embedded suites each passed 72 checks, the dedicated
+Swift feed suite passed 10 adversarial/valid cases, and the app remained valid
+under `codesign --verify --deep --strict` after its embedded self-test. The
+three executables are arm64 and `hdiutil verify` accepted the exact DMG. GitHub
+Pages built the feed successfully, and downloading the public release asset
+back from GitHub produced SHA-256
+`6342c3bde3a621f0282886203d544dc91740653f29caeccacda21c3284511b69`,
+matching both `updates/version.json` and GitHub's asset digest. The first-run
+consent sheet was launched with an isolated temporary home and visually proved
+the branded question, exact URL, privacy explanation, and both choices without
+touching the established setup state. The only incomplete public-delivery
+proof is the custom Cloudflare DNS/HTTPS handoff described in the baseline.
 
 ## Lessons that must not regress
 
