@@ -6,7 +6,8 @@ Bare M-chip Mac → a complete operator build. One line:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.6.0. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
+**Current release:** 0.7.0. This is an unsigned pilot release; macOS requires
+the documented Privacy & Security **Open Anyway** step. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and
 proven E2E behavior. [CHANGELOG.md](CHANGELOG.md) records what changed by
 release; [AGENTS.md](AGENTS.md) carries the non-negotiable context for future
@@ -81,13 +82,26 @@ is held for review and never retried automatically. Reopening an older
 completed setup offers a manual send control instead of sending old handoff
 texts automatically.
 
+The phone view installs the reviewed real Fleetdeck service board. Its linked
+apps show live tmux sessions, the read-only Live Terminal Network from this
+Mac's services and sessions, and the Glitch Cat Knowledge Graph over a local
+graph pack. Notes beta stores notes privately on this Mac, separately from the
+operator Fleetdeck Notes store. The board and companion apps use private
+Tailscale Serve routes and owner-only access.
+
+The earlier real-stack UTM pilot passed source and embedded self-tests (83/83
+each) and a restart check. One fresh owner iMessage reached the VM agent and
+its reply arrived on the owner's iPhone. The owner also confirmed the full
+phone board, its apps and Home Screen icon, and receipt of both setup handoff
+texts. This was a single UTM and physical iPhone pilot.
+
 Build the generic pilot:
 
 ```bash
 ./packaging/build-app.sh
 ```
 
-For a self-contained customer phone portal on a blank Mac, pass a reviewed
+For the full customer Fleetdeck board on a blank Mac, pass a reviewed
 Fleetdeck checkout when building the app:
 
 ```bash

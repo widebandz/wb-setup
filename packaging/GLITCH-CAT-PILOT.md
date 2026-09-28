@@ -1,7 +1,7 @@
 # Local Knowledge Graph pilot
 
 The operator's **Knowledge Graph** tile runs Glitch Cat, a separate Node
-service on port 4180. The private Setup pilot bundles a reviewed copy of that
+service on port 4180. The Setup pilot bundles a reviewed copy of that
 engine and installs it behind the real customer Fleetdeck board. The earlier
 fixed `/graph` first-text diagram was a placeholder and is not the pilot's
 Knowledge Graph tile. The client graph indexes only that Mac's own files.
@@ -20,11 +20,15 @@ python3 packaging/glitch-cat-pilot.py verify dist/glitch-cat-pilot-bundle
 modules, six graph/health icons, and the npm package/lock files. It excludes
 the host pack, register, database, notes, logs, tests, and Git directory. Its
 manifest hashes every copied file and known host identifiers are removed.
-The Glitch Cat checkout has no license file; this is a private owner pilot, not
-a public release payload.
+The Glitch Cat checkout has no public license file. Its rights holder expressly
+authorized distributing this reviewed source **inside the Wideband Setup
+installer** for the public 0.7.0 pilot on September 28, 2026. This permission
+does not publish the standalone Glitch Cat repository or grant a general open
+source license. Continue excluding the host pack, local data, secrets, and
+untracked files from the bundle.
 
 `packaging/build-app.sh --graph-source` includes the verified bundle in the
-private DMG. `install.sh --phone-only` stages it under
+pilot DMG. `install.sh --phone-only` stages it under
 `~/srv/glitch-cat-pilot`, builds the VM-local index, registers the graph tile,
 and installs the engine and owner-gated proxy LaunchAgents. Tailscale Serve
 `:8792` points to the loopback proxy on `:4181`, while the engine remains on
@@ -48,7 +52,7 @@ python3 ~/srv/wb-setup/packaging/glitch-cat-pilot.py serve \
 walked local roots: `~/srv/wb-setup` (created by the native app launcher) and
 `~/wideband/first-project` (created by each first-job recipe). It declares
 zones and scopes the measured launchd plane to Wideband jobs. The graph
-database remains under the private pilot tree at `.data/kg.db` with mode 0600.
+database remains under the client-local pilot tree at `.data/kg.db` with mode 0600.
 `build` preserves a prior index if the next build fails. `serve` stays in the
 foreground and binds `127.0.0.1:4180`; stop it with Ctrl-C. The helper alone
 does not install LaunchAgents or Tailscale routes; the phone-stack integration

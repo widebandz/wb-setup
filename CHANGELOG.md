@@ -3,17 +3,18 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
-## Unreleased
+## 0.7.0 — unsigned pilot (2026-09-28)
 
 ### First text and phone handoff
 
-- Added a guided first run for a separate agent Apple Account, OS and head-agent names, a first job, and an explicit provider choice. Claude is the supported first-text path; Codex, Gemini, Grok, and GLI are shown as planned choices.
+- Added a guided first run for a separate agent Apple Account, OS and head-agent names, a first job, and an explicit provider choice. Claude Code is the verified first-text path; Codex, Gemini CLI, and Grok Build remain preview choices that cannot activate the router yet.
 - Added a bound one-to-one iMessage listener, router, persistent head session, and guarded file outbox. The first website and customer Fleetdeck phone view follow a confirmed real reply.
-- Added a Fleetdeck-style phone board with an interactive knowledge graph, read-only live head view, first-project link, and local Notes beta. The board uses a private 256-bit capability link inside Tailscale Serve; the saved Home Screen app retains that link.
+- Installed the reviewed real Fleetdeck service board and its live tmux terminal, read-only Live Terminal Network, Glitch Cat Knowledge Graph, first-project link, and local Notes beta. The board and companion routes use private Tailscale Serve mappings and an owner-only capability; the saved Home Screen app retains access.
 - Added owner-only setup texts with the board links, Termius and Tailscale App Store links, and tmux and Claude command hints. The messages queue once through the guarded outbox after phone confirmation.
 - Managed Fleetdeck portal updates preserve local notes, config, and service registration, and restore the previous portal source if activation fails. The two existing Notes stores remain separate; sync is not part of this beta.
 - Setup-only updates preserve an unchanged, permission-approved Wideband Agent. A saved first-project phone link is shown only while its current Tailscale Serve route is private.
-- Verified a fresh phone-to-VM iMessage reply on a physical iPhone and the VM's service recovery after restart. Final iPhone confirmation of the new board and its Home Screen icon remains pending.
+- In the pre-release UTM pilot, source and embedded suites passed 83/83. A fresh iMessage produced a VM agent reply received on the owner's iPhone; five phone-stack jobs and the head session recovered after restart. The owner confirmed the full board, apps, Home Screen icon, and receipt of both guarded setup texts on the iPhone.
+- The pilot artifact is `Wideband-Setup-unsigned.dmg` with ad-hoc signatures. macOS requires the documented Privacy & Security **Open Anyway** step; this release makes no Developer ID or notarization claim.
 
 ## 0.6.0 — 2026-09-23
 

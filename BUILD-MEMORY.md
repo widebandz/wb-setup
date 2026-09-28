@@ -8,9 +8,10 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Release: **0.6.0**.
-- Functional release checkpoint: `018f829` (`ship embedded Wideband setup
-  0.5`).
+- Release: **0.7.0**. The owner chose an explicitly unsigned public pilot;
+  Developer ID signing and notarization remain future production work.
+- Real-stack functional checkpoint: `434970f` (`feat: pilot real Fleetdeck phone
+  stack in setup`).
 - Platform: Apple silicon; macOS 14 or newer for the iMessage client path (the general operator path can run on macOS 13).
 - Preferred private setup port: `8803`, with automatic loopback fallback when
   that port is occupied.
@@ -20,12 +21,10 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery status on 2026-09-23: the validated Pages deployment is live
-  at `https://widebandz.github.io/wb-setup/`, the 0.6.0 GitHub Release and its
-  three assets are public, and GitHub Pages is configured for
-  `os.wideband.ai`. The exact branded hostname still needs the Cloudflare
-  DNS-only CNAME `os` → `widebandz.github.io` before it can resolve and receive
-  its HTTPS certificate.
+- Update delivery status on 2026-09-28: the 0.6.0 GitHub Release and its three
+  assets are public. `https://os.wideband.ai/version` returned HTTPS 200 from
+  GitHub Pages on that date. A 0.7.0 feed must be generated from its own exact
+  artifact and checked again after publication.
 - Last published-release Apple Silicon VM checkpoint: 2026-09-23. It covered
   installation, the real macOS permission prompt, repair, port fallback,
   disconnect recovery, support export, reboot, and resume from the installed
@@ -275,7 +274,7 @@ reply and the staged first project.
 
 `~/srv/fleetdeck` (version 1.2.0, source commit `092d6be`) is the **main
 Fleetdeck source repository** for this product.
-The current private pilot bundles its tracked `portal_server.py`, registry
+The 0.7.0 pilot bundles its tracked `portal_server.py`, registry
 scanner, assets, and the reviewed deployed terminal server into the DMG. The
 bundle removes operator identity and adds a narrow customer access adapter.
 `install.sh --phone-only` stages that reviewed bundle on the client Mac and
@@ -283,8 +282,10 @@ installs the board, the interactive tmux terminal, the local Live Terminal
 Network collector, and Glitch Cat's real Knowledge Graph. It registers the
 client's own services and project in that client's Fleetdeck registry. The
 operator Mac's runtime database, sessions, notes, tokens, and identities are
-never transferred. Public release of the private Glitch Cat source requires a
-separate distribution/license review.
+never transferred. The Glitch Cat rights holder expressly authorized public
+distribution of the reviewed source inside the 0.7.0 installer on September
+28, 2026. The standalone repository remains private; this is not an open
+source license for reuse outside the installer.
 
 Five per-user LaunchAgents persist the board, map, graph engine, owner-gated
 graph proxy, and terminal server. The board is private HTTPS Serve `:8790`,
@@ -329,7 +330,7 @@ the deployed code, not a similarly named checkout:
 | Phone origin | Local listener | Live deployment and role |
 |---|---|---|
 | `<operator-tailnet-host>:8790` | `127.0.0.1:8790` | `~/srv/fleetdeck/portal_server.py` under `com.wideband.fleetdeck-portal`; full registry-driven board from `~/srv/fleetdeck/services.json`. |
-| `<operator-tailnet-host>:8783` | `127.0.0.1:8783` | `~/.config/wb-tunnel/chat_server.py` under `com.wideband.tunnel-chat`; real tmux session list and writable terminal through its loopback ttyd child on 8784. This deployed copy differs from `~/srv/fleetdeck/chat_server.py`; the private pilot reviews and bundles the deployed behavior with an owner access guard. |
+| `<operator-tailnet-host>:8783` | `127.0.0.1:8783` | `~/.config/wb-tunnel/chat_server.py` under `com.wideband.tunnel-chat`; real tmux session list and writable terminal through its loopback ttyd child on 8784. This deployed copy differs from `~/srv/fleetdeck/chat_server.py`; the pilot reviews and bundles the deployed behavior with an owner access guard. |
 | `<operator-tailnet-host>:18970/fleet-map` | `127.0.0.1:18790` | `~/srv/fleetdeck-authoring/portal_server.py` under `com.wideband.fleet-map-local`; read-only Live Terminal Network from local fleet snapshot, registry, runtime, and infrastructure readers. |
 | `<operator-tailnet-host>:8792` | `*:4180` on the host | `~/glitch-cat/engine/serve.mjs` under `com.wideband.graph`; the real, cited corpus Knowledge Graph with lenses and a derived SQLite index. Its API reports index build time; it is not a continuously refreshed tmux map. Bind the client VM copy to loopback. |
 
@@ -337,7 +338,7 @@ the deployed code, not a similarly named checkout:
 not the live 8790 board. `~/srv/fleetdeck-map-ui` is an earlier fleet-map
 preview; the running 18970 source is `~/srv/fleetdeck-authoring`. The previous
 VM's matching colors and clickable eight-node diagram were insufficient; the
-current private pilot runs reviewed copies of the four actual surfaces against
+0.7.0 pilot runs reviewed copies of the four actual surfaces against
 **that VM's own** sessions, services, project files, and graph pack. Verify
 the backing data and phone interaction, not just an HTTP 200 or matching CSS.
 
@@ -695,8 +696,9 @@ back from GitHub produced SHA-256
 matching both `updates/version.json` and GitHub's asset digest. The first-run
 consent sheet was launched with an isolated temporary home and visually proved
 the branded question, exact URL, privacy explanation, and both choices without
-touching the established setup state. The only incomplete public-delivery
-proof is the custom Cloudflare DNS/HTTPS handoff described in the baseline.
+touching the established setup state. The custom-domain DNS and HTTPS handoff
+was later verified when `https://os.wideband.ai/version` returned 200 on
+September 28, 2026.
 
 ### 0.6.0 onboarding pilot in UTM, September 28, 2026
 
@@ -709,10 +711,11 @@ That exact artifact was installed in the `Wideband E2E Clean 2` macOS VM and
 its phone-install action completed. It is a private, unpublished pilot, not the
 public 0.6.0 release: on September 28, the live `os.wideband.ai/version` feed
 still advertises build `0.6.0-20260924002330` and the latest GitHub Release is
-`v0.6.0` from September 24. Publish a later version only after its changelog,
-Developer ID signature, notarization, and exact-artifact feed are ready; the
-update client does not offer another build with the same numeric version to
-0.6.0 users.
+`v0.6.0` from September 24. The owner later chose to publish the new version
+as an explicitly unsigned pilot and authorized the reviewed Glitch Cat source
+inside it. Developer ID signing and notarization remain required for a future
+production release. The update client does not offer another build with the
+same numeric version to 0.6.0 users.
 
 The VM uses a dedicated agent Apple Account, an exact one-to-one owner binding,
 and a signed-in Claude head session. During an isolated window, the host Trace

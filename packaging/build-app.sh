@@ -114,6 +114,8 @@ fi
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.DS_Store' \
+  --exclude '/.wideband-setup-engine' \
+  --exclude '/.wideband-setup.command' \
   --exclude '/vendor/fleetdeck/' \
   --exclude '/vendor/glitch-cat-pilot-bundle/' \
   "$ROOT/" "$PAYLOAD/"
