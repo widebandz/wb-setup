@@ -11,7 +11,7 @@ build without reconstructing decisions from chat history.
 - Release: **0.6.0**.
 - Functional release checkpoint: `018f829` (`ship embedded Wideband setup
   0.5`).
-- Platform: Apple silicon, macOS 13 or newer.
+- Platform: Apple silicon; macOS 14 or newer for the iMessage client path (the general operator path can run on macOS 13).
 - Preferred private setup port: `8803`, with automatic loopback fallback when
   that port is occupied.
 - Distribution: one DMG; the current pilot is ad-hoc signed and intentionally
@@ -129,6 +129,13 @@ administrator-password prompt. After the core foundation exists, later app
 launches start the engine quietly in the background and require no browser or
 Terminal knowledge.
 
+If bootstrap exits after a canceled owner-phone prompt while the guide remains
+live, reopening the app relaunches Terminal when bootstrap reports
+`needs_attention` and the core foundation is incomplete. An active identity
+prompt keeps its single Terminal session. When Terminal completes bootstrap
+under the native app, its setup handoff passes `--no-open` so Safari does not
+open a second installer window.
+
 Before touching Homebrew, `lib/bootstrap-homebrew.sh` independently proves the
 invoking user, UID, home owner, console user, administrator membership,
 architecture, PATH, selected Apple developer directory, developer Git, and the
@@ -196,6 +203,99 @@ Key objects:
 | `package-backups/` | Replaced payload, app, and agent copies. |
 | `deactivations/` | Recoverable service and agent moves plus a receipt. |
 
+### One-owner iMessage head runtime (post-0.6.0 working tree)
+
+The 0.6.0 permission guide checks Messages Automation but does not make
+texting an agent work. The new runtime is staged as `~/bin/wb-imessage` and
+four `com.$ORG.imessage-*` LaunchAgents. It requires macOS 14 or newer because
+the upstream `imsg` transport does; the general setup baseline remains macOS
+13 until a release decision changes it. The Brewfile trusts only
+`steipete/tap/imsg`, not the entire third-party tap.
+
+```text
+owner's phone → Messages on the agent Mac → imsg watch
+  → private, deduplicated inbound queue → exact bound-chat router
+  → live agent pane in persistent wb-head tmux session
+  → agent writes ~/wideband/head/outbox/*.txt
+  → guarded outbox worker → imsg send --chat-id → owner's phone
+```
+
+The client personally signs a **separate Apple Account** into Messages and
+sends the first text. `wb-imessage init` reads identity and display names from
+JSON on stdin, keeping the phone number out of argv and command history. A
+provider picker saves `agent_provider` in private onboarding metadata. New
+builds require an explicit choice; older completed builds without that field
+migrate to Claude. Codex, Gemini CLI, and Grok Build are selectable previews,
+but setup refuses to activate their iMessage head sessions until each provider
+has a verified sign-in, pane-recognition, instruction-file, and guarded-reply
+path. A bound chat cannot change provider through onboarding because that
+would mislabel the active head agent. The current tested path remains Claude.
+The later `bind --confirm-separate-account` accepts only one exact, one-to-one
+iMessage chat with the configured owner as its sole participant and a fresh
+inbound message. It pins the live chat ID, GUID and Messages account; an
+unbound or changed target does not receive messages. The client confirms the
+separate-account fact and the first reply on the phone; machine checks alone
+cannot prove either human fact.
+
+The setup engine starts binding with `open -W -n` through the Wideband Agent
+app bundle. Launching the executable directly from Terminal inherits Terminal's
+Full Disk Access context even when the app has its own grant. App stdout and
+stderr go to short-lived mode-`0600` files under private setup state. macOS
+`open` may exit successfully when the app task fails, so the runner activates
+services only after the exact runtime bind success line appears with no app
+stderr; raw output is removed and never copied into setup state or support.
+
+`install.sh --imessage-only` copies scripts and renders plists into a private
+staging folder without running the broader workstation install. Before binding,
+it also moves any exact prior Wideband iMessage plists out of
+`~/Library/LaunchAgents/` and boots out those jobs: a plist left there can load
+at the next GUI login even if it was never manually bootstrapped. It installs
+and loads the four jobs only after the private binding exists.
+`verify.sh --imessage-only --json` reports just six runtime
+checks, so deferred GitHub and Fleetdeck work do not mark first text as
+incomplete. Every job enters through `Wideband Agent
+run-background-task`, keeping that app as the intended macOS permission
+principal. The UTM pilot proved the Agent's Full Disk Access grant and a real
+guarded iMessage reply received on the owner's phone. The router refuses to
+type into a bare shell. The agent never
+chooses an outbound recipient; the outbox rechecks the bound chat and applies
+file type, ownership, text length and rate limits. An uncertain send is held
+for review rather than retried, to avoid duplicate texts. Raw owner messages
+and replies stay inside mode-`0700` runtime directories; installer-owned state
+files use mode `0600`.
+
+### First job and customer phone portal (post-0.6.0 working tree)
+
+The first-goal runner stages **one** chosen recipe: research, a starter
+website, or a proposal. It does not install every possible tool up front. The
+portal comes after the owner has observed the first real iMessage reply and
+the selected recipe has been staged. `install.sh --phone-only` uses a customer
+Fleetdeck checkout and runs `./install.sh portal`; it verifies the portal on
+loopback and refuses a Fleetdeck source tree without the customer-mode guard.
+That guard installs only the portal and disables older writable chat/adopt/skin
+jobs if they exist. An existing Fleetdeck config remains operator-owned.
+
+Tailscale sign-in, an HTTPS Serve mapping, and adding the portal to the iPhone
+Home Screen are later client gates. A loopback health response is local
+machine proof, not proof that a phone can open the link. Before distributing a
+blank-Mac artifact, publish or bundle the matching Fleetdeck customer-mode
+source; cloning an older public revision must fail closed rather than install
+a writable portal.
+
+The customer portal serves the Fleetdeck-style board, knowledge graph, a
+read-only capture of the live `wb-head` Claude pane, the first-project link,
+and a separate Notes beta store. It is not the operator portal and does not
+install chat, ttyd, adopt, or skin services. Except for `/healthz`, each route
+requires the same 256-bit capability in a `/p/<token>/...` path. The token is
+created once in the owner-only `~/.wideband/fleetdeck/phone-access-token` file
+and survives managed portal upgrades; links and the PWA manifest retain it.
+The Setup app validates the protected HTTPS board page before offering its
+phone link. Owner-only setup texts are queued through the guarded iMessage
+outbox only after a real phone reply and a confirmed phone board.
+Setup checks the current Tailscale Serve map before showing the first
+project's saved phone link. A Funnel route or changed proxy hides that
+shortcut; the first-goal runner does not create a public Funnel link.
+
 ## Client experience
 
 The embedded interface has two surfaces:
@@ -207,8 +307,9 @@ The embedded interface has two surfaces:
   metadata, and build-record controls.
 
 The welcome dialog says whether this is a new or resumed build. Client view
-frontloads access needed for support, keeps the next action visible, and
-distinguishes **Machine verified** from **You confirmed**.
+frontloads the separate agent Apple Account and first text, keeps the next
+action visible, and distinguishes **Machine verified** from **You confirmed**.
+Support access follows the working text path.
 
 While a permission guide is open, the UI polls focused checks automatically.
 The client should not need to run the full verifier or refresh the page after a
@@ -339,6 +440,9 @@ approval, operator interview, and real-world phone/message proofs.
 
 - Bind the setup engine only to loopback.
 - Authenticate every API call with a high-entropy per-process token.
+- Keep the customer Fleetdeck board behind a private Tailscale Serve mapping
+  and its separate owner-only capability link. Never put the capability in
+  logs, support bundles, release artifacts, or documentation examples.
 - Never log or print the token in normal startup output.
 - Never add arbitrary command execution to the API.
 - Keep state, interview answers, backups, records, and bundles private.
@@ -360,9 +464,10 @@ approval, operator interview, and real-world phone/message proofs.
   variable, never the value; `tm-memory check` rejects the common shapes, and
   the rule is broader than the regex.
 - Preserve existing identity and client-owned work during install and repair.
-- Deactivation may stop and move only the three managed LaunchAgents and
-  Wideband Agent. It must not delete work or silently alter Apple sharing and
-  privacy settings.
+- Deactivation may stop and move only exact Wideband-managed LaunchAgents,
+  including the four iMessage jobs, first-project preview, configured
+  Fleetdeck jobs, and Wideband Agent. It must not delete work or silently
+  alter Apple sharing and privacy settings.
 - Do not commit signing certificates, notary credentials, connection files,
   VM credentials, or personalized client profiles.
 
@@ -547,6 +652,57 @@ consent sheet was launched with an isolated temporary home and visually proved
 the branded question, exact URL, privacy explanation, and both choices without
 touching the established setup state. The only incomplete public-delivery
 proof is the custom Cloudflare DNS/HTTPS handoff described in the baseline.
+
+### 0.6.0 onboarding pilot in UTM, September 28, 2026
+
+The latest local unsigned pilot build `0.6.0-20260928062127` has DMG SHA-256
+`c17c335845819e911b52c66821806daefb38f151426ac32a45488d2ab33b0f1d`.
+The source and embedded self-tests each pass 81/81, the isolated browser E2E
+passes, and the DMG and app signature verify. This build is installed in the
+`Wideband E2E Clean 2` macOS VM. It is not the public 0.6.0 release: the live
+`os.wideband.ai/version` feed and GitHub release still advertise the September
+24 build. Publish a later version only after its changelog, Developer ID
+signature, notarization, and exact-artifact feed are ready; the update client
+does not offer another build with the same numeric version to 0.6.0 users.
+
+The VM uses a dedicated agent Apple Account, an exact one-to-one owner binding,
+and a signed-in Claude head session. During an isolated window, the host Trace
+iMessage services were paused. A fresh owner phone text entered the VM inbox,
+appeared as a matching user record in the dedicated Claude transcript, produced
+one confirmed guarded outbox send, and was received on the owner's iPhone.
+The host route was restored afterward. Because the two Macs share the agent
+account, the VM watch, route, and outbox jobs are disabled between test windows;
+the VM head-session keep job can remain active. Two earlier overlap-window
+replies are held in `outbox/review` and must never be replayed automatically.
+
+An overlap test found that booting out a LaunchAgent stopped the Wideband Agent
+wrapper but left its Python listener and `imsg watch` child running. The new
+Agent forwards SIGTERM to the dedicated child process group, and the watcher
+cleans up `imsg` on exit. The installed updated Agent passed a live process-tree
+termination check. The router now acknowledges inbound delivery only after a
+matching, new Claude transcript user record; uncertain delivery remains for
+review instead of silently advancing. Its focused tests pass 18/18.
+
+The setup ledger records the owner's real reply confirmation and completed
+first-website apply/check and Fleetdeck phone-install actions. Both sites run
+under LaunchAgents and private Tailscale Serve routes. Fleetdeck Notes beta
+passed HTTPS create/read, stores its customer data separately from the
+operator notes store with mode `0600`, and retained the test note after reboot.
+After the final guest login, Tailscale came online without a manual `up`, and
+the website and phone portal again returned HTTPS 200. A host UTM app crash
+during this reboot briefly stopped the VM; restarting the clone and unlocking
+the guest recovered the saved state. Phone Safari/Home Screen proof and the
+two guarded setup handoff texts remain pending; the latter must not be queued
+until the owner confirms the phone board.
+
+The latest Setup-only DMG upgrade kept the VM's approved Wideband Agent CDHash
+`05ddf55e70a5c5e75bb9ebe7a43e73a600dffa72` unchanged. A fresh Agent
+report returned Full Disk Access and Messages Automation as true. The Setup
+engine moved to the new build, its private phone link stayed ready, and every
+protected board, graph, watch, notes, and PWA manifest route returned HTTPS
+200. Agent revision matching now preserves a signed, unchanged Agent across
+Setup-only upgrades, including an in-place Setup app replacement; changed
+Agent code or a damaged signature still replaces it.
 
 ## Lessons that must not regress
 

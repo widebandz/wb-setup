@@ -16,7 +16,7 @@
 # first and waiting on it — Claude Code is not behind it and never was.
 #
 # TOOL BUDGET: macOS built-ins only until Homebrew lands. Packaged client mode
-# may use /usr/bin/osascript for identity popups, and the health guard uses
+# may use /usr/bin/osascript for the owner-phone prompt, and the health guard uses
 # built-in identity, filesystem, and xcode-select probes. A bare macOS has no
 # usable Git or Python — /usr/bin/git and /usr/bin/python3 can be stubs that pop
 # the Command Line Tools dialog and block. That is why the repo arrives as a
@@ -115,6 +115,12 @@ fi
 OSMAJ="$(sw_vers -productVersion 2>/dev/null | awk -F. '{print $1}')"
 if [ -z "$OSMAJ" ] || [ "$OSMAJ" -lt 13 ] 2>/dev/null; then
   say "  ✗ REFUSING: macOS $(sw_vers -productVersion 2>/dev/null || echo '?') is below the 13.0 minimum."
+  exit 1
+fi
+if [ "$CLIENT_MODE" = "1" ] && [ "$OSMAJ" -lt 14 ]; then
+  bootstrap_status unsupported_macos
+  say "  ✗ The client iMessage path needs macOS 14 or newer."
+  say "    Update macOS, then reopen Wideband Setup."
   exit 1
 fi
 
@@ -484,19 +490,17 @@ APPLESCRIPT
 }
 
 collect_client_identity() {
-  native_ask CLIENT_NAME "What is your name? This is how your agent will address you." ""
-  native_ask BRAND "What company or workspace should appear on your private command board?" "My Company"
-  ORG="$(printf '%s' "$BRAND" \
-    | sed 'y/ABCDEFGHIJKLMNOPQRSTUVWXYZ/abcdefghijklmnopqrstuvwxyz/;s/[^a-z0-9][^a-z0-9]*/-/g;s/^-*//;s/-*$//;s/^\([0-9]\)/org-\1/;s/^\(.\{31\}\).*/\1/;s/-*$//')"
-  [ -n "$ORG" ] || ORG="wideband-client"
-  export ORG
-  MARK="◈"; export MARK
-  native_ask GH_USER "Enter the one GitHub username this Mac should use." "$ORG"
-  native_ask GIT_EMAIL "Which email address should appear on work committed from this Mac?" "ops@$ORG.com"
-  native_ask OPERATOR_PHONE "Enter the phone number for approved alerts, including country code (for example +15551234567)." "+15551234567"
-  native_ask WORK_REPO "Enter the Git URL for the main work repository." "git@github.com:$GH_USER/app.git"
-  GRAPH_PACK="$ORG"; export GRAPH_PACK
-  say "  + client identity collected in Wideband popups"
+  # The first client milestone is a working text exchange. GitHub, a work
+  # repository, commit identity, and an organization graph can be chosen after
+  # that proof; invented values here would masquerade as real client answers.
+  ORG="${ORG:-wideband}"; BRAND="${BRAND:-Wideband}"; MARK="${MARK:-◈}"
+  GH_USER="${GH_USER:-}"; GIT_EMAIL="${GIT_EMAIL:-}"
+  WORK_REPO="${WORK_REPO:-}"; GRAPH_PACK="${GRAPH_PACK:-wideband}"
+  export ORG BRAND MARK GH_USER GIT_EMAIL WORK_REPO GRAPH_PACK
+  if ! valid_value OPERATOR_PHONE "${OPERATOR_PHONE:-}"; then
+    native_ask OPERATOR_PHONE "What is your personal phone number? Include country code (for example +15551234567). Your separate agent Apple Account will text this number." ""
+  fi
+  say "  + owner phone saved; optional developer identity deferred"
 }
 
 ask() {  # ask VAR "prompt" "default"
@@ -576,6 +580,9 @@ else
 fi
 for name in ORG BRAND MARK GH_USER GIT_EMAIL OPERATOR_PHONE WORK_REPO GRAPH_PACK; do
   eval "value=\${$name:-}"
+  if [ "$CLIENT_MODE" = "1" ] && [ -z "$value" ]; then
+    case "$name" in GH_USER|GIT_EMAIL|WORK_REPO) continue ;; esac
+  fi
   if ! valid_value "$name" "$value"; then
     say "  ✗ REFUSING: $name in $VARS is invalid: $VALIDATION_ERROR"
     say "    Edit the file, then re-run bootstrap."
@@ -661,10 +668,10 @@ else
 	    4. Privacy & Security → Accessibility                        Terminal (direct bootstrap)
 	    5. Privacy & Security → Screen Recording                     Terminal (direct bootstrap)
 	    6. General → Login Items & Extensions → allow background items
-	    7. Messages.app → Settings → sign in to iMessage
+	    7. Messages.app → Settings → sign in with the separate agent Apple Account
 
   ACCOUNTS     — email FIRST; everything else verifies through it.
-	    8. Apple ID / iCloud            9. email — send yourself one, confirm
+	    8. Agent Apple Account         9. email — send yourself one, confirm
 	   10. GitHub (as $GH_USER only)   11. Anthropic (Pro/Max, or API key)
 	   12. Tailscale                   13. Vercel · Supabase
 
@@ -709,9 +716,11 @@ if [ -n "$BREW_BIN" ]; then
     printf '\neval "$(/opt/homebrew/bin/brew shellenv)"\n' >> "$HOME/.zprofile"
     say "  + brew shellenv → ~/.zprofile"
   fi
-  if [ "$DO_BREW" = "1" ] && [ -f "$ROOT/Brewfile" ]; then
-    say "  … brew bundle"
-    if brew bundle --file="$ROOT/Brewfile" >>"$BREW_LOG" 2>&1; then
+  BREWFILE="$ROOT/Brewfile"
+  [ "$CLIENT_MODE" = "1" ] && BREWFILE="$ROOT/Brewfile.quick"
+  if [ "$DO_BREW" = "1" ] && [ -f "$BREWFILE" ]; then
+    say "  … brew bundle ($(basename "$BREWFILE"))"
+    if brew bundle --file="$BREWFILE" >>"$BREW_LOG" 2>&1; then
       say "  ✓ core CLIs installed"
     else
       BREW_BLOCK_REASON="brew_bundle"
@@ -759,7 +768,15 @@ elif [ "$BREW_BLOCK_REASON" = "developer_tools_update" ]; then
   bootstrap_status needs_developer_tools_update
 elif [ -n "$BREW_BLOCK_REASON" ]; then
   bootstrap_status needs_attention
-elif [ -f "$VARS" ] \
+elif [ "$CLIENT_MODE" = "1" ] \
+   && [ -f "$VARS" ] \
+   && [ -x /opt/homebrew/bin/brew ] \
+   && [ -x /opt/homebrew/bin/python3 ] \
+   && [ -x /opt/homebrew/bin/tmux ] \
+   && [ -x /opt/homebrew/bin/imsg ]; then
+  bootstrap_status ready
+elif [ "$CLIENT_MODE" != "1" ] \
+   && [ -f "$VARS" ] \
    && [ -x /opt/homebrew/bin/git ] \
    && [ -x /opt/homebrew/bin/jq ] \
    && [ -x /opt/homebrew/bin/tmux ]; then
@@ -794,11 +811,15 @@ EOF
 
 # The guided installer is the normal handoff, not an optional demo. Keep an
 # explicit --no-ui path for unattended runs and for operators who only want the
-# underlying scripts. `exec` leaves one foreground process in this Terminal;
-# closing it stops the local server without leaving a mystery daemon behind.
+# underlying scripts. For a standalone bootstrap, `exec` leaves one foreground
+# process in this Terminal; closing it stops the local server. The native app
+# already owns the guide, so its handoff must not open Safari.
 if [ "$DO_UI" = "1" ] && [ -t 1 ]; then
   if command -v python3 >/dev/null 2>&1 || [ -x /opt/homebrew/bin/python3 ]; then
     step "Opening Wideband Setup"
+    if [ "${WB_SETUP_EMBEDDED:-0}" = 1 ]; then
+      exec bash "$ROOT/setup.sh" --no-open
+    fi
     exec bash "$ROOT/setup.sh"
   else
     say "  ! guided installer not opened — Python did not arrive with the Brewfile"

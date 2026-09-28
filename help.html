@@ -66,12 +66,13 @@ fix needs a password or a System Settings toggle, that is our job, not yours.</d
 <details class="card"><summary><span class="qn">1</span><span class="qt">Wideband Setup won&#x27;t open or says reconnect</span></summary><div class="cb"><p>Your progress is saved on this Mac. An unsigned pilot may need one Privacy &amp; Security → Open Anyway approval; a disconnected old page needs the installed app to supply its current private connection.</p><div class="cmd"><code>open &quot;$HOME/Applications/Wideband Setup.app&quot;</code><button class="cp" data-c="open &quot;$HOME/Applications/Wideband Setup.app&quot;">copy</button></div><p class="then"><strong>Then:</strong> Do not type a localhost address or share connection.json. If the app still cannot connect, ask Wideband for help with Part 0 below.</p></div></details>
 <details class="card"><summary><span class="qn">2</span><span class="qt">Homebrew is not writable or Git is unavailable</span></summary><div class="cb"><p>This often appears after a major macOS upgrade leaves an old Homebrew folder but removes, deselects, or leaves incompatible Apple Command Line Tools. Ownership and Git are separate checks; do not run a broad chown from the error text.</p><div class="cmd"><code>bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew</code><button class="cp" data-c="bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew">copy</button></div><p class="then"><strong>Then:</strong> Send the read-only report to Wideband. Run a sudo repair only when the report proves the intended user and prints the exact scoped command.</p></div></details>
 <details class="card"><summary><span class="qn">3</span><span class="qt">My morning text didn&#x27;t arrive</span></summary><div class="cb"><p>The machine sends a usage summary each morning. If it stopped, the job behind it is either failing or never fired — those look identical from the outside, which is why the command below reports both.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Send /tmp/doctor.txt. The answer is in it.</p></div></details>
-<details class="card"><summary><span class="qn">4</span><span class="qt">I can&#x27;t reach it from my phone</span></summary><div class="cb"><p>The machine is reachable over a private network. If one page fails, that page is down. If EVERY page fails at once, the machine has usually dropped off the network entirely — often an expired key, which happens on a schedule and is not something you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Note whether ONE thing broke or EVERYTHING did — that single detail usually identifies the cause.</p></div></details>
-<details class="card"><summary><span class="qn">5</span><span class="qt">Claude won&#x27;t start, or says command not found</span></summary><div class="cb"><p>Almost always the terminal has not picked up its location yet. This is the one thing worth trying yourself.</p><div class="cmd"><code>open -a Terminal</code><button class="cp" data-c="open -a Terminal">copy</button></div><p class="then"><strong>Then:</strong> Close every terminal window, open a fresh one, and try again. If it still fails, send the doctor file.</p></div></details>
-<details class="card"><summary><span class="qn">6</span><span class="qt">My work sessions disappeared</span></summary><div class="cb"><p>Your named sessions are written down and can be rebuilt. The layout inside them may not come back, but the sessions themselves will.</p><div class="cmd"><code>tm-standard apply</code><button class="cp" data-c="tm-standard apply">copy</button></div><p class="then"><strong>Then:</strong> Safe to run — it only creates what is missing and never closes anything you have open.</p></div></details>
-<details class="card"><summary><span class="qn">7</span><span class="qt">Something says permission denied</span></summary><div class="cb"><p>macOS permissions occasionally need re-granting, particularly after a system update. These live in System Settings and are worth doing together rather than alone — one wrong toggle is hard to spot later.</p><p class="then"><strong>Then:</strong> Don&#x27;t work through Settings on your own. Send the doctor file and we will do it on a call.</p></div></details>
-<details class="card"><summary><span class="qn">8</span><span class="qt">It worked for weeks and now it doesn&#x27;t</span></summary><div class="cb"><p>Usually something expired or an update moved a file — a login token, a network key, a system upgrade resetting a permission. Nothing you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Mention roughly when it last worked. That narrows it faster than anything else.</p></div></details>
-<details class="card"><summary><span class="qn">9</span><span class="qt">I don&#x27;t know what&#x27;s wrong</span></summary><div class="cb"><p>Fine — this is the right place to start. The command below collects everything about the machine&#x27;s state in one file.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Send it with a sentence about what you were doing.</p></div></details>
+<details class="card"><summary><span class="qn">4</span><span class="qt">I texted my agent and got no reply</span></summary><div class="cb"><p>The Mac needs a signed-in separate Apple Account, a bound private chat, a running head session, and four message services. The check below reports which link is missing without sending a test message.</p><div class="cmd"><code>~/bin/wb-imessage check</code><button class="cp" data-c="~/bin/wb-imessage check">copy</button></div><p class="then"><strong>Then:</strong> Ask Wideband to review the result. A successful permission prompt alone does not prove that a reply reached your phone.</p></div></details>
+<details class="card"><summary><span class="qn">5</span><span class="qt">I can&#x27;t reach it from my phone</span></summary><div class="cb"><p>The machine is reachable over a private network. If one page fails, that page is down. If EVERY page fails at once, the machine has usually dropped off the network entirely — often an expired key, which happens on a schedule and is not something you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Note whether ONE thing broke or EVERYTHING did — that single detail usually identifies the cause.</p></div></details>
+<details class="card"><summary><span class="qn">6</span><span class="qt">Claude won&#x27;t start, or says command not found</span></summary><div class="cb"><p>Almost always the terminal has not picked up its location yet. This is the one thing worth trying yourself.</p><div class="cmd"><code>open -a Terminal</code><button class="cp" data-c="open -a Terminal">copy</button></div><p class="then"><strong>Then:</strong> Close every terminal window, open a fresh one, and try again. If it still fails, send the doctor file.</p></div></details>
+<details class="card"><summary><span class="qn">7</span><span class="qt">My work sessions disappeared</span></summary><div class="cb"><p>Your named sessions are written down and can be rebuilt. The layout inside them may not come back, but the sessions themselves will.</p><div class="cmd"><code>tm-standard apply</code><button class="cp" data-c="tm-standard apply">copy</button></div><p class="then"><strong>Then:</strong> Safe to run — it only creates what is missing and never closes anything you have open.</p></div></details>
+<details class="card"><summary><span class="qn">8</span><span class="qt">Something says permission denied</span></summary><div class="cb"><p>macOS permissions occasionally need re-granting, particularly after a system update. These live in System Settings and are worth doing together rather than alone — one wrong toggle is hard to spot later.</p><p class="then"><strong>Then:</strong> Don&#x27;t work through Settings on your own. Send the doctor file and we will do it on a call.</p></div></details>
+<details class="card"><summary><span class="qn">9</span><span class="qt">It worked for weeks and now it doesn&#x27;t</span></summary><div class="cb"><p>Usually something expired or an update moved a file — a login token, a network key, a system upgrade resetting a permission. Nothing you did.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Mention roughly when it last worked. That narrows it faster than anything else.</p></div></details>
+<details class="card"><summary><span class="qn">10</span><span class="qt">I don&#x27;t know what&#x27;s wrong</span></summary><div class="cb"><p>Fine — this is the right place to start. The command below collects everything about the machine&#x27;s state in one file.</p><div class="cmd"><code>bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt</code><button class="cp" data-c="bash ~/srv/wb-setup/doctor.sh &gt; /tmp/doctor.txt">copy</button></div><p class="then"><strong>Then:</strong> Send it with a sentence about what you were doing.</p></div></details>
 
 <h2>Working with your AI assistant</h2>
 <p>If you have Claude Code on this machine, it can diagnose and often fix this
@@ -122,9 +123,9 @@ bash verify.sh          # what is wrong, each failure tagged [P0-FDA] etc.</code
 <h2 id="the-unsigned-pilot-is-blocked-by-gatekeeper">The unsigned pilot is blocked by Gatekeeper</h2>
 <p><strong>Symptom:</strong> macOS says Wideband Setup was not opened or cannot verify the developer.</p>
 <p>The pilot DMG is ad-hoc signed but not notarized. This is expected only when the filename contains <code>unsigned</code>.</p>
-<ol><li>1. Select <strong>Done</strong>, not Move to Trash.</li><li>2. Open <strong>Open Privacy &amp; Security</strong> from the DMG.</li><li>3. In System Settings, scroll to Security and select <strong>Open Anyway</strong> beside</li></ol>
+<ol><li>Select <strong>Done</strong>, not Move to Trash.</li><li>Open <strong>Open Privacy &amp; Security</strong> from the DMG.</li><li>In System Settings, scroll to Security and select <strong>Open Anyway</strong> beside</li></ol>
 <p>Wideband Setup.</p>
-<ol><li>4. Confirm <strong>Open Anyway</strong> and enter the Mac administrator password into the</li></ol>
+<ol><li>Confirm <strong>Open Anyway</strong> and enter the Mac administrator password into the</li></ol>
 <p>macOS prompt.</p>
 <p><strong>Proof:</strong> Wideband Setup reaches its branded welcome window. A production DMG must be Developer ID signed, notarized, and stapled; it should not require this exception.</p>
 <h2 id="the-app-stays-on-preparing-your-private-setup-guide">The app stays on “Preparing your private setup guide”</h2>
@@ -170,7 +171,7 @@ plutil -extract build_id raw -o - ~/.wideband/setup/connection.json</code></pre>
 <pre><code>bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew</code></pre>
 <p>It reports the invoking user and UID, home owner, GUI console user, architecture, PATH, selected developer directory, runnable Git version, Apple Command Line Tools receipt, exact prefix owner and mode, and the number of objects owned by another UID. It does not use <code>sudo</code> or change the machine.</p>
 <p>Do not copy a generic <code>sudo chown -R &lt;name&gt; /opt/homebrew</code> from an error. The bootstrap prints a repair only when all of these are true:</p>
-<ul><li>- the machine is arm64 and the target is exactly <code>/opt/homebrew</code>;</li><li>- the target is a real directory, not a symlink, and contains Homebrew markers;</li><li>- the invoking user owns their unsymlinked home and is an administrator; and</li><li>- the GUI console user is the same intended user; and</li><li>- the standard Homebrew directories have no extended ACL or file-flag state</li></ul>
+<ul><li>the machine is arm64 and the target is exactly <code>/opt/homebrew</code>;</li><li>the target is a real directory, not a symlink, and contains Homebrew markers;</li><li>the invoking user owns their unsymlinked home and is an administrator; and</li><li>the GUI console user is the same intended user; and</li><li>the standard Homebrew directories have no extended ACL or file-flag state</li></ul>
 <p>that a scoped ownership/mode repair cannot safely explain.</p>
 <p>The printed repair uses <code>find -xdev</code>, changes ownership only on objects whose UID differs, uses <code>chown -h</code> so symlinks are not followed, and restores owner access only on directories already owned by that UID. It does not make every file writable. Wideband never runs it. The client must personally review and execute the two printed commands, then reopen Wideband Setup.</p>
 <p>If the report shows ACL entries, file flags, or effective non-writability that is not explained by ownership or owner-write bits, no repair command is printed. That state requires operator review; a generic <code>chown</code> or <code>chmod</code> would be guesswork and may not fix the actual restriction.</p>
@@ -185,57 +186,57 @@ plutil -extract build_id raw -o - ~/.wideband/setup/connection.json</code></pre>
 <h2 id="repair-completed-but-setup-is-not-done">Repair completed but setup is not “done”</h2>
 <p>That is a valid state. <strong>Repair Wideband</strong> reconciles deterministic software; it cannot approve macOS privacy prompts, sign into accounts, answer the operator interview, or prove a message arrived on the client&#x27;s phone.</p>
 <p>Read the ownership label on the next action:</p>
-<ul><li>- <strong>Machine verified</strong> means the app observed the object or permission.</li><li>- <strong>You confirmed</strong> means the client owns the account or real-world outcome.</li><li>- <strong>We customize together</strong> means the result requires a Wideband handoff.</li></ul>
+<ul><li><strong>Machine verified</strong> means the app observed the object or permission.</li><li><strong>You confirmed</strong> means the client owns the account or real-world outcome.</li><li><strong>We customize together</strong> means the result requires a Wideband handoff.</li></ul>
 <hr>
 <h1 id="part-1-the-six-classes">Part 1 — the six classes</h1>
 <h2 id="1-grant-path">1. Grant-path</h2>
 <p>macOS attributes a TCC permission to a binary&#x27;s <strong>resolved real path</strong>, not to its name and not to the symlink you invoked. Three consequences that account for most &quot;I granted it and it still doesn&#x27;t work&quot;:</p>
-<ul><li>- <strong>A symlink holds a different grant than its target.</strong> Granting Full Disk</li></ul>
+<ul><li><strong>A symlink holds a different grant than its target.</strong> Granting Full Disk</li></ul>
 <p>Access to <code>/opt/homebrew/bin/foo</code> when that is a symlink grants it to whatever the link resolves to at that moment.</p>
-<ul><li>- <strong><code>brew upgrade</code> moves the real path.</strong> A formula upgrade changes</li></ul>
+<ul><li><strong><code>brew upgrade</code> moves the real path.</strong> A formula upgrade changes</li></ul>
 <p><code>…/Cellar/python/3.13/…</code> to <code>…/3.14/…</code>, and every grant attached to the old path is now attached to a binary that no longer exists. This has already happened once on the reference machine and silently voided a project&#x27;s grants.</p>
-<ul><li>- <strong>A grant never applies to an already-running process.</strong> Granting Full</li></ul>
+<ul><li><strong>A grant never applies to an already-running process.</strong> Granting Full</li></ul>
 <p>Disk Access to Terminal does nothing for the Terminal you granted it from. Quit it completely and reopen.</p>
 <p><code>doctor.sh</code> prints resolved real paths for exactly this reason. When a grant looks given but behaves as if it is not, compare what you granted against what the tools section reports.</p>
 <h2 id="2-environment-divergence">2. Environment divergence</h2>
 <p>It works when you type it and fails when launchd runs it. launchd gives a job almost nothing: no <code>~/bin</code>, no <code>/opt/homebrew/bin</code>, often no <code>HOME</code>.</p>
 <p>Every plist in <code>templates/launchagents/</code> therefore sets <code>PATH</code> and <code>HOME</code> explicitly. A loop that runs by hand and fails on schedule is this class until proven otherwise — check the plist&#x27;s <code>EnvironmentVariables</code> before anything else.</p>
-<p>The reverse also bites: a script that hardcodes <code>/Users/studio</code> works on one machine and nowhere else. <code>selftest.sh</code> asserts no loop contains an identity literal.</p>
+<p>The reverse also bites: a script that hardcodes <code>/Users/yourname</code> works on one machine and nowhere else. <code>selftest.sh</code> asserts no loop contains an identity literal.</p>
 <h2 id="3-identity">3. Identity</h2>
 <p>The build assumes exactly one of each identity. Two accounts is the failure.</p>
-<ul><li>- A second GitHub account blocks deploys, and it is painful to unwind after</li></ul>
+<ul><li>A second GitHub account blocks deploys, and it is painful to unwind after</li></ul>
 <p>commits exist under both.</p>
-<ul><li>- <code>git config user.name</code> and <code>gh auth</code> are <strong>separate</strong> and can disagree —</li></ul>
+<ul><li><code>git config user.name</code> and <code>gh auth</code> are <strong>separate</strong> and can disagree —</li></ul>
 <p><code>doctor.sh</code> prints both because they routinely do.</p>
-<ul><li>- A hardcoded phone number or hostname makes a script unportable. Identity</li></ul>
+<ul><li>A hardcoded phone number or hostname makes a script unportable. Identity</li></ul>
 <p>belongs in <code>~/.sop-vars</code> and nowhere else.</p>
 <h2 id="4-reachability">4. Reachability</h2>
 <p>Four distinct things all present as &quot;I can&#x27;t reach it&quot;:</p>
-<ul><li>- <strong>Bound to loopback.</strong> A dev server on <code>127.0.0.1</code> is invisible to the</li></ul>
+<ul><li><strong>Bound to loopback.</strong> A dev server on <code>127.0.0.1</code> is invisible to the</li></ul>
 <p>tailnet proxy. Bind <code>-H 0.0.0.0</code>.</p>
-<ul><li>- <strong>HTTP on a tailnet port.</strong> Safari&#x27;s HTTPS-First fails the handshake</li></ul>
+<ul><li><strong>HTTP on a tailnet port.</strong> Safari&#x27;s HTTPS-First fails the handshake</li></ul>
 <p>before anything answers. <code>tailscale serve --https</code>.</p>
-<ul><li>- <strong>HTTPS certificates not enabled</strong> for the tailnet in the admin console.</li></ul>
+<ul><li><strong>HTTPS certificates not enabled</strong> for the tailnet in the admin console.</li></ul>
 <p><code>serve</code> then has no certificate to issue and every surface fails at TLS.</p>
-<ul><li>- <strong>The check itself is wrong.</strong> <code>sshd</code> is socket-activated and its socket</li></ul>
+<ul><li><strong>The check itself is wrong.</strong> <code>sshd</code> is socket-activated and its socket</li></ul>
 <p>belongs to root, so an unprivileged <code>lsof -iTCP:22</code> shows nothing even when Remote Login is on. Read <code>launchctl print-disabled system</code> instead.</p>
 <h2 id="5-ledger-vs-object">5. Ledger-vs-object</h2>
 <p>The record says it happened. The thing is not there. Always verify the object, never the record:</p>
-<ul><li>- <code>supabase db push</code> re-runs the whole migration ledger. The ledger will say</li></ul>
+<ul><li><code>supabase db push</code> re-runs the whole migration ledger. The ledger will say</li></ul>
 <p>a migration ran; check that the <strong>table or column exists</strong>.</p>
-<ul><li>- A LaunchAgent can be <em>loaded</em> and <em>failing</em>. <code>launchctl list</code> shows it;</li></ul>
+<ul><li>A LaunchAgent can be <em>loaded</em> and <em>failing</em>. <code>launchctl list</code> shows it;</li></ul>
 <p>the second column is the last exit code, and non-zero means a broken loop that looks installed.</p>
-<ul><li>- A stale <code>.vercel/project.json</code> points at a real project with no env vars</li></ul>
+<ul><li>A stale <code>.vercel/project.json</code> points at a real project with no env vars</li></ul>
 <p>and no domain. The link exists; it is the wrong link.</p>
-<ul><li>- <strong>&quot;Installed&quot; is not &quot;has fired once.&quot;</strong> A scheduled job is not working</li></ul>
+<ul><li><strong>&quot;Installed&quot; is not &quot;has fired once.&quot;</strong> A scheduled job is not working</li></ul>
 <p>until it has actually run and produced output.</p>
 <h2 id="6-bare-machine-assumptions">6. Bare-machine assumptions</h2>
 <p>Things true on a built machine and false on a fresh one:</p>
-<ul><li>- <code>/usr/bin/git</code> and <code>/usr/bin/python3</code> are <strong>Command Line Tools stubs</strong>.</li></ul>
+<ul><li><code>/usr/bin/git</code> and <code>/usr/bin/python3</code> are <strong>Command Line Tools stubs</strong>.</li></ul>
 <p>Invoking either on a bare Mac pops the CLT installer dialog and blocks. This is why <code>bootstrap.sh</code> fetches a tarball rather than cloning.</p>
-<ul><li>- <code>/bin/bash</code> is <strong>3.2</strong>. No associative arrays, no <code>mapfile</code>.</li><li>- A script downloaded in a browser is <strong>quarantined</strong> by Gatekeeper. Piping</li></ul>
+<ul><li><code>/bin/bash</code> is <strong>3.2</strong>. No associative arrays, no <code>mapfile</code>.</li><li>A script downloaded in a browser is <strong>quarantined</strong> by Gatekeeper. Piping</li></ul>
 <p><code>curl</code> to <code>bash</code> is not, which is why the installer is a URL and not a download.</p>
-<ul><li>- The Mac App Store Tailscale <strong>ships no CLI</strong>. Only the standalone app does.</li></ul>
+<ul><li>The Mac App Store Tailscale <strong>ships no CLI</strong>. Only the standalone app does.</li></ul>
 <hr>
 <h1 id="part-2-failures-by-check-id">Part 2 — failures by check ID</h1>
 <h2 id="p0-fda-full-disk-access">P0-FDA — Full Disk Access</h2>
@@ -296,6 +297,11 @@ git config --global user.email &quot;$GIT_EMAIL&quot;</code></pre>
 sudo chmod +x /opt/homebrew/bin/tailscale</code></pre>
 <p>A <strong>wrapper</strong>, not <code>ln -s</code>. The app binary derives its bundle identifier from <code>argv[0]</code>, so a symlink to it crashes; <code>exec</code> on the real path does not.</p>
 <p><strong>Proof:</strong> <code>tailscale status</code> answers.</p>
+<h2 id="tailscale-is-stopped-after-a-mac-restart">Tailscale is stopped after a Mac restart</h2>
+<p><strong>Class:</strong> persistence. A successful sign-in or <code>tailscale up</code> proves only that the current session is connected. The standalone macOS app has a native login helper, but it must be enabled in the Tailscale app&#x27;s <strong>Start on Login</strong> setting.</p>
+<p>Open Tailscale&#x27;s Settings, turn on <strong>Start on Login</strong>, and connect. Restart the Mac, sign into the same macOS user, and wait for Tailscale to show <strong>Connected</strong> without manually launching it or running <code>tailscale up</code>. Then reopen the private Fleetdeck HTTPS link from the phone. A command-line check can confirm that <code>BackendState</code> is <code>Running</code> and <code>Self.Online</code> is <code>true</code>:</p>
+<pre><code>TAILSCALE_BE_CLI=1 /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json</code></pre>
+<p>If the app starts but remains disconnected, review its VPN On Demand rules; a rule set to <strong>Never</strong> can stop the connection. Use Tailscale&#x27;s own login helper and VPN settings rather than installing a second Wideband LaunchAgent. On macOS, Tailscale runs for a signed-in user; availability before macOS login is not a supported persistence expectation. See Tailscale&#x27;s documentation for [Start on Login](https://tailscale.com/docs/features/tailscale-system-policies), [VPN On Demand](https://tailscale.com/docs/features/client/ios-vpn-on-demand), and [macOS login behavior](https://tailscale.com/docs/how-to/run-unattended).</p>
 <h2 id="p4-tsserve-no-serve-mappings">P4-TSSERVE — no serve mappings</h2>
 <p><strong>Class:</strong> reachability. Phone surfaces are unreachable.</p>
 <p>First enable HTTPS certificates for the tailnet: admin console → Settings → Features → HTTPS Certificates. Without it <code>serve</code> has no certificate to issue and fails at TLS.</p>
@@ -346,6 +352,30 @@ sudo chmod +x /opt/homebrew/bin/tailscale</code></pre>
 <pre><code>claude mcp list</code></pre>
 <p><strong>Fix:</strong> re-authenticate the server that shows a failure. Note that interactively-authenticated servers are absent in headless runs by design.</p>
 <p><strong>Proof:</strong> <code>claude mcp list</code> shows <code>✔ Connected</code>.</p>
+<h2 id="p6-imsgos-this-macos-version-cannot-run-the-imessage-transport">P6-IMSGOS — this macOS version cannot run the iMessage transport</h2>
+<p><strong>Class:</strong> bare-machine assumption. The upstream <code>imsg</code> transport requires macOS 14 or newer. Wideband Setup can still build its general workstation on macOS 13, but it cannot claim that texting the head agent works there.</p>
+<p><strong>Fix:</strong> use a Mac running macOS 14 or newer for the iMessage head runtime.</p>
+<p><strong>Proof:</strong> <code>sw_vers -productVersion</code> begins with 14 or higher, and <code>~/bin/wb-imessage check</code> reports <code>&quot;macos_supported&quot;: true</code>.</p>
+<h2 id="p6-imsg-the-messages-transport-is-missing">P6-IMSG — the Messages transport is missing</h2>
+<p><strong>Class:</strong> ledger-vs-object. A Messages Automation grant is not a listener.</p>
+<p><strong>Fix:</strong> run the guided iMessage install again. Its Brewfile installs the upstream <code>steipete/tap/imsg</code> formula with trust scoped to that formula. If Homebrew refuses a third-party tap, review the exact formula and its source before approving it. The [upstream install guide](https://github.com/openclaw/imsg/blob/main/docs/install.md) names this package and its macOS requirement.</p>
+<p><strong>Proof:</strong> <code>/opt/homebrew/bin/imsg --version</code> succeeds. No test message is sent by this check.</p>
+<h2 id="p6-imsgcfg-the-private-head-runtime-is-not-configured">P6-IMSGCFG — the private head runtime is not configured</h2>
+<p><strong>Class:</strong> identity. The transport needs the owner&#x27;s phone number, chosen OS and agent names, and a private workspace before it can bind a chat.</p>
+<p><strong>Fix:</strong> complete the naming step in Wideband Setup and run its <strong>Set up head agent</strong> action. That action passes the private answers on stdin to <code>wb-imessage init</code>; addresses do not belong in shell history or support logs. An existing runtime identity is preserved by repair.</p>
+<p><strong>Proof:</strong> <code>~/bin/wb-imessage check</code> reports <code>&quot;configured&quot;: true</code>.</p>
+<h2 id="p6-imsgchat-the-owner-chat-is-not-bound-or-no-longer-matches">P6-IMSGCHAT — the owner chat is not bound or no longer matches</h2>
+<p><strong>Class:</strong> identity. The route accepts only a one-to-one iMessage chat with the configured owner number. It pins the chat ID, GUID, participant, and signed-in Messages account. A stale row ID or a group chat is refused.</p>
+<p><strong>Fix:</strong> the client personally signs a <strong>separate Apple Account</strong> into Messages on the agent Mac, then sends a fresh text from their phone. In the guided installer, confirm that separate-account step and run <strong>Bind my text chat</strong> within ten minutes. A changed binding needs operator review; do not silently retarget outbound messages.</p>
+<p><strong>Proof:</strong> <code>~/bin/wb-imessage check</code> reports <code>&quot;target_verified&quot;: true</code>. The final human proof is a real reply visible on the client&#x27;s phone.</p>
+<h2 id="p6-imsghead-the-persistent-head-agent-is-absent">P6-IMSGHEAD — the persistent head agent is absent</h2>
+<p><strong>Class:</strong> ledger-vs-object. The <code>wb-head</code> session must have a recognized live agent in its active pane; a bare shell is not a destination for text.</p>
+<p><strong>Fix:</strong> check that Claude is installed and signed in, then inspect <code>tmux list-panes -s -t &#x27;=wb-head&#x27; -F &#x27;#{pane_current_command}&#x27;</code>. The keeper creates a missing session on its next interval. It leaves an unexpected live shell alone for operator review.</p>
+<p><strong>Proof:</strong> <code>~/bin/wb-imessage check</code> reports <code>&quot;head_session&quot;: true</code>.</p>
+<h2 id="p6-imsgservices-an-imessage-runtime-service-is-not-loaded">P6-IMSGSERVICES — an iMessage runtime service is not loaded</h2>
+<p><strong>Class:</strong> ledger-vs-object. The watcher, router, head keeper, and guarded outbox are four separate LaunchAgents. Before an exact chat is bound, their plists stay in the private <code>~/.wideband/imessage/launchagents/</code> staging folder, outside <code>~/Library/LaunchAgents/</code>. A plist in the live folder can start at the next GUI login even if <code>launchctl bootstrap</code> was never run.</p>
+<p><strong>Fix:</strong> run Wideband Setup&#x27;s iMessage install action again (<code>bash ~/srv/wb-setup/install.sh --imessage-only --no-verify</code>). While unbound, it moves only this organization&#x27;s four iMessage plists out of LaunchAgents and boots out their loaded jobs. After the client binds the exact owner chat, the same command installs and loads them. Leave unrelated LaunchAgents untouched. Inspect <code>launchctl list</code> for <code>imessage-watch</code>, <code>imessage-route</code>, <code>imessage-keep</code>, and <code>imessage-outbox</code> under this Mac&#x27;s <code>com.$ORG</code> prefix. If a service is loaded but failing, inspect its private log under <code>~/.wideband/imessage/logs/</code>.</p>
+<p><strong>Proof:</strong> <code>~/bin/wb-imessage check</code> reports <code>&quot;services_loaded&quot;: true</code>, then a real text receives a reply on the phone and still does after restart.</p>
 <h2 id="p7-conf-p7-tpm-tmux-config-or-plugins-missing">P7-CONF / P7-TPM — tmux config or plugins missing</h2>
 <p><strong>Class:</strong> ledger-vs-object.</p>
 <pre><code>bash install.sh</code></pre>
@@ -420,9 +450,9 @@ cd ~/srv/fleetdeck &amp;&amp; ./install.sh</code></pre>
 <pre><code>bash verify.sh | grep -E &#x27;P0-&#x27;</code></pre>
 <h2 id="a-loop-stopped-firing">A loop stopped firing</h2>
 <p><strong>Class 5.</strong> Three distinct causes with the same symptom:</p>
-<ul><li>- non-zero exit — <code>launchctl list | awk &#x27;$2!=0&#x27;</code></li><li>- launchd throttling after repeated fast failures — check <code>ThrottleInterval</code></li></ul>
+<ul><li>non-zero exit — <code>launchctl list | awk &#x27;$2!=0&#x27;</code></li><li>launchd throttling after repeated fast failures — check <code>ThrottleInterval</code></li></ul>
 <p>and the log for a crash loop</p>
-<ul><li>- the machine slept through the scheduled time — <code>pmset -g</code></li></ul>
+<ul><li>the machine slept through the scheduled time — <code>pmset -g</code></li></ul>
 <p>A calendar job that missed its window does <strong>not</strong> run late. It waits for the next one.</p>
 <h2 id="tailscale-node-key-expired">Tailscale node key expired</h2>
 <p><strong>Class 4.</strong> Node keys expire (commonly ~180 days) and the machine drops off the tailnet. Every phone surface goes dark at once, which is the tell — a single broken surface is not this.</p>

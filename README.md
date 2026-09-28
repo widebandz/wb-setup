@@ -56,18 +56,52 @@ The package also installs `~/Applications/Wideband Agent.app`, the single
 branded macOS permission principal. Accessibility, Screen Recording, Full Disk
 Access, and Messages Automation are requested and verified against that exact
 app rather than trusting a checkbox or granting broad access to Terminal.
-Scheduled health and workspace jobs also launch through that app so macOS shows
-one recognizable Wideband Agent background item instead of generic bash or
-Python entries.
-Apple Screen Sharing is guided separately for private visual support.
-Those access steps are deliberately first in the client queue, before account
-and customization work, so a support path exists while the rest is installed.
+The iMessage head runtime also launches through that app. The first client
+milestone is a real two-way text: choose an OS display name, an editable agent
+name, a head-agent provider, and a first goal; sign a separate agent Apple
+Account into Messages; send a fresh text from the owner's phone; bind that
+exact chat; and confirm the agent's reply on the phone. Apple Screen Sharing
+and other support access are guided later.
+
+The provider picker saves Claude Code, Codex, Gemini CLI, or Grok Build as a
+private onboarding choice. Claude Code is the current Wideband iMessage runtime
+path. The other choices are marked as previews and cannot activate the text
+router until their sign-in, pane recognition, and reply path have been verified.
+Changing the provider after a chat is bound requires an explicit runtime
+migration so the saved choice cannot silently disagree with the active agent.
+
+After the first real reply and the phone view are ready, the client opens the
+private Fleetdeck board on their iPhone and confirms it works. That final
+confirmation queues two owner-only iMessages through the guarded outbox: one
+with the dashboard, agent, project, knowledge graph, live terminal, and Notes
+beta links; the other with Claude and tmux commands plus the Tailscale and
+Termius iPhone app links. Setup verifies each private HTTPS page before
+queueing. The handoff card shows guarded outbox delivery; an uncertain send
+is held for review and never retried automatically. Reopening an older
+completed setup offers a manual send control instead of sending old handoff
+texts automatically.
 
 Build the generic pilot:
 
 ```bash
 ./packaging/build-app.sh
 ```
+
+For a self-contained customer phone portal on a blank Mac, pass a reviewed
+Fleetdeck checkout when building the app:
+
+```bash
+./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck
+```
+
+This option bundles only allowlisted tracked Fleetdeck installer files and
+generic icons, plus the standalone customer portal. Local config, notes,
+backups, `.git`, and the operator portal are excluded. Without the option,
+`install.sh --phone-only` retains a public-clone fallback; the current public
+Fleetdeck release lacks the customer-mode guard and will stop that step rather
+than expose writable services. Use `--fleetdeck-source` for a customer handoff.
+The customer portal's Notes beta has its own private store on the client's Mac;
+it does not import or sync the existing Fleetdeck operator Notes store.
 
 Build a Developer ID signed artifact without submitting it for notarization:
 
@@ -97,11 +131,15 @@ repository, fill it with that client's approved build identity, then build:
 ./packaging/build-app.sh --profile /secure/path/client-profile.json
 ```
 
+Add `--fleetdeck-source /path/to/fleetdeck` to a personalized build as well
+when that client's first phone view must work without fetching Fleetdeck.
+
 The unsigned pilot produces `dist/Wideband-Setup-unsigned.dmg`; a fully trusted
 release produces `dist/Wideband-Setup.dmg`. Either is one shareable file. The
-generic build collects six build-identity details in plain-language macOS
-popups; a personalized build seeds those approved values into `~/.sop-vars`
-once and skips those questions. An existing identity file is never overwritten.
+generic client build asks for the owner's phone number in one native macOS
+dialog; the guided UI collects the OS name, agent name, and first goal. A
+personalized build seeds its approved identity values into `~/.sop-vars` once
+and skips the phone question. An existing identity file is never overwritten.
 The profile contains client identity data—not credentials—and is embedded only
 in the intended client's app. Do not reuse one client's DMG for another client.
 Every package build also writes `dist/SHA256SUMS.txt`; compare the recipient's
@@ -141,11 +179,12 @@ Client view also includes a live readiness dashboard and **Setup tools**:
 - **Copy diagnostics** and **Export support bundle** produce a deliberately
   narrow report that excludes credentials, two-factor codes, profile answers,
   `.sop-vars` values, and raw logs.
-- **Deactivate Wideband services** stops the three managed jobs and moves their
-  definitions plus `Wideband Agent.app` into a private recovery folder. It does
-  not delete client work or silently change Remote Login, Screen Sharing, or
-  macOS privacy choices. Reopen the packaged app and select **Repair Wideband**
-  when the managed runtime should be restored.
+- **Deactivate Wideband services** stops the exact managed background jobs,
+  including the text runtime, first-project preview, and Fleetdeck portal,
+  and moves their definitions plus `Wideband Agent.app` into a private recovery
+  folder. It preserves client work, account sign-ins, and macOS privacy
+  choices. Reopen the packaged app and select **Repair Wideband** to restore
+  the managed runtime.
 
 You are about to pipe a URL into a shell, so here is exactly what that
 does before you run it.
@@ -155,7 +194,8 @@ does before you run it.
 ## What bootstrap.sh does
 
 1. **Refuses** if the machine is not arm64, is running as root, is below
-   macOS 13, or the target directory sits inside a TCC-protected folder.
+   macOS 13 (macOS 14 for the iMessage client path), or the target directory
+   sits inside a TCC-protected folder.
 2. **Installs Claude Code** — `claude.ai/install.sh`, the official
    installer. Adds `~/.local/bin` to your PATH in `.zshrc`.
 3. **Downloads this repo** to `~/srv/wb-setup` as a tarball so the versioned
@@ -167,15 +207,18 @@ does before you run it.
    Apple package receipt, so an incompatible post-upgrade toolchain is stopped
    for Software Update instead of being accepted merely because files exist.
 5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
-   package preloads the approved values; the generic client package asks six
-   plain-language questions in native macOS popups. If that file already
-   exists it is left alone.
+   package preloads approved values; a generic client package asks only for
+   the owner's phone number. GitHub, commit identity, work repository, and
+   extra graph packs can be filled in after the first text. An existing
+   identity file is left alone.
 6. **Places four files** — a status line script, `~/.claude/SOP.md`,
    `~/.claude/CLAUDE.md`, and `~/.claude/settings.json` (only if you do
    not already have one).
 7. **Queues the human gates.** The generic bootstrap prints them; the packaged
    client app presents them later as branded, resumable popups.
-8. **Runs `brew bundle`** against the `Brewfile` in this repo.
+8. **Runs `brew bundle`** against `Brewfile.quick` for the packaged client
+   path: Python, tmux, and `imsg` on macOS 14 or newer. The full operator path
+   continues to use `Brewfile`.
 9. **Opens Wideband Setup** on localhost unless `--no-ui` was requested.
 
 The Wideband payload stays under `$HOME`, asks for no passwords, and sends

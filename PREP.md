@@ -3,10 +3,10 @@
 Send this to the client the day before. Everything here happens away from
 the new Mac, on whatever device they already have.
 
-The reason it exists: on setup day the machine downloads on its own and
-needs nobody, but account sign-ins need a person and a phone for the
-two-factor codes. Those are the hours. Doing them the day before is the
-difference between a morning and an afternoon.
+The first milestone is a real text exchange with your new agent. You handle
+the account sign-ins and macOS approvals yourself; Wideband handles the
+repeatable installation. Preparing the accounts below avoids waiting for
+verification codes on setup day.
 
 ---
 
@@ -37,57 +37,49 @@ manual **Check for Updates…** menu item later.
 
 ---
 
-## Four answers we need
+## Before your first text
 
-Reply with these and the machine is configured from them. They are the
-only identity in the whole build.
-
-| | What we need | Notes |
-|---|---|---|
-| 1 | **A short name for your company** | lowercase, one word, no spaces — `northside`, `apexhvac`. It labels the background jobs on your machine. |
-| 2 | **Your GitHub username** | from step 4 below. Pick it deliberately; changing it later breaks deployments. |
-| 3 | **The email for your code commits** | usually your work address |
-| 4 | **The phone number for daily briefs** | where the machine texts you its morning summary |
+- Have your **personal iPhone** and its phone number ready. The generic setup
+  asks for that number in one private macOS dialog, including country code.
+  Wideband binds replies only to the exact one-to-one chat from this phone.
+- Decide on an **OS display name**, a **head-agent name**, and a first goal:
+  Research, Build a website, or Proposal (advanced). You can choose and edit
+  these in Wideband Setup; the OS display name does not rename the Mac.
+- Have an **administrator account on an Apple silicon Mac running macOS 14 or
+  newer**, plus power and Wi-Fi. The iMessage transport cannot run on macOS 13.
 
 ---
 
-## Six accounts to create
+## Accounts needed for the first text
 
-In this order. Email is first because every other account sends its
-verification there — a machine that cannot receive a code stalls, and it
-stalls in a way that is hard to diagnose in the moment.
+**Separate agent Apple Account** — account.apple.com
+Create or choose an Apple Account for the agent Mac that is different from the
+Apple Account on your personal iPhone. Confirm you can sign in and receive its
+verification codes. This separate identity lets the agent text you as a distinct
+sender. Keep its password and verification codes in your own password manager;
+Wideband Setup never asks for them.
 
-**1. Email — confirm access**
-Not a new account, just a check: sign in, send yourself a message, confirm
-it arrives. Have the password written down somewhere you can reach it.
-Roughly half the delays on setup day are a forgotten mail password.
+**Claude Code access** — claude.ai
+Have the account you want the head agent to use ready for Claude Code sign-in.
+Wideband opens Claude's own sign-in flow on the Mac; it does not collect your
+password or verification codes. Confirm the account can run Claude Code before
+you expect the first agent reply.
 
-**2. Apple ID** — appleid.apple.com
-You likely have one. Confirm you can sign in and that you can receive its
-verification codes. This is what lets the machine text you.
+Keep access to the email address and phone that receive these accounts'
+verification codes. Sign-ins and two-factor challenges stay with you.
 
-**3. Anthropic** — claude.ai
-Create the account and start a **Pro or Max** subscription. This one
-matters most for timing: it is the last thing standing between a new
-machine and a working one, so having it ready is the single biggest
-saving on the day.
+### Later operator details and accounts
 
-**4. GitHub** — github.com
-Create the account. **The username you choose here becomes permanent** for
-this machine — it signs your work and authorizes deployments, and a second
-account added later is the most common cause of a deployment that refuses
-to run. One account, chosen on purpose.
+These are useful for deployment and the phone board, but they do not block the
+first working iMessage conversation:
 
-**5. Tailscale** — tailscale.com
-Sign in with the GitHub account from step 4. This is the private network
-that lets you reach the machine from your phone.
-
-**6. Vercel and Supabase** — vercel.com, supabase.com
-Both: sign in with GitHub. Do these after step 4 or they create separate
-identities you will have to reconcile.
-
-**Two-factor:** turn it on where offered, and keep your phone nearby. It
-is worth the two minutes now rather than during setup.
+| Detail | When needed |
+|---|---|
+| **Company short name** | Later full operator build; a lowercase slug such as `northside` labels its background jobs. |
+| **GitHub username and code-commit email** | When the agent starts working with repositories and deployments. Choose the intended GitHub identity deliberately. |
+| **Work repository and graph pack** | When connecting the agent to the work you want it to do. |
+| **Tailscale account** | When publishing Fleetdeck's private HTTPS phone link. Sign in on the Mac and phone. On the Mac, enable Tailscale's Start on Login setting, restart, and confirm it reconnects after you sign in. Then test the private HTTPS link on the phone. |
+| **Vercel, Supabase, and other developer accounts** | Only when the chosen first project needs them. |
 
 ---
 
@@ -95,10 +87,10 @@ is worth the two minutes now rather than during setup.
 
 - The new Mac, **plugged into power** — it will be downloading for a while
 - Your **wifi password**
-- Your **phone**, for verification codes
-- About **three hours**, though most of it is unattended
-- An **administrator account** on the Mac — the one you create when you
-  first turn it on
+- Your **personal iPhone**, for account verification and the real text test
+- The **separate agent Apple Account** and **Claude Code access** above
+- An **administrator account** on the Mac — the one you create when you first
+  turn it on
 
 ---
 
@@ -132,23 +124,28 @@ not us.
   needs, and that is better to find out now than three hours in.
 - **You are not an administrator** on the machine. Most of setup requires
   it.
-- **You already have any of the six accounts** above. We will use them
-  rather than create duplicates.
+- **You already have an agent Apple Account or Claude Code access.** We can
+  use the intended accounts rather than create duplicates, provided the agent
+  Apple Account differs from the one on your personal iPhone.
 
 ---
 
 ## What happens on the day
 
-Wideband Setup performs the repeatable machine work while you sign in and
-approve the small number of macOS permission dialogs that must belong to you.
-Approve Accessibility, Screen Recording, Full Disk Access, and Messages
-Automation only for the exact app named **Wideband Agent**. Remote Login and
-Screen Sharing are separate Apple settings and will be configured only for the
-intended administrator.
+Wideband Setup performs the repeatable machine work while you sign the separate
+agent Apple Account into Messages and approve Full Disk Access for the exact app
+named **Wideband Agent**. Send a fresh iMessage from your personal phone to the
+agent account, then confirm a real agent reply arrives in that same chat.
+Accessibility, Screen Recording, Messages Automation, Remote Login, and Screen
+Sharing are guided later if your work or support requires them.
 
 The readiness screen distinguishes software that the Mac verified from account
 or real-world outcomes that only you can confirm. Neither of us waits on the
 other — that is deliberate, and it is why this sheet exists.
 
-By the end, the machine texts you a daily brief, you can reach it from
-your phone, and it can build and deploy your work.
+After the first reply, Wideband prepares your chosen first job and the local
+Fleetdeck phone view. A private HTTPS link, iPhone home-screen shortcut,
+deployment accounts, and scheduled briefs have their own later checks. Once
+you open the Fleetdeck board on your phone and confirm it works, Wideband
+queues two setup texts in your verified chat. They keep the board links,
+Claude and tmux commands, and Tailscale and Termius app links at hand.

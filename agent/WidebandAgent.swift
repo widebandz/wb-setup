@@ -3,6 +3,7 @@ import ApplicationServices
 import Carbon
 import CoreGraphics
 import Darwin
+import Dispatch
 import Foundation
 
 private let fullDiskSettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
@@ -108,7 +109,26 @@ private func runBackgroundTask() -> Never {
     process.environment = ProcessInfo.processInfo.environment
     do {
         try process.run()
+        // launchd stops this app, not the Process child. Foundation starts the
+        // child in its own process group on macOS; signal that group so a
+        // watcher and its `imsg watch` child stop together. A direct child
+        // signal is the safe fallback if the group is not dedicated.
+        let childPID = process.processIdentifier
+        let childGroup = getpgid(childPID)
+        let dedicatedGroup = childGroup == childPID && childGroup != getpgrp()
+        signal(SIGTERM, SIG_IGN)
+        let stop = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .global(qos: .utility))
+        stop.setEventHandler {
+            guard process.isRunning else { return }
+            if dedicatedGroup {
+                _ = Darwin.kill(-childGroup, SIGTERM)
+            } else {
+                process.terminate()
+            }
+        }
+        stop.resume()
         process.waitUntilExit()
+        stop.cancel()
         exit(process.terminationStatus)
     } catch {
         FileHandle.standardError.write(

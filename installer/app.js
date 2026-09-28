@@ -22,6 +22,15 @@ let connectionOnline = false;
 let lastStateRefresh = null;
 let guideCheckTimer = null;
 let guideCheckActive = false;
+let onboardingEditing = false;
+let onboardingFormInitialized = false;
+let welcomeGuideTimer = null;
+let phonePortalProof = null;
+let phonePortalCheckedRun = "";
+let phonePortalCheckActive = false;
+let phonePortalCheckPromise = null;
+let setupHandoffActive = false;
+let setupHandoffError = "";
 
 const permissionStepIds = [
   "connect.screen-sharing",
@@ -121,7 +130,15 @@ function stageForStep(stepId) {
   return manifest.stages.find((stage) => stage.steps.some((step) => step.id === stepId));
 }
 
+function textInstallRun() {
+  const runs = snapshot.state.action_runs;
+  return runs.run_imessage_install || (runs.run_install?.status === "complete" ? runs.run_install : null);
+}
+
 function checkStatus(step) {
+  if (providerRuntimePending(step)) {
+    return { state: "pending", label: selectedAgentProvider() ? "Provider runtime pending" : "Choose a provider first", source: "none" };
+  }
   const completed = snapshot.state.completed[step.id];
   if (step.id === "identify.run-bootstrap" && snapshot.facts.bootstrap_ready) {
     return { state: "done", label: "Detected", source: "machine" };
@@ -153,6 +170,7 @@ function checkStatus(step) {
 }
 
 function evidenceLabel(status) {
+  if (["Provider runtime pending", "Choose a provider first"].includes(status.label)) return status.label;
   if (status.state === "failed") return "Machine check needs attention";
   if (status.state === "skipped") return "Waiting for a usable check";
   if (status.state !== "done") {
@@ -162,6 +180,7 @@ function evidenceLabel(status) {
     return status.label.includes("confirmed") ? "Machine verified + you confirmed" : "Machine verified";
   }
   if (["human", "interview"].includes(status.source)) return "You confirmed";
+  if (status.source === "onboarding") return "Saved on this Mac";
   if (status.source === "action" && status.state === "done") return "Installer completed";
   return "Waiting for proof";
 }
@@ -244,6 +263,451 @@ function currentClientStep() {
   return immediateClientSteps().find((step) => checkStatus(step).state !== "done") || null;
 }
 
+function onboardingValues() {
+  return snapshot.state.metadata || {};
+}
+
+const providerNames = {
+  claude: "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini CLI",
+  grok: "Grok Build",
+};
+
+function selectedAgentProvider() {
+  const values = onboardingValues();
+  return values.agent_provider || (snapshot.state.completed["identify.name-your-system"] ? "claude" : "");
+}
+
+function providerRuntimePending(step) {
+  return selectedAgentProvider() !== "claude"
+    && ["identify.authenticate-agent", "connect.imessage-bind"].includes(step.id);
+}
+
+function providerStepTitle(step) {
+  const name = providerNames[selectedAgentProvider()];
+  if (step.id === "identify.authenticate-agent") return name ? `Connect ${name}` : step.title;
+  if (step.id === "connect.imessage-bind" && providerRuntimePending(step)) return `${name || "Provider"} text connection pending`;
+  return step.title;
+}
+
+function providerGuide(step) {
+  if (step.id === "prove.phone-board" && !snapshot.state.completed["prove.phone-board"]) {
+    return {
+      ...step.client_guide,
+      intro: "Open your private board on the phone. When you confirm it works, Wideband will verify its HTTPS link and queue two setup texts to your bound iMessage chat.",
+      instructions: [
+        ...step.client_guide.instructions,
+        "Select Board works — send two setup texts to approve the Fleetdeck link and quick commands by iMessage.",
+      ],
+      confirm_label: "Board works — send two setup texts",
+    };
+  }
+  if (["identify.authenticate-agent", "connect.imessage-bind"].includes(step.id) && !selectedAgentProvider()) {
+    return {
+      ...step.client_guide,
+      intro: "Choose an AI provider in the form above before connecting the head agent.",
+      purpose: "Wideband needs your provider choice before it can check sign-in or start a text session.",
+      success: "Your selected provider is authenticated and a real text reply reaches your phone.",
+      instructions: ["Choose your AI provider in Make it yours, then save your choices."],
+      confirm_label: "Choose a provider first",
+    };
+  }
+  if (step.id === "connect.imessage-bind" && providerRuntimePending(step)) {
+    const name = providerNames[selectedAgentProvider()] || "This provider";
+    return {
+      ...step.client_guide,
+      intro: `${name} is saved as your provider, but its Wideband iMessage head-agent route is not verified yet.`,
+      purpose: "Wideband will pause before binding your private chat to an unverified head runtime.",
+      success: `A ${name} head session answers a real text through the owner-bound route. This proof is still pending.`,
+      instructions: [
+        "Your provider choice remains saved on this Mac.",
+        "Wideband will offer chat binding after this provider's signed-in head session and guarded reply path are verified.",
+      ],
+      confirm_label: "Runtime support pending",
+    };
+  }
+  if (step.id !== "identify.authenticate-agent") return step.client_guide;
+  if (selectedAgentProvider() === "claude") {
+    return {
+      ...step.client_guide,
+      intro: "Connect Claude Code directly to your account. Wideband checks the local tool, but never sees your password.",
+      success: "Claude Code reports a signed-in account; a real text reply is checked later.",
+      instructions: [
+        "Select Open Claude sign-in below. A second Terminal window will open.",
+        "Follow the secure browser sign-in opened by Claude Code.",
+        "Approve the account you intend this custom agent to use.",
+        "Return here after the sign-in window says 'Login successful'.",
+      ],
+      privacy: "Authentication happens between you and Anthropic.",
+      confirm_label: "Check Claude sign-in",
+    };
+  }
+  const name = providerNames[selectedAgentProvider()] || "This provider";
+  return {
+    ...step.client_guide,
+    intro: `${name} is saved as your choice. Its Wideband iMessage head-agent path has not passed the Mac text test yet.`,
+    purpose: `Wideband must verify a signed-in ${name} session and guarded text routing before starting your head agent.`,
+    success: `A ${name} head session answers a real text through the owner-bound route. This proof is still pending.`,
+    instructions: [
+      `${name} is saved on this Mac as your selected provider.`,
+      "Wideband will pause head-agent activation until this provider's sign-in, persistent session, and iMessage reply path are verified.",
+      "You can edit your provider choice above if you want to use the current Claude Code setup path.",
+    ],
+    confirm_label: "Runtime support pending",
+  };
+}
+
+function fillOnboardingForm() {
+  const values = onboardingValues();
+  $("#onboarding-os-name").value = values.os_name || "";
+  $("#onboarding-agent-name").value = values.agent_name || "";
+  for (const input of document.querySelectorAll('input[name="agent_provider"]')) {
+    input.checked = input.value === selectedAgentProvider();
+  }
+  for (const input of document.querySelectorAll('input[name="first_goal"]')) {
+    input.checked = input.value === values.first_goal;
+  }
+}
+
+function renderOnboarding() {
+  const values = onboardingValues();
+  const saved = Boolean(snapshot.state.completed["identify.name-your-system"])
+    && values.os_name && values.agent_name && values.first_goal;
+  $("#onboarding-form").hidden = saved && !onboardingEditing;
+  $("#onboarding-saved").hidden = !saved || onboardingEditing;
+  if (!onboardingEditing && (saved || !onboardingFormInitialized)) {
+    fillOnboardingForm();
+    onboardingFormInitialized = true;
+  }
+  $("#saved-os-name").textContent = values.os_name || "";
+  $("#saved-agent-name").textContent = values.agent_name || "";
+  $("#saved-agent-provider").textContent = providerNames[selectedAgentProvider()] || "";
+  $("#saved-first-goal").textContent = {
+    research: "Research", website: "Build a website", proposal: "Proposal · Advanced",
+  }[values.first_goal] || "";
+
+  const accountReady = Boolean(snapshot.state.completed["prepare.create-accounts"]);
+  const textProved = Boolean(snapshot.state.completed["prove.messaging"]);
+  const phoneProved = Boolean(snapshot.state.completed["prove.phone-board"]);
+  const phase = !saved ? 0 : !accountReady ? 1 : !textProved ? 2 : !phoneProved ? 3 : 4;
+  [...document.querySelectorAll(".journey-nav span")].forEach((node, index) => {
+    node.classList.toggle("active", index === phase);
+    node.classList.toggle("complete", index < phase);
+  });
+}
+
+function handoffDeliveryStatus() {
+  const handoff = snapshot.state.handoff || {};
+  return handoff.delivery?.status || (handoff.status === "held" ? "held" : handoff.version === 1 ? "unverified" : "not_queued");
+}
+
+function handoffNeedsReview() {
+  return ["held", "rejected", "missing"].includes(handoffDeliveryStatus());
+}
+
+function handoffDeliverySummary() {
+  const handoff = snapshot.state.handoff || {};
+  const delivery = handoff.delivery || {};
+  const count = (key) => Number.isInteger(delivery[key]) && delivery[key] >= 0 ? delivery[key] : 0;
+  const sent = count("sent");
+  const pending = count("pending");
+  const processing = count("processing");
+  const total = count("total") || 2;
+  const item = (amount, singular, plural = `${singular}s`) => `${amount} ${amount === 1 ? singular : plural}`;
+  switch (handoffDeliveryStatus()) {
+    case "sent":
+      return `${sent} of ${total} setup texts sent by this Mac. Confirm both arrived on your phone.`;
+    case "pending":
+      return `${sent} of ${total} sent by this Mac; ${pending} waiting in the guarded outbox${processing ? ` (${processing} processing)` : ""}. Delivery status updates here.`;
+    case "held": {
+      const reasons = [
+        count("review") ? `${count("review")} in review` : "",
+        count("unsafe") ? item(count("unsafe"), "unsafe outbox entry", "unsafe outbox entries") : "",
+        count("stale_processing") ? `${count("stale_processing")} stalled while processing` : "",
+      ].filter(Boolean);
+      return `${sent} of ${total} sent by this Mac; delivery needs review${reasons.length ? ` (${reasons.join(", ")})` : ""}. No automatic retry. Have Wideband inspect it before checking again.`;
+    }
+    case "rejected":
+      return `${sent} of ${total} sent by this Mac; ${item(count("rejected"), "setup text")} rejected. Wideband must review delivery before another check.`;
+    case "missing":
+      return `${sent} of ${total} sent by this Mac; ${item(count("missing"), "setup text")} missing from the guarded outbox. Wideband must review it.`;
+    case "unverified":
+      return "A setup-text receipt exists. Guarded outbox delivery has not been checked yet.";
+    default:
+      return handoff.approved_at
+        ? "Your approval is saved. Setup texts have not been queued yet."
+        : "Confirm the checkbox to queue these two texts to your bound chat.";
+  }
+}
+
+function renderFirstGoal() {
+  const selected = onboardingValues().first_goal;
+  const section = $("#first-goal-section");
+  section.hidden = !selected;
+  if (!selected) return;
+  const title = { research: "Research", website: "Build a website", proposal: "Proposal · Advanced" }[selected] || "First job";
+  $("#first-goal-title").textContent = `First job · ${title}`;
+  const detail = $("#first-goal-detail");
+  const action = $("#first-goal-action");
+  const run = snapshot.state.action_runs.run_first_goal_apply;
+  const status = snapshot.facts.first_goal || {};
+  const replied = checkStatus(allSteps().find((step) => step.id === "prove.messaging")).state === "done";
+  action.hidden = !replied;
+  action.textContent = run?.status === "needs_attention" ? "Retry first job" : "Check first job";
+  action.onclick = (event) => handleAction(run?.status === "needs_attention" ? "run_first_goal_apply" : "run_first_goal_check", event.currentTarget);
+  if (!replied) detail.textContent = "Wideband prepares this after a real head-agent reply arrives on your phone.";
+  else if (!run || run.status === "running") detail.textContent = "Preparing your first job on this Mac…";
+  else if (run.status === "needs_attention") detail.textContent = "The first job needs attention. Review the build feed and retry after the issue is resolved.";
+  else if (selected === "website" && status.status === "ready") detail.textContent = "Your starter site answers locally. Its phone preview follows Fleetdeck installation and a private HTTPS route; test the link on your phone.";
+  else if (status.status === "prepared") detail.textContent = "Your first-job brief is ready. Text your agent the topic and the result you want.";
+  else detail.textContent = "Wideband saved your choice. Check the first job to refresh its readiness.";
+  const phoneRun = snapshot.state.action_runs.run_phone_install;
+  const phoneInstalled = replied && !snapshot.facts.deactivated && phoneRun?.status === "complete";
+  const recentProof = phoneInstalled && phonePortalProof?.run === phoneRun.finished_at
+    && Date.now() - phonePortalProof.checkedAt < 60_000 ? phonePortalProof : null;
+  const portalLink = $("#phone-portal-link");
+  const portalCopy = $("#phone-portal-copy");
+  const portalCheck = $("#phone-portal-check");
+  const portalConnect = $("#phone-portal-connect");
+  portalLink.hidden = true;
+  portalCopy.hidden = true;
+  portalCheck.hidden = !phoneInstalled;
+  portalCheck.disabled = phonePortalCheckActive;
+  portalConnect.hidden = !phoneInstalled || recentProof?.status === "ready";
+  if (recentProof?.status === "ready") {
+    try {
+      const url = new URL(recentProof.url);
+      if (url.protocol === "https:" && url.hostname.endsWith(".ts.net")
+          && /^\/p\/[0-9a-f]{64}\/phone$/.test(url.pathname)
+          && !url.username && !url.password && !url.search && !url.hash) {
+        portalLink.href = url.href;
+        portalLink.title = url.href;
+        portalLink.hidden = false;
+        portalCopy.hidden = false;
+      }
+    } catch (_) { /* A malformed link is never presented. */ }
+  }
+  const portalState = phonePortalCheckActive
+    ? "Checking Fleetdeck's local portal and private HTTPS route…"
+    : recentProof?.detail || (phoneRun?.status === "complete"
+    ? "Fleetdeck local portal installed. Check its private HTTPS link, then test it on your phone and add it to the home screen."
+    : phoneRun?.status === "needs_attention"
+      ? "Fleetdeck local portal needs repair before the phone handoff."
+      : replied ? "Fleetdeck local portal is queued behind the first job." : "Fleetdeck phone view follows the first job.");
+  const boardConfirmed = Boolean(snapshot.state.completed["prove.phone-board"]);
+  const handoff = snapshot.state.handoff || {};
+  const deliveryStatus = handoffDeliveryStatus();
+  const needsReview = handoffNeedsReview();
+  const hasReceipt = handoff.version === 1;
+  const handoffState = setupHandoffActive
+    ? " Checking your approved setup texts…"
+    : needsReview
+      ? " Setup-text delivery needs review; nothing retries automatically."
+      : deliveryStatus === "sent"
+        ? " This Mac sent the setup texts; confirm they arrived on your phone."
+        : deliveryStatus === "pending"
+          ? " Setup texts are waiting in the guarded outbox."
+          : hasReceipt
+            ? " A setup-text receipt exists; delivery is being checked."
+            : boardConfirmed && phoneInstalled
+              ? " Approve the two setup texts below when you are ready."
+              : phoneInstalled
+                ? " Confirm the board on your phone before choosing whether to receive setup texts."
+                : "";
+  $("#phone-portal-state").textContent = portalState + handoffState;
+  const handoffPanel = $("#phone-handoff-section");
+  handoffPanel.hidden = !(boardConfirmed && phoneInstalled) && !hasReceipt && !needsReview;
+  $("#phone-handoff-title").textContent = hasReceipt || needsReview
+    ? "Setup texts for your phone." : "Send your setup details by iMessage.";
+  $("#phone-handoff-detail").textContent = hasReceipt || needsReview
+    ? "These texts contain your private Fleetdeck link and setup commands. The guarded outbox reports its delivery state below; confirm arrival on your phone."
+    : "Wideband will queue two texts to your verified personal chat: your private Fleetdeck link and a short list of setup commands.";
+  const consent = $("#phone-handoff-consent");
+  const approved = Boolean(handoff.approved_at);
+  const showAction = !hasReceipt || needsReview;
+  $("#phone-handoff-consent-label").hidden = approved || !showAction;
+  if (handoffPanel.hidden && !approved) consent.checked = false;
+  const handoffReady = setupHandoffReady();
+  const handoffButton = $("#phone-handoff-send");
+  handoffButton.hidden = !showAction;
+  handoffButton.textContent = needsReview ? "Check setup-text delivery" : approved ? "Queue setup texts" : "Approve and queue setup texts";
+  handoffButton.append(element("span", "", "→"));
+  handoffButton.disabled = !handoffReady || setupHandoffActive || (!approved && !consent.checked);
+  const handoffMessage = $("#phone-handoff-status");
+  const showError = Boolean(setupHandoffError);
+  handoffMessage.classList.toggle("attention", needsReview || showError);
+  handoffMessage.textContent = setupHandoffActive
+    ? "Checking the owner-only chat and guarded outbox…"
+    : showError
+      ? `Setup-text check needs attention: ${setupHandoffError} ${handoffDeliverySummary()}`
+      : hasReceipt || needsReview
+        ? handoffDeliverySummary()
+        : handoffReady
+          ? approved ? "Your approval is saved. Choose Queue setup texts when ready." : "Confirm the checkbox to queue these two texts."
+          : "Waiting for the private phone link and live text connection to verify. Use Check phone HTTPS above if needed.";
+
+  const local = $("#first-goal-local");
+  const phone = $("#first-goal-phone");
+  local.hidden = true;
+  phone.hidden = true;
+  try {
+    const url = new URL(status.local_url);
+    if (replied && run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "http:" && url.hostname === "127.0.0.1") {
+      local.href = url.href;
+      local.hidden = false;
+    }
+  } catch (_) { /* No verified local preview yet. */ }
+  try {
+    const url = new URL(status.phone_url);
+    if (replied && run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "https:" && url.hostname.endsWith(".ts.net")) {
+      phone.href = url.href;
+      phone.hidden = false;
+    }
+  } catch (_) { /* No private phone URL yet. */ }
+}
+
+async function checkPhonePortalLink() {
+  if (phonePortalCheckPromise) return await phonePortalCheckPromise;
+  const run = snapshot.state.action_runs.run_phone_install;
+  if (run?.status !== "complete" || snapshot.facts.deactivated) return;
+  phonePortalCheckPromise = performPhonePortalLinkCheck(run);
+  try {
+    await phonePortalCheckPromise;
+  } finally {
+    phonePortalCheckPromise = null;
+  }
+}
+
+async function performPhonePortalLinkCheck(run) {
+  phonePortalCheckActive = true;
+  phonePortalCheckedRun = run.finished_at || "complete";
+  renderFirstGoal();
+  try {
+    const result = await api("/api/phone-link");
+    phonePortalProof = { ...result, run: phonePortalCheckedRun, checkedAt: Date.now() };
+  } catch (error) {
+    phonePortalProof = { status: "needs_attention", detail: `Phone link check paused: ${error.message}`, run: phonePortalCheckedRun, checkedAt: Date.now() };
+  } finally {
+    phonePortalCheckActive = false;
+    renderFirstGoal();
+  }
+}
+
+function setupHandoffReady() {
+  const phoneRun = snapshot.state.action_runs.run_phone_install;
+  const reply = allSteps().find((step) => step.id === "prove.messaging");
+  return !snapshot.facts.deactivated && selectedAgentProvider() === "claude"
+    && Boolean(snapshot.state.completed["prove.phone-board"])
+    && snapshot.state.action_runs.run_imessage_bind?.status === "complete"
+    && snapshot.state.action_runs.run_first_goal_apply?.status === "complete"
+    && reply && checkStatus(reply).state === "done"
+    && phoneRun?.status === "complete"
+    && phonePortalProof?.status === "ready"
+    && phonePortalProof.run === (phoneRun.finished_at || "complete")
+    && Date.now() - phonePortalProof.checkedAt < 60_000;
+}
+
+async function sendSetupHandoff({ freshConfirmation = false } = {}) {
+  if (setupHandoffActive || (snapshot.state.handoff?.version === 1 && !handoffNeedsReview()) || snapshot.facts.deactivated
+      || !setupHandoffReady()) return { status: "skipped" };
+  const consent = $("#phone-handoff-consent");
+  if (!snapshot.state.handoff?.approved_at && !freshConfirmation && !consent.checked) return { status: "not_approved" };
+  setupHandoffActive = true;
+  setupHandoffError = "";
+  renderFirstGoal();
+  try {
+    if (!snapshot.state.handoff?.approved_at) {
+      const approval = await api("/api/handoff/confirm", { method: "POST", body: { confirm: true } });
+      if (approval.status !== "approved" || !approval.approved_at) {
+        throw new Error("the handoff approval was not saved");
+      }
+      snapshot.state.handoff = { ...snapshot.state.handoff, approved_at: approval.approved_at };
+      consent.checked = false;
+    }
+    const result = await api("/api/handoff", { method: "POST", body: {} });
+    if (result.status === "held") {
+      snapshot.state.handoff = { ...snapshot.state.handoff, status: "held", delivery: undefined };
+      try { await refreshState(); } catch (_) { /* Polling will retry the read-only delivery check. */ }
+      return result;
+    }
+    if (result.status !== "queued" && result.status !== "already_queued") {
+      throw new Error("the handoff did not return a queue receipt");
+    }
+    snapshot.state.handoff = { ...snapshot.state.handoff, version: 1, status: result.status, delivery: undefined };
+    try { await refreshState(); } catch (_) { /* Keep the queue receipt until state reconnects. */ }
+    if (result.status === "queued" && result.queued > 0) {
+      toast("Setup links and quick commands queued for your agent chat");
+    }
+    return result;
+  } catch (error) {
+    setupHandoffError = error.message;
+    return { status: "needs_attention" };
+  } finally {
+    setupHandoffActive = false;
+    renderFirstGoal();
+  }
+}
+
+function phoneBoardCompletionMessage(outcome) {
+  if (outcome?.status === "queued" && outcome.queued > 0) {
+    return "Phone board confirmed. Setup texts were queued for your bound chat; delivery is checked separately.";
+  }
+  if (snapshot.state.handoff?.status === "held" || outcome?.status === "held") {
+    return "Phone board confirmed. Setup texts need delivery review; see the handoff card.";
+  }
+  if (outcome?.status === "already_queued" || snapshot.state.handoff?.version === 1) {
+    return "Phone board confirmed. An earlier setup-text receipt exists; check its delivery status below.";
+  }
+  return "Phone board confirmed. Setup texts are waiting for the private link or text connection; see the handoff card.";
+}
+
+async function copyPhonePortalLink() {
+  const link = $("#phone-portal-link");
+  if (link.hidden) return;
+  try {
+    await navigator.clipboard.writeText(link.href);
+    toast("Private Fleetdeck phone link copied");
+  } catch (_) {
+    toast("Copy did not complete; open the link and copy it from your browser", 5200);
+  }
+}
+
+function openOnboarding() {
+  onboardingEditing = true;
+  fillOnboardingForm();
+  $("#onboarding-message").textContent = "No Apple Account email, password, or verification code is collected here.";
+  renderOnboarding();
+  $("#onboarding-section").scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("#onboarding-os-name").focus(), 180);
+}
+
+async function saveOnboarding(event) {
+  event.preventDefault();
+  const form = $("#onboarding-form");
+  if (!form.reportValidity()) return;
+  clearTimeout(welcomeGuideTimer);
+  welcomeGuideTimer = null;
+  const values = Object.fromEntries(new FormData(form).entries());
+  const wasNew = !snapshot.state.completed["identify.name-your-system"];
+  const button = $("#onboarding-save");
+  button.disabled = true;
+  try {
+    await api("/api/onboarding", { method: "POST", body: values });
+    onboardingEditing = false;
+    await refreshState();
+    toast("Your OS, agent, provider, and first job are saved privately");
+    if (wasNew) {
+      const next = currentClientStep();
+      if (next) setTimeout(() => openGuide(next.id), 300);
+    }
+  } catch (error) {
+    $("#onboarding-message").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderClientProgress() {
   const steps = immediateClientSteps();
   const complete = steps.filter((step) => checkStatus(step).state === "done").length;
@@ -271,15 +735,15 @@ function renderFocusCard() {
   const action = $("#focus-action");
   const note = $("#focus-note");
   if (!step) {
-    $("#focus-count").textContent = "Client handoff ready";
+    $("#focus-count").textContent = "First text complete";
     $("#focus-stage").textContent = "Saved";
     $("#focus-icon").textContent = "✓";
-    $("#focus-eyebrow").textContent = "Your part is complete";
-    $("#focus-title").textContent = "Wideband can take it from here.";
-    $("#focus-description").textContent = "Your account approvals and macOS permissions are saved. Keep this Mac plugged in and online while Wideband finishes the custom layer.";
+    $("#focus-eyebrow").textContent = "The agent replied";
+    $("#focus-title").textContent = "Your head agent is reachable by text.";
+    $("#focus-description").textContent = "Your phone received a real answer. Keep this Mac plugged in and online while Wideband prepares your first job and Fleetdeck phone view.";
     action.hidden = true;
     note.hidden = false;
-    note.textContent = "The remaining phone and messaging proofs happen with your Wideband operator after the private surfaces are ready.";
+    note.textContent = "The phone board and later support setup remain visible below.";
     $("#client-complete").hidden = false;
     return;
   }
@@ -290,8 +754,8 @@ function renderFocusCard() {
   $("#focus-stage").textContent = stage?.title || "Setup";
   $("#focus-icon").textContent = String(index + 1).padStart(2, "0");
   $("#focus-eyebrow").textContent = step.client_guide.eyebrow || "Your action";
-  $("#focus-title").textContent = step.title;
-  $("#focus-description").textContent = step.client_guide.intro || step.description;
+  $("#focus-title").textContent = providerStepTitle(step);
+  $("#focus-description").textContent = providerGuide(step).intro || step.description;
   note.hidden = !step.note;
   note.textContent = step.note || "";
   action.hidden = false;
@@ -311,9 +775,11 @@ function renderClientQueue() {
     const topline = element("div", "queue-num");
     topline.append(
       element("span", "", status.state === "done" ? "✓ COMPLETE" : String(index + 1).padStart(2, "0")),
-      element("span", "", (step.checks || []).length ? "WIDEBAND CHECKS" : "YOU CONFIRM"),
+      element("span", "", status.label === "Provider runtime pending" ? "RUNTIME PENDING"
+        : status.label === "Choose a provider first" ? "CHOOSE PROVIDER"
+        : (step.checks || []).length ? "WIDEBAND CHECKS" : "YOU CONFIRM"),
     );
-    button.append(topline, element("h3", "", step.title), element("p", "", evidenceLabel(status)));
+    button.append(topline, element("h3", "", providerStepTitle(step)), element("p", "", evidenceLabel(status)));
     button.addEventListener("click", () => openGuide(step.id));
     return button;
   }));
@@ -330,7 +796,7 @@ function renderHandoff() {
     const copy = element("div");
     copy.append(
       element("strong", "", step.title),
-      element("small", "", `${evidenceLabel(status)} · ${step.client_phase === "later" ? "Scheduled follow-up" : "Complete with your Wideband operator"}`),
+      element("small", "", `${evidenceLabel(status)} · ${step.id === "prove.next-morning-brief" ? "Scheduled follow-up" : step.client_phase === "later" ? "Later setup" : "Complete with your Wideband operator"}`),
     );
     button.append(number, copy, element("span", "", "→"));
     button.addEventListener("click", () => openGuide(step.id));
@@ -347,22 +813,20 @@ function renderCompletion() {
   const verification = snapshot.state.last_verification?.summary;
   const profile = allSteps().find((step) => step.id === "identify.review-agent-profile");
   const profileReady = profile && checkStatus(profile).state === "done";
-  const handoff = readinessForSteps(clientSteps().filter((step) => step.client_phase !== "now"));
+  const handoff = readinessForSteps(clientSteps().filter((step) => step.client_phase === "handoff"));
   const machineReady = verification && verification.failed === 0;
 
-  $("#completion-title").textContent = machineReady && profileReady && handoff.state === "ready"
-    ? "This Wideband build is ready."
-    : "Your approvals are complete.";
+  $("#completion-title").textContent = "Your head agent answered by text.";
   $("#completion-summary").textContent = machineReady
-    ? "The machine foundation is verified. The remaining cards below distinguish custom-profile review and real-world handoff proofs."
-    : "Your work is saved. Wideband can continue machine repair, customization, and final verification without asking you to repeat these approvals.";
+    ? "The text path and machine foundation are verified. Your first job and Fleetdeck phone view are next."
+    : "Your phone reply is confirmed. Wideband will resolve remaining machine checks and prepare your first job and phone view.";
   $("#completion-machine").textContent = verification
     ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred`
     : "Machine verification has not run yet";
   $("#completion-profile").textContent = profileReady
     ? "Approved and installed privately"
     : "Complete the custom operator profile with Wideband";
-  $("#completion-handoff").textContent = `${handoff.done} of ${handoff.total} phone, messaging, and scheduled proofs complete`;
+  $("#completion-handoff").textContent = `${handoff.done} of ${handoff.total} phone handoff proofs complete`;
 }
 
 function readinessForSteps(steps) {
@@ -392,38 +856,46 @@ function readinessCard(eyebrow, title, state, detail, onOpen) {
 }
 
 function renderReadiness() {
-  const install = snapshot.state.action_runs.run_install;
+  const install = textInstallRun();
   const deactivated = snapshot.facts.deactivated;
   const verification = snapshot.state.last_verification?.summary;
+  const imessage = snapshot.verification_rollup;
+  const textChecks = ["P6-IMSGOS", "P6-IMSG", "P6-IMSGCFG", "P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"];
+  const textReady = textChecks.every((id) => imessage[id] === "pass");
+  const textBroken = snapshot.facts.bootstrap_status === "unsupported_macos"
+    || ["P6-IMSGOS", "P6-IMSG"].some((id) => imessage[id] === "fail")
+    || snapshot.state.action_runs.run_imessage_bind?.status === "needs_attention";
   const foundationState = deactivated
     ? "attention"
-    : install?.status === "needs_attention" || (verification?.failed || 0) > 0
+    : install?.status === "needs_attention" || textBroken
       ? "attention"
-      : install?.status === "complete" && snapshot.facts.wideband_agent_installed && verification
+      : install?.status === "complete" && snapshot.facts.wideband_agent_installed && textReady
         ? "ready"
         : "waiting";
   const foundationDetail = deactivated
     ? "Wideband services are deactivated. Repair restores the managed runtime."
+    : snapshot.facts.bootstrap_status === "unsupported_macos"
+      ? "This iMessage runtime needs macOS 14 or newer."
     : install?.status === "complete"
-      ? verification
-        ? `${verification.passed} checks passed · ${verification.failed} need attention · ${verification.skipped} deferred.`
-        : "Installed; the first machine proof is still pending."
+      ? textReady
+        ? "imsg, exact owner chat, head session, and guarded services verified."
+        : "Text foundation installed. Waiting for the separate account, fresh owner text, and live binding checks."
       : install?.status === "needs_attention"
-        ? "The installation finished with an item that needs review."
-        : "The managed runtime is being prepared.";
+        ? "The first-text installation needs review."
+        : "The first-text foundation is being prepared.";
 
-  const permissions = allSteps().filter((step) => permissionStepIds.includes(step.id));
+  const permissions = immediateClientSteps().filter((step) => permissionStepIds.includes(step.id));
   const permissionState = readinessForSteps(permissions);
   const approvals = immediateClientSteps().filter((step) => !permissionStepIds.includes(step.id));
   const approvalState = readinessForSteps(approvals);
-  const proofs = clientSteps().filter((step) => step.client_phase !== "now");
+  const proofs = clientSteps().filter((step) => step.client_phase === "handoff");
   const proofState = readinessForSteps(proofs);
 
   $("#readiness-grid").replaceChildren(
     readinessCard("Machine", "Wideband foundation", foundationState, foundationDetail, openSupport),
     readinessCard(
       "macOS",
-      "Permissions and support",
+      "First-text permissions",
       permissionState.state,
       `${permissionState.done} of ${permissionState.total} approvals verified or confirmed.`,
       permissionState.next ? () => openGuide(permissionState.next.id) : null,
@@ -439,7 +911,7 @@ function renderReadiness() {
       "Handoff",
       "Real-world proofs",
       proofState.state,
-      `${proofState.done} of ${proofState.total} phone, messaging, and scheduled proofs observed.`,
+      `${proofState.done} of ${proofState.total} phone handoff proofs observed.`,
       proofState.next ? () => openGuide(proofState.next.id) : null,
     ),
   );
@@ -469,21 +941,27 @@ function machineRow(done, title, detail, running = false) {
 
 function renderMachineState() {
   const list = $("#machine-list");
-  const install = snapshot.state.action_runs.run_install;
+  const install = textInstallRun();
   const running = snapshot.jobs.find((job) => job.status === "running");
   const verification = snapshot.state.last_verification?.summary;
   const bootstrapDone = snapshot.facts.bootstrap_ready;
   const bootstrapStatus = snapshot.facts.bootstrap_status || "starting";
   const deactivated = snapshot.facts.deactivated;
   const installDone = install?.status === "complete" && snapshot.facts.wideband_agent_installed && !deactivated;
-  const attention = deactivated || install?.status === "needs_attention" || (verification?.failed || 0) > 0;
+  const attention = deactivated || install?.status === "needs_attention"
+    || snapshot.facts.bootstrap_status === "unsupported_macos"
+    || snapshot.state.action_runs.run_imessage_bind?.status === "needs_attention";
+  const messagingChecks = ["P6-IMSGCFG", "P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"];
+  const messagingReady = messagingChecks.every((id) => snapshot.verification_rollup[id] === "pass");
 
   list.replaceChildren(
     machineRow(
       bootstrapDone,
       "Core tools",
       bootstrapDone
-        ? "Homebrew, Python, and the setup runtime are ready."
+        ? "Homebrew, Python, tmux, and imsg are ready."
+        : bootstrapStatus === "unsupported_macos"
+          ? "iMessage head-agent setup requires macOS 14 or newer on this Mac."
         : bootstrapStatus === "needs_admin_password"
           ? "Action needed: enter your Mac password in Terminal, then return here."
           : bootstrapStatus === "needs_developer_tools"
@@ -499,9 +977,10 @@ function renderMachineState() {
             : bootstrapStatus === "needs_attention"
               ? "The core tool install needs review in Terminal."
               : "Homebrew and the core tools are installing in Terminal.",
-      !bootstrapDone && !["needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
+      !bootstrapDone && !["unsupported_macos", "needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
     ),
-    machineRow(installDone, "Wideband layer", installDone ? "Agent context, workspace, and standing services installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : running?.action === "run_install" ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", running?.action === "run_install"),
+    machineRow(installDone, "Wideband text foundation", installDone ? "Wideband Agent and the messaging foundation are installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : ["run_install", "run_imessage_install"].includes(running?.action) ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", ["run_install", "run_imessage_install"].includes(running?.action)),
+    machineRow(messagingReady, "iMessage head-agent runtime", messagingReady ? "Owner chat, persistent head session, and guarded reply services verified." : "Waiting for the separate Apple Account, fresh owner text, and live runtime checks.", ["run_imessage_init", "run_imessage_bind"].includes(running?.action)),
     machineRow(Boolean(verification) && !verification.failed, "Machine checks", verification ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred` : "Checks run automatically after installation.", running?.action?.includes("verify")),
     machineRow(snapshot.facts.personalized, "Client build profile", snapshot.facts.personalized ? "This installer was prepared for this client." : "Generic pilot build; the operator should verify identity values."),
     machineRow(snapshot.facts.setup_app_installed, "Resume app", snapshot.facts.setup_app_installed ? "Wideband Setup is installed in your Applications folder." : "The setup app is being copied to Applications."),
@@ -522,7 +1001,13 @@ function renderMachineState() {
   const badge = $("#build-badge");
   badge.classList.remove("complete", "attention");
   state.classList.remove("attention");
-  if (!bootstrapDone && bootstrapStatus === "needs_admin_password") {
+  if (!bootstrapDone && bootstrapStatus === "unsupported_macos") {
+    state.textContent = "Unsupported macOS";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Update to macOS 14 or newer";
+    badge.querySelector("small").textContent = "The iMessage runtime cannot start on this macOS version. Complete the OS update, then reopen Wideband Setup.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_admin_password") {
     state.textContent = "Your action";
     state.classList.add("attention");
     badge.classList.add("attention");
@@ -584,7 +1069,9 @@ function renderMachineState() {
 
 function renderClient() {
   const name = (snapshot.facts.client_name || snapshot.state.interview?.name || "").trim().split(/\s+/)[0];
-  $("#client-greeting").textContent = name ? `${name}, your AI` : "Your AI";
+  $("#client-greeting").textContent = onboardingValues().agent_name || (name ? `${name}, your AI` : "Your AI");
+  renderOnboarding();
+  renderFirstGoal();
   renderClientProgress();
   renderFocusCard();
   renderClientQueue();
@@ -595,6 +1082,11 @@ function renderClient() {
 }
 
 function guideActions(step) {
+  if (step.id === "connect.imessage-bind" && providerRuntimePending(step)) return [];
+  if (step.id === "identify.authenticate-agent") {
+    return selectedAgentProvider() === "claude"
+      ? [{ action: "open_claude_auth", label: "Open Claude sign-in" }] : [];
+  }
   if (step.client_guide.actions) return step.client_guide.actions;
   if (!step.action) return [];
   return [{ action: step.action, label: step.client_guide.open_label || actionLabel(step.action) }];
@@ -659,16 +1151,20 @@ function startGuideMonitoring(stepId, immediate = false) {
 function openGuide(stepId) {
   const step = allSteps().find((item) => item.id === stepId);
   if (!step?.client_guide) return;
+  if (step.type === "onboarding") {
+    openOnboarding();
+    return;
+  }
   currentGuideStepId = stepId;
   const steps = clientSteps();
   const index = steps.findIndex((item) => item.id === stepId);
-  const guide = step.client_guide;
+  const guide = providerGuide(step);
   const status = checkStatus(step);
   $("#guide-progress-label").textContent = `Client step ${index + 1} of ${steps.length}`;
   $("#guide-progress-bar").style.width = `${Math.round(((index + 1) / steps.length) * 100)}%`;
   $("#guide-owner").textContent = responsibilityLabel(step);
   $("#guide-eyebrow").textContent = guide.eyebrow || "Your action";
-  $("#guide-title").textContent = step.title;
+  $("#guide-title").textContent = providerStepTitle(step);
   $("#guide-intro").textContent = guide.intro || step.description;
   $("#guide-purpose").textContent = guide.purpose || guide.intro || step.description;
   $("#guide-success").textContent = guide.success || ((step.checks || []).length
@@ -679,7 +1175,16 @@ function openGuide(stepId) {
   const privacy = $("#guide-privacy");
   privacy.hidden = !guide.privacy;
   privacy.querySelector("p").textContent = guide.privacy || "";
-  $("#guide-message").textContent = status.state === "done" ? `✓ ${evidenceLabel(status)}. You can review or check it again.` : "";
+  const acknowledgment = $("#guide-acknowledgment");
+  acknowledgment.hidden = !guide.acknowledgment_label || status.state === "done";
+  $("#guide-acknowledgment-label").textContent = guide.acknowledgment_label || "";
+  $("#guide-acknowledgment-check").checked = false;
+  const providerPending = providerRuntimePending(step);
+  $("#guide-message").textContent = providerPending
+    ? selectedAgentProvider()
+      ? "Provider choice saved. Head-agent activation is waiting for a verified runtime path."
+      : "Choose and save an AI provider above before connecting the head agent."
+    : status.state === "done" ? `✓ ${evidenceLabel(status)}. You can review or check it again.` : "";
   $("#guide-message").className = status.state === "done" ? "guide-message success" : "guide-message";
 
   const actions = $("#guide-open-actions");
@@ -691,7 +1196,7 @@ function openGuide(stepId) {
   }));
 
   const confirm = $("#guide-confirm");
-  confirm.disabled = false;
+  confirm.disabled = providerPending;
   confirm.textContent = status.state === "done"
     ? "Continue"
     : guide.confirm_label || ((step.checks || []).length ? "Check this step" : "I finished this");
@@ -722,8 +1227,11 @@ async function invokeGuideAction(action, button, openedMessage = "") {
       if (step && supportsLiveCheck(step)) startGuideMonitoring(step.id, true);
     } else if (result.id) {
       message.textContent = "Wideband is running that step now…";
-      await waitForJob(result.id, false);
+      const job = await waitForJob(result.id, false);
       await refreshState();
+      if (job.status !== "complete") {
+        throw new Error(job.output.trim().split("\n").slice(-2).join(" ") || "The action needs attention; review Setup tools.");
+      }
       message.textContent = "That action finished. Review the result, then continue.";
     }
   } catch (error) {
@@ -743,6 +1251,7 @@ async function waitForCurrentJob() {
 }
 
 async function completeGuideStep(step) {
+  if (providerRuntimePending(step)) return;
   const button = $("#guide-confirm");
   const message = $("#guide-message");
   if (checkStatus(step).state === "done") {
@@ -750,6 +1259,11 @@ async function completeGuideStep(step) {
     $("#guide-dialog").close();
     const next = currentClientStep();
     if (next && step.client_phase === "now") setTimeout(() => openGuide(next.id), 220);
+    return;
+  }
+  if (step.client_guide.acknowledgment_label && !$("#guide-acknowledgment-check").checked) {
+    message.className = "guide-message error";
+    message.textContent = "Confirm that the agent Apple Account is separate from the one on your personal iPhone.";
     return;
   }
   stopGuideMonitoring();
@@ -760,14 +1274,18 @@ async function completeGuideStep(step) {
     await waitForCurrentJob();
     const checks = step.checks || [];
     if (!checks.length || step.requires_confirmation) {
-      await api(`/api/steps/${encodeURIComponent(step.id)}`, { method: "POST", body: { complete: true } });
+      await api(`/api/steps/${encodeURIComponent(step.id)}`, {
+        method: "POST",
+        body: { complete: true, account_distinct: step.id === "prepare.create-accounts" && $("#guide-acknowledgment-check").checked },
+      });
     }
     if (checks.length) {
       if (supportsLiveCheck(step)) {
         const result = await api("/api/live-checks", { method: "POST", body: {} });
         mergeLiveCheckResult(result);
       } else {
-        const job = await api("/api/actions/run_verify_quick", { method: "POST", body: {} });
+        const verificationAction = checks.every((id) => id.startsWith("P6-")) ? "run_verify_imessage" : "run_verify_quick";
+        const job = await api(`/api/actions/${verificationAction}`, { method: "POST", body: {} });
         await waitForJob(job.id, false);
       }
     }
@@ -787,10 +1305,20 @@ async function completeGuideStep(step) {
       if (supportsLiveCheck(step)) startGuideMonitoring(step.id, false);
       return;
     }
+    let handoffOutcome = null;
+    if (step.id === "prove.phone-board") {
+      await checkPhonePortalLink();
+      if (setupHandoffReady()) handoffOutcome = await sendSetupHandoff({ freshConfirmation: true });
+    }
     message.className = "guide-message success";
-    message.textContent = `${evidenceLabel(status)}. Moving to your next step…`;
+    message.textContent = step.id === "prove.phone-board"
+      ? phoneBoardCompletionMessage(handoffOutcome)
+      : `${evidenceLabel(status)}. Moving to your next step…`;
     await delay(450);
     $("#guide-dialog").close();
+    if (step.id === "prove.phone-board" && !$("#phone-handoff-section").hidden) {
+      $("#phone-handoff-section").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     const next = currentClientStep();
     if (next && step.client_phase === "now") setTimeout(() => openGuide(next.id), 220);
   } catch (error) {
@@ -823,8 +1351,12 @@ function dismissWelcome(begin = false) {
   localStorage.setItem(`wb-setup-client-welcome-${manifest.release}`, "1");
   $("#welcome-dialog").close();
   if (begin) {
-    const step = currentClientStep();
-    if (step) setTimeout(() => openGuide(step.id), 180);
+    clearTimeout(welcomeGuideTimer);
+    welcomeGuideTimer = setTimeout(() => {
+      welcomeGuideTimer = null;
+      const step = currentClientStep();
+      if (step) openGuide(step.id);
+    }, 180);
   }
 }
 
@@ -837,17 +1369,55 @@ async function runAutomaticMachineWork() {
       await waitForJob(running.id, false);
       await refreshState();
     }
-    const install = snapshot.state.action_runs.run_install;
+    const install = textInstallRun();
     if (!install || install.status === "interrupted") {
-      const job = await api("/api/actions/run_install", { method: "POST", body: {} });
+      const job = await api("/api/actions/run_imessage_install", { method: "POST", body: {} });
       await refreshState();
-      await waitForJob(job.id, false);
+      const finished = await waitForJob(job.id, false);
       await refreshState();
-      toast("Wideband machine layer installed");
+      if (finished.status === "complete") toast("Wideband text foundation installed");
+      else toast("Wideband text installation needs review", 5200);
     } else if (!snapshot.state.last_verification && install.status === "complete") {
-      const job = await api("/api/actions/run_verify_quick", { method: "POST", body: {} });
+      const job = await api("/api/actions/run_verify_imessage", { method: "POST", body: {} });
       await waitForJob(job.id, false);
       await refreshState();
+    }
+    const init = snapshot.state.action_runs.run_imessage_init;
+    if ((snapshot.state.action_runs.run_imessage_install?.status === "complete" || snapshot.state.action_runs.run_install?.status === "complete")
+        && selectedAgentProvider() === "claude"
+        && snapshot.state.completed["identify.name-your-system"]
+        && snapshot.state.completed["prepare.create-accounts"]
+        && (!init || init.status === "interrupted")) {
+      const job = await api("/api/actions/run_imessage_init", { method: "POST", body: {} });
+      await refreshState();
+      const finished = await waitForJob(job.id, false);
+      await refreshState();
+      if (finished.status === "complete") {
+        toast("Private head-agent workspace staged");
+        const check = await api("/api/actions/run_verify_imessage", { method: "POST", body: {} });
+        await waitForJob(check.id, false);
+        await refreshState();
+      }
+    }
+    const firstJob = snapshot.state.action_runs.run_first_goal_apply;
+    const reply = allSteps().find((step) => step.id === "prove.messaging");
+    if (reply && checkStatus(reply).state === "done" && (!firstJob || firstJob.status === "interrupted")) {
+      const job = await api("/api/actions/run_first_goal_apply", { method: "POST", body: {} });
+      await waitForJob(job.id, false);
+      await refreshState();
+    }
+    const phone = snapshot.state.action_runs.run_phone_install;
+    if (snapshot.state.action_runs.run_first_goal_apply?.status === "complete"
+        && (!phone || phone.status === "interrupted")) {
+      const job = await api("/api/actions/run_phone_install", { method: "POST", body: {} });
+      await waitForJob(job.id, false);
+      await refreshState();
+    }
+    const installedPhone = snapshot.state.action_runs.run_phone_install;
+    if (installedPhone?.status === "complete") {
+      const currentProof = phonePortalProof?.run === (installedPhone.finished_at || "complete")
+        && Date.now() - phonePortalProof.checkedAt < 60_000;
+      if (!currentProof) await checkPhonePortalLink();
     }
   } catch (error) {
     toast(`Machine setup needs operator review: ${error.message}`, 5200);
@@ -897,7 +1467,7 @@ async function runReadinessCheck(button = $("#readiness-check")) {
   const dialogWasOpen = $("#support-dialog").open;
   if (!dialogWasOpen) openSupport();
   await runSupportJob(
-    "run_verify_quick",
+    viewMode === "client" ? "run_verify_imessage" : "run_verify_quick",
     button,
     "Running a fresh read-only check…",
     "Readiness refreshed. Select any area that still needs attention.",
@@ -905,8 +1475,9 @@ async function runReadinessCheck(button = $("#readiness-check")) {
 }
 
 async function repairWideband(button = $("#support-repair")) {
+  const action = viewMode === "client" ? "run_imessage_install" : "run_install";
   await runSupportJob(
-    "run_install",
+    action,
     button,
     "Reconciling the Wideband runtime without replacing client-owned work…",
     "Repair complete. Managed files and services were reconciled and checked.",
@@ -1037,6 +1608,8 @@ function renderNav() {
 function actionLabel(action) {
   const labels = {
     open_interview: "Open interview",
+    run_imessage_init: "Stage head agent",
+    run_imessage_bind: "Bind my text",
     open_claude_auth: "Open Claude sign-in",
     open_messages: "Open Messages",
     open_mail: "Open Mail",
@@ -1074,10 +1647,15 @@ function renderStep(step, index) {
   const card = element("article", `step ${status.state}`);
   const canConfirm = ["guided", "interview"].includes(step.type)
     && (!(step.checks || []).length || step.requires_confirmation)
-    && step.id !== "identify.operator-interview";
+    && step.id !== "identify.operator-interview"
+    && step.id !== "prepare.create-accounts"
+    && step.id !== "prove.phone-board"
+    && (step.id !== "identify.authenticate-agent" || selectedAgentProvider() === "claude");
   const statusButton = element("button", `step-status${canConfirm ? " confirmable" : ""}`, statusSymbol(status));
   statusButton.type = "button";
-  statusButton.title = canConfirm
+  statusButton.title = step.id === "prove.phone-board"
+    ? "Use the client guide to confirm the board and authorize two setup texts"
+    : canConfirm
     ? (status.state === "done" && status.source === "human" ? "Mark incomplete" : "Confirm this human step")
     : status.label;
   statusButton.setAttribute("aria-label", statusButton.title);
@@ -1095,10 +1673,11 @@ function renderStep(step, index) {
   }
 
   const copy = element("div", "step-copy");
-  const heading = element("h3", "", step.title);
+  const heading = element("h3", "", providerStepTitle(step));
   heading.append(element("span", `tag ${step.actor}`, step.actor));
   if (step.optional) heading.append(element("span", "tag optional", "optional"));
-  copy.append(heading, element("p", "", step.description));
+  copy.append(heading, element("p", "", ["identify.authenticate-agent", "connect.imessage-bind"].includes(step.id)
+    ? providerGuide(step).intro : step.description));
   if (step.note) copy.append(element("div", "note", step.note));
   if (step.command) {
     const command = element("div", "command");
@@ -1129,7 +1708,7 @@ function renderStep(step, index) {
   }
 
   const actions = element("div", "step-actions");
-  if (step.action) {
+  if (step.action && !providerRuntimePending(step)) {
     const action = element("button", "action-button", actionLabel(step.action));
     action.type = "button";
     action.addEventListener("click", () => handleAction(step.action, action));
@@ -1257,7 +1836,7 @@ function showJob(job) {
 
 function formatJobOutput(job) {
   if (!job.output) return "Starting…";
-  if (job.action === "run_verify_quick" || job.action === "run_verify_full") {
+  if (["run_verify_quick", "run_verify_full", "run_verify_imessage"].includes(job.action)) {
     try {
       const report = JSON.parse(job.output);
       const summary = report.summary;
@@ -1403,6 +1982,13 @@ $("#status-close").addEventListener("click", () => $("#status-dialog").close());
 $("#status-done").addEventListener("click", () => $("#status-dialog").close());
 $("#welcome-begin").addEventListener("click", () => dismissWelcome(true));
 $("#welcome-close").addEventListener("click", () => dismissWelcome(false));
+$("#onboarding-form").addEventListener("submit", saveOnboarding);
+$("#onboarding-edit").addEventListener("click", openOnboarding);
+$("#phone-portal-check").addEventListener("click", checkPhonePortalLink);
+$("#phone-portal-copy").addEventListener("click", copyPhonePortalLink);
+$("#phone-portal-connect").addEventListener("click", (event) => handleAction("run_phone_install", event.currentTarget));
+$("#phone-handoff-consent").addEventListener("change", renderFirstGoal);
+$("#phone-handoff-send").addEventListener("click", sendSetupHandoff);
 $("#guide-close").addEventListener("click", () => { stopGuideMonitoring(); $("#guide-dialog").close(); });
 $("#guide-later").addEventListener("click", () => { stopGuideMonitoring(); $("#guide-dialog").close(); });
 $("#guide-dialog").addEventListener("close", stopGuideMonitoring);

@@ -15,13 +15,14 @@
 # this prints nothing but ✓ on a fresh build, distrust it before trusting it.
 set -uo pipefail
 
-QUICK=0; JSON=0
+QUICK=0; JSON=0; IMESSAGE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --quick) QUICK=1 ;;
     --json)  JSON=1 ;;
+    --imessage-only) IMESSAGE_ONLY=1; QUICK=1 ;;
     --help|-h)
-      echo "usage: bash verify.sh [--quick] [--json]"
+      echo "usage: bash verify.sh [--quick] [--json] [--imessage-only]"
       exit 0 ;;
     *)
       echo "unknown option: $arg" >&2
@@ -79,6 +80,7 @@ ORG="${ORG:-}"; GH_USER="${GH_USER:-}"
 
 [ "$JSON" = "0" ] && echo "▩ wb-setup verify — $(hostname -s) · $(date '+%Y-%m-%d %H:%M')"
 
+if [ "$IMESSAGE_ONLY" = "0" ]; then
 # ── phase 0 · permissions ────────────────────────────────────────────────────
 head_ "phase 0 · permissions"
 
@@ -195,7 +197,7 @@ else
   if [ "$QUICK" = "1" ]; then
     skip P4-TSSERVE "tailnet checks (--quick)"
   else
-    if "$TSBIN" serve status 2>/dev/null | grep -q 'ts\.net'; then
+    if TAILSCALE_BE_CLI=1 "$TSBIN" serve status 2>/dev/null | grep -q 'ts\.net'; then
       ok P4-TSSERVE "surfaces served over tailnet HTTPS"
     else
       no P4-TSSERVE "no tailscale serve mappings — phone surfaces will be unreachable"
@@ -266,7 +268,77 @@ if [ "$QUICK" = "0" ] && command -v claude >/dev/null 2>&1; then
 else
   skip P5-MCP "MCP server check"
 fi
+fi # full workstation checks before the scoped iMessage runtime
 
+# ── phase 6 · one-owner iMessage head runtime ──────────────────────────────
+# A Messages Automation prompt proves only consent to Apple Events. The
+# text-ready claim requires the separate transport, exact chat binding,
+# persistent head pane, and guarded reply worker to be live as well.
+head_ "phase 6 · iMessage head runtime"
+imsg_json=""
+AGENT="$HOME/Applications/Wideband Agent.app/Contents/MacOS/Wideband Agent"
+imsg_python="$(command -v python3 || echo /usr/bin/python3)"
+if [ -x "$HOME/bin/wb-imessage" ] && [ -x "$AGENT" ]; then
+  imsg_json="$("$AGENT" run-background-task "$imsg_python" "$HOME/bin/wb-imessage" check 2>/dev/null || true)"
+fi
+imsg_has() {
+  printf '%s' "$imsg_json" | "$imsg_python" -c '
+import json, sys
+try:
+    assert json.load(sys.stdin).get(sys.argv[1]) is True
+except (ValueError, AssertionError):
+    sys.exit(1)
+' "$1" >/dev/null 2>&1
+}
+
+if [ "$(sw_vers -productVersion | cut -d. -f1)" -ge 14 ]; then
+  ok P6-IMSGOS "macOS supports the imsg runtime"
+else
+  no P6-IMSGOS "iMessage head runtime requires macOS 14 or newer"
+fi
+if [ -x /opt/homebrew/bin/imsg ]; then
+  ok P6-IMSG "imsg transport installed"
+else
+  no P6-IMSG "imsg transport missing — install steipete/tap/imsg"
+fi
+if imsg_has configured; then
+  ok P6-IMSGCFG "private head runtime and workspace configured"
+else
+  no P6-IMSGCFG "private head runtime is not configured"
+fi
+if imsg_has target_verified; then
+  ok P6-IMSGCHAT "bound owner-only iMessage chat matches Messages"
+else
+  no P6-IMSGCHAT "send a fresh text and bind the exact owner-only iMessage chat"
+fi
+if imsg_has head_session; then
+  ok P6-IMSGHEAD "persistent head agent is running in wb-head"
+else
+  no P6-IMSGHEAD "wb-head has no recognized live agent pane"
+fi
+unsafe_unbound_jobs=0
+if ! imsg_has bound && [ -n "$ORG" ]; then
+  for job in watch route keep outbox; do
+    l="com.$ORG.imessage-$job"
+    if [ -e "$HOME/Library/LaunchAgents/$l.plist" ] \
+       || [ -L "$HOME/Library/LaunchAgents/$l.plist" ] \
+       || launchctl print "gui/$(id -u)/$l" >/dev/null 2>&1; then
+      unsafe_unbound_jobs=1
+      break
+    fi
+  done
+fi
+if [ "$unsafe_unbound_jobs" = "1" ]; then
+  no P6-IMSGSERVICES "unbound iMessage jobs remain in LaunchAgents or launchd — run the scoped install to disable them"
+elif ! imsg_has bound; then
+  no P6-IMSGSERVICES "iMessage jobs are staged outside LaunchAgents until the owner chat is bound"
+elif imsg_has services_loaded; then
+  ok P6-IMSGSERVICES "listener, router, keeper and outbox services are loaded"
+else
+  no P6-IMSGSERVICES "one or more iMessage runtime services are not loaded"
+fi
+
+if [ "$IMESSAGE_ONLY" = "0" ]; then
 # ── phase 7 · tmux ───────────────────────────────────────────────────────────
 head_ "phase 7 · tmux"
 [ -f "$HOME/.config/tmux/tmux.conf" ] && ok P7-CONF "tmux.conf placed" || no P7-CONF "~/.config/tmux/tmux.conf missing"
@@ -352,6 +424,7 @@ else
                 || no P9-PINNED "config.json pins machine='$m' — the board will break on the next machine"
   fi
 fi
+fi # full workstation checks after the scoped iMessage runtime
 
 # ── summary ──────────────────────────────────────────────────────────────────
 if [ "$JSON" = "1" ]; then

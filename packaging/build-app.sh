@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE=""
 SIGN_IDENTITY="${WIDEBAND_SIGN_IDENTITY:--}"
 NOTARY_PROFILE="${WIDEBAND_NOTARY_PROFILE:-}"
+FLEETDECK_SOURCE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --profile)
@@ -26,8 +27,14 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --notary-profile=*) NOTARY_PROFILE="${1#*=}"; shift ;;
+    --fleetdeck-source)
+      [ "$#" -ge 2 ] || { echo "--fleetdeck-source requires a Fleetdeck checkout path" >&2; exit 2; }
+      FLEETDECK_SOURCE="$2"
+      shift 2
+      ;;
+    --fleetdeck-source=*) FLEETDECK_SOURCE="${1#*=}"; shift ;;
     --help|-h)
-      echo "usage: ./packaging/build-app.sh [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile]"
+      echo "usage: ./packaging/build-app.sh [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile] [--fleetdeck-source /path/to/fleetdeck]"
       exit 0
       ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -65,6 +72,8 @@ trap cleanup EXIT INT TERM
   || { echo "refusing: repository root was not resolved" >&2; exit 1; }
 [ "$(uname -s)" = "Darwin" ] || { echo "the app bundle can only be built on macOS" >&2; exit 1; }
 [ -z "$PROFILE" ] || [ -f "$PROFILE" ] || { echo "client profile not found: $PROFILE" >&2; exit 1; }
+[ -z "$FLEETDECK_SOURCE" ] || [ -d "$FLEETDECK_SOURCE" ] \
+  || { echo "Fleetdeck source checkout not found: $FLEETDECK_SOURCE" >&2; exit 1; }
 
 VERSION="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' "$ROOT/installer/manifest.json")"
 BUILD_NUMBER="$(date -u '+%Y%m%d%H%M%S')"
@@ -75,6 +84,7 @@ BUILD_ID="$VERSION-$BUILD_NUMBER"
 /usr/bin/plutil -replace CFBundleShortVersionString -string "$VERSION" "$CONTENTS/Info.plist"
 /usr/bin/plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$CONTENTS/Info.plist"
 /usr/bin/ditto "$ROOT/packaging/app-launcher" "$RESOURCES/app-launcher"
+/usr/bin/ditto "$ROOT/packaging/agent-revision.sh" "$RESOURCES/agent-revision.sh"
 /usr/bin/ditto "$ROOT/packaging/run-setup.command" "$RESOURCES/run-setup.command"
 /bin/chmod 755 "$RESOURCES/app-launcher" "$RESOURCES/run-setup.command"
 /usr/bin/xcrun swiftc -parse-as-library -target arm64-apple-macos13.0 \
@@ -95,7 +105,17 @@ fi
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.DS_Store' \
+  --exclude '/vendor/fleetdeck/' \
   "$ROOT/" "$PAYLOAD/"
+
+# A customer release can carry the exact reviewed Fleetdeck working tree. The
+# opt-in builder copies only files in Git's tracked list, then verifies every
+# byte; private notes, local config, backups, and .git never enter the app.
+# Without the option, phone-only install retains the public-clone fallback.
+if [ -n "$FLEETDECK_SOURCE" ]; then
+  /usr/bin/python3 "$ROOT/packaging/bundle-fleetdeck.py" \
+    build "$FLEETDECK_SOURCE" "$PAYLOAD/vendor/fleetdeck"
+fi
 
 # Bundle the localhost engine so the branded checklist can open immediately on
 # a genuinely bare Mac, before Homebrew or Command Line Tools supplies Python.
@@ -180,6 +200,11 @@ else
     --sign "$SIGN_IDENTITY" "$AGENT_APP"
 fi
 /usr/bin/codesign --verify --strict "$AGENT_APP"
+# A portal or Setup update must not rotate the ad-hoc Agent code identity on
+# an already approved Mac. This revision deliberately ignores the package's
+# timestamp while covering Agent inputs, compiled code, and signing class.
+. "$ROOT/packaging/agent-revision.sh"
+wb_agent_revision "$AGENT_APP" "$ROOT" "$WORK" > "$RESOURCES/agent-revision.txt"
 
 # Ad-hoc signing adds an integrity seal but uses no Apple Developer identity.
 # A configured release build signs the complete nested bundle consistently.
@@ -239,7 +264,7 @@ printf '  ZIP: %s\n' "$ZIP_OUT"
 if [ -n "$PROFILE" ]; then
   printf '  Mode: personalized client build\n'
 else
-  printf '  Mode: generic pilot (identity collected in native setup popups)\n'
+  printf '  Mode: generic pilot (owner phone collected in one native dialog)\n'
 fi
 if [ "$SIGN_IDENTITY" = "-" ]; then
   printf '  Trust: ad-hoc signed pilot (Gatekeeper Open Anyway required)\n'

@@ -55,6 +55,14 @@ CARDS = [
      "bash ~/srv/wb-setup/doctor.sh > /tmp/doctor.txt",
      "Send /tmp/doctor.txt. The answer is in it."),
 
+    ("I texted my agent and got no reply",
+     "The Mac needs a signed-in separate Apple Account, a bound private chat, "
+     "a running head session, and four message services. The check below "
+     "reports which link is missing without sending a test message.",
+     "~/bin/wb-imessage check",
+     "Ask Wideband to review the result. A successful permission prompt alone "
+     "does not prove that a reply reached your phone."),
+
     ("I can't reach it from my phone",
      "The machine is reachable over a private network. If one page fails, "
      "that page is down. If EVERY page fails at once, the machine has "
@@ -146,14 +154,16 @@ def md(src: str) -> str:
         if re.match(r"^\s*[-*]\s+", ln):                # bullets
             buf = []
             while i < len(lines) and re.match(r"^\s*[-*]\s+", lines[i]):
-                buf.append(f"<li>{inline(re.sub(r'^\\s*[-*]\\s+', '', lines[i]))}</li>"); i += 1
+                item = re.sub(r"^\s*[-*]\s+", "", lines[i])
+                buf.append(f"<li>{inline(item)}</li>"); i += 1
             out.append("<ul>" + "".join(buf) + "</ul>")
             continue
 
         if re.match(r"^\d+\.\s+", ln):                  # numbered
             buf = []
             while i < len(lines) and re.match(r"^\d+\.\s+", lines[i]):
-                buf.append(f"<li>{inline(re.sub(r'^\\d+\\.\\s+', '', lines[i]))}</li>"); i += 1
+                item = re.sub(r"^\d+\.\s+", "", lines[i])
+                buf.append(f"<li>{inline(item)}</li>"); i += 1
             out.append("<ol>" + "".join(buf) + "</ol>")
             continue
 

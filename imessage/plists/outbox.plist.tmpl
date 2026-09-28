@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>__PREFIX__.imessage-outbox</string>
+  <key>ProgramArguments</key><array>
+    <string>__AGENT_EXECUTABLE__</string><string>run-background-task</string>
+    <string>__PYTHON__</string><string>__HOME__/bin/wb-imessage</string><string>outbox</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>__HOME__</string>
+    <key>PATH</key><string>__HOME__/bin:__HOME__/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>15</integer>
+  <key>StandardOutPath</key><string>__HOME__/.wideband/imessage/logs/outbox.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.wideband/imessage/logs/outbox.err</string>
+</dict></plist>

@@ -21,8 +21,9 @@ localhost link or technical setup guide.
    https://os.wideband.ai/version when it starts. The check sends no setup
    answers or machine identifiers and can be changed later from the Wideband
    Setup menu.
-6. In a generic build, answer the six plain-language setup popups. A build
-   prepared specifically for your company skips these questions.
+6. In a generic build, enter your personal phone number in one macOS dialog.
+   Then use the Wideband guide to name your OS and agent and choose their
+   first job. A build prepared specifically for you skips the phone dialog.
 7. The guide stays inside the Wideband app and shows live machine progress.
    On a genuinely new Mac, Terminal opens behind it for Homebrew's one visible
    administrator-password prompt. The cursor does not move while you type;
@@ -57,6 +58,9 @@ localhost link or technical setup guide.
    verified” is a live check; “You confirmed” is a client-owned account or
    outcome that the installer cannot inspect. Your last completed action is
    saved automatically; reopen Wideband Setup to resume.
+    When the private Fleetdeck board works from your phone, its final guide
+    confirmation queues two setup texts to your verified personal chat. They
+    contain your board links, quick commands, and iPhone app links.
 15. Setup tools can run a fresh check, repair the managed runtime, or export a
    redacted support ZIP. The ZIP excludes credentials, two-factor codes,
    profile answers, .sop-vars values, and raw logs. Recoverable deactivation is
@@ -77,7 +81,7 @@ localhost link or technical setup guide.
 
 Requirements
 • Apple silicon Mac
-• macOS 13 or newer
+• macOS 14 or newer for the iMessage client setup
 • Administrator access
 • Internet access and the account owner’s phone for sign-ins
 
@@ -89,3 +93,11 @@ reopening the app.
 If the disk image filename contains “unsigned,” the one-time Privacy & Security
 → Open Anyway exception is expected. Production disk images are Developer ID
 signed, notarized, and stapled so macOS can verify Wideband as the publisher.
+
+Wideband release-builder note (not a client step): a self-contained phone
+portal build needs `./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck`
+from a reviewed checkout. The packaged customer portal
+excludes local Fleetdeck config, notes, backups, and operator source. Without
+that flag, phone setup keeps a public-clone fallback, but the current public
+Fleetdeck release does not yet have the customer-mode guard and that step will
+stop safely.

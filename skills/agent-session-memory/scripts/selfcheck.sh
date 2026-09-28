@@ -52,6 +52,21 @@ JSON
 
 printf 'probe = %s\n' "$WORK" > "$TM_SESSIONS_CONF"
 
+export TM_CHATBIND="$WORK/chatbind.json"
+cat > "$TM_CHATBIND" <<'JSON'
+{
+  "bound": [
+    {
+      "chat_id": 21,
+      "label": "a client thread",
+      "session": "bound1",
+      "external_mode": "private-draft-and-hold",
+      "participants": ["+15551234567", "client@example.com"]
+    }
+  ]
+}
+JSON
+
 tm() { "$TM_MEMORY_BIN" "$@"; }
 
 has() { # has HAYSTACK NEEDLE — no pipe, so no SIGPIPE race under pipefail
@@ -371,6 +386,80 @@ sum_after="$(shasum "$TM_MEMORY_DIR/identity/probe.md" | awk '{print $1}')"
 has "$out" "card exists" \
   && ok "adopt says what it skipped and why" \
   || no "adopt did not report skipped sessions"
+
+head_ "10b · a binding is a role on day one"
+tmux -L "$SOCKET" -f /dev/null new-session -d -s bound1 /bin/sh >/dev/null 2>&1
+sleep 0.3
+tm adopt --session bound1 >/dev/null 2>&1
+bcard="$TM_MEMORY_DIR/identity/bound1.md"
+grep -q "^chat_binding: imsg:chat-21$" "$bcard" 2>/dev/null \
+  && ok "adopt derives the chat binding instead of waiting to be told" \
+  || no "the chat binding was not derived"
+has "$(cat "$bcard")" "drafts are held for operator approval" \
+  && ok "the binding's reply mode becomes an approval boundary" \
+  || no "the external reply mode did not become an approval boundary"
+if grep -qE '\+[0-9]{10,}' "$bcard" 2>/dev/null; then
+  no "a participant phone number was copied into the card"
+else
+  ok "participant phone numbers were not copied into the card"
+fi
+out="$(tm check 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "the derived card passes its own secret scan" \
+                || { no "the derived card fails check:"; printf '%s\n' "$out" | sed 's/^/      /'; }
+out="$(tm doctor 2>&1)"
+has "$out" ">> bound1" \
+  && ok "a bound session is flagged for promotion regardless of age" \
+  || { no "the bound session was not flagged"; printf '%s\n' "$out" | sed -n '/no assigned role/,+6p' | sed 's/^/      /'; }
+has "$out" "bound" \
+  && ok "the report explains why a binding outranks age" \
+  || no "the bound reason is missing"
+if has "$out" ">> bound1" && has "$out" "!! bound1"; then
+  ok "bound-for-promotion and not-running-an-agent are different markers"
+else
+  no "the two conditions share a marker, so the report cannot be read"
+fi
+
+# A card that drops the binding the config still declares is drift.
+sed -i '' 's/^chat_binding: .*/chat_binding:/' "$bcard" 2>/dev/null \
+  || sed -i 's/^chat_binding: .*/chat_binding:/' "$bcard"
+sed -i '' '/imsg-chatbind reply/d' "$bcard" 2>/dev/null || sed -i '/imsg-chatbind reply/d' "$bcard"
+has "$(tm doctor 2>&1)" "records no chat_binding" \
+  && ok "a card that drops a live binding is reported as drift" \
+  || no "binding drift was not detected"
+rm -f "$bcard"
+tmux -L "$SOCKET" kill-session -t =bound1 >/dev/null 2>&1
+
+head_ "10c · a handoff between sessions is a checkable contract"
+card giver fakeagent "routing_out:" "  - session:taker — finished assets"
+card taker fakeagent "routing_in:" "  - session:giver — finished assets"
+out="$(tm check 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "a handoff naming a real session passes" \
+                || { no "a valid handoff was rejected:"; printf '%s\n' "$out" | sed 's/^/      /'; }
+out="$(tm doctor 2>&1)"
+if has "$out" "hands off to"; then
+  no "a resolvable handoff was reported as drift"
+else
+  ok "a resolvable handoff is not drift"
+fi
+rm -f "$TM_MEMORY_DIR/identity/taker.md"
+has "$(tm doctor 2>&1)" "which has no identity card" \
+  && ok "a handoff to a session with no card is drift" \
+  || no "a dangling handoff was not detected"
+
+# An internal handoff stays on this machine, so it must not trip the
+# external-route signal that outranks age.
+tmux -L "$SOCKET" -f /dev/null new-session -d -s giver /bin/sh >/dev/null 2>&1
+sleep 0.3
+sed -i '' 's/^role: assigned/role: unassigned/' "$TM_MEMORY_DIR/identity/giver.md" 2>/dev/null \
+  || sed -i 's/^role: assigned/role: unassigned/' "$TM_MEMORY_DIR/identity/giver.md"
+out="$(tm doctor 2>&1)"
+if has "$out" ">> giver"; then
+  no "an internal session handoff was mistaken for an external route"
+else
+  ok "an internal handoff does not count as sending off this machine"
+fi
+rm -f "$TM_MEMORY_DIR/identity/giver.md"
+tmux -L "$SOCKET" kill-session -t =giver >/dev/null 2>&1
 
 head_ "11 · drift is visible"
 out="$(tm doctor 2>&1)"

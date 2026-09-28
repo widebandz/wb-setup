@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#07070b">
+  <meta name="theme-color" content="#12171c">
   <title>Wideband Setup</title>
   <link rel="icon" href="/wideband-mark.png">
   <link rel="apple-touch-icon" href="/wideband-mark.png">
@@ -52,6 +52,57 @@
         <article><span>03</span><div><strong>We customize together</strong><p>Your working style, boundaries, priorities, and real-world proofs.</p></div></article>
       </section>
 
+      <section class="onboarding-section" id="onboarding-section" aria-labelledby="onboarding-title">
+        <div class="journey-nav" aria-label="Setup path">
+          <span class="active">01 · Name</span><span>02 · Connect</span><span>03 · Text</span><span>04 · Create</span><span>05 · Phone</span>
+        </div>
+        <div class="onboarding-card">
+          <div class="onboarding-intro">
+            <p class="overline">Wideband / create your OS</p>
+            <h2 id="onboarding-title">Make it yours.</h2>
+            <p>Name your OS and head agent, choose its AI provider, then give it a first job. These choices stay on this Mac and can be edited later.</p>
+          </div>
+          <form id="onboarding-form">
+            <div class="onboarding-fields">
+              <label for="onboarding-os-name">OS display name
+                <input id="onboarding-os-name" name="os_name" required maxlength="60" autocomplete="off" placeholder="Aurora">
+                <small>This names your Wideband space. It does not change the Mac hostname.</small>
+              </label>
+              <label for="onboarding-agent-name">Head agent name
+                <input id="onboarding-agent-name" name="agent_name" required maxlength="60" autocomplete="off" placeholder="Trace">
+                <small>You can change this name later.</small>
+              </label>
+            </div>
+            <fieldset class="provider-picker">
+              <legend>Which AI provider should run your head agent?</legend>
+              <label><input type="radio" name="agent_provider" value="claude" required><span><strong>Claude Code <em>Current setup path</em></strong><small>Installer support is available. Your own sign-in and a real reply still need verification.</small></span></label>
+              <label><input type="radio" name="agent_provider" value="codex"><span><strong>Codex <em>Preview</em></strong><small>Choose now; this head-agent path has not passed the Mac text test.</small></span></label>
+              <label><input type="radio" name="agent_provider" value="gemini"><span><strong>Gemini CLI <em>Preview</em></strong><small>Choose now; this head-agent path has not passed the Mac text test.</small></span></label>
+              <label><input type="radio" name="agent_provider" value="grok"><span><strong>Grok Build <em>Preview</em></strong><small>Choose now; a local head-agent runtime has not been verified.</small></span></label>
+              <p class="provider-note">Wideband saves your choice, then checks the selected tool and account before starting a head agent. Preview choices may pause setup until their runtime is ready.</p>
+            </fieldset>
+            <fieldset class="goal-picker">
+              <legend>What should your agent do first?</legend>
+              <label><input type="radio" name="first_goal" value="research" required><span><strong>Research</strong><small>Find answers and organize knowledge.</small></span></label>
+              <label><input type="radio" name="first_goal" value="website"><span><strong>Build a website</strong><small>Prepare a running development site and link.</small></span></label>
+              <label><input type="radio" name="first_goal" value="proposal"><span><strong>Proposal <em>Advanced</em></strong><small>Plan the source material and review path.</small></span></label>
+            </fieldset>
+            <div class="onboarding-actions">
+              <p id="onboarding-message" role="status" aria-live="polite">No Apple Account email, password, or verification code is collected here.</p>
+              <button class="primary" id="onboarding-save" type="submit">Save my choices <span>→</span></button>
+            </div>
+          </form>
+          <div class="onboarding-saved" id="onboarding-saved" hidden>
+            <div><span>OS</span><strong id="saved-os-name"></strong></div>
+            <div><span>Head agent</span><strong id="saved-agent-name"></strong></div>
+            <div><span>AI provider</span><strong id="saved-agent-provider"></strong></div>
+            <div><span>First job</span><strong id="saved-first-goal"></strong></div>
+            <button class="secondary" id="onboarding-edit" type="button">Edit choices</button>
+            <p class="onboarding-restart-note">If the head agent is already running, edited names reach its live context the next time its session starts.</p>
+          </div>
+        </div>
+      </section>
+
       <section class="client-progress" aria-label="Your setup progress">
         <div class="client-progress-copy">
           <div><p class="overline">Your setup</p><strong id="client-progress-label">Loading…</strong></div>
@@ -93,6 +144,37 @@
         </aside>
       </div>
 
+      <section class="first-goal-section" id="first-goal-section" hidden aria-labelledby="first-goal-title">
+        <div>
+          <p class="overline">04 / Create</p>
+          <h2 id="first-goal-title">Your first job</h2>
+          <p id="first-goal-detail">Wideband will prepare this after the agent answers your first text.</p>
+          <p class="phone-portal-state" id="phone-portal-state">Fleetdeck phone view follows the first job.</p>
+        </div>
+        <div class="first-goal-links">
+          <a class="secondary" id="first-goal-local" href="#" target="_blank" rel="noopener noreferrer" hidden>Open local preview ↗</a>
+          <a class="secondary" id="first-goal-phone" href="#" target="_blank" rel="noopener noreferrer" hidden>Open project link ↗</a>
+          <a class="secondary" id="phone-portal-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Fleetdeck phone board ↗</a>
+          <button class="secondary" id="phone-portal-copy" type="button" hidden>Copy phone link</button>
+          <button class="secondary" id="phone-portal-check" type="button" hidden>Check phone HTTPS</button>
+          <button class="secondary" id="phone-portal-connect" type="button" hidden>Reconnect Fleetdeck after Tailscale sign-in</button>
+          <button class="secondary" id="first-goal-action" type="button" hidden>Check first job</button>
+        </div>
+      </section>
+
+      <section class="phone-handoff-section" id="phone-handoff-section" hidden aria-labelledby="phone-handoff-title">
+        <div>
+          <p class="overline">05 / Phone handoff</p>
+          <h2 id="phone-handoff-title">Send your setup details by iMessage.</h2>
+          <p id="phone-handoff-detail">Wideband will queue two texts to your verified personal chat: your private Fleetdeck link and a short list of setup commands.</p>
+          <p class="phone-handoff-status" id="phone-handoff-status" role="status" aria-live="polite"></p>
+        </div>
+        <div class="phone-handoff-actions">
+          <label id="phone-handoff-consent-label" for="phone-handoff-consent"><input id="phone-handoff-consent" type="checkbox"> I want Wideband to send these two setup texts to my bound chat.</label>
+          <button class="primary" id="phone-handoff-send" type="button" disabled>Queue setup texts <span>→</span></button>
+        </div>
+      </section>
+
       <section class="readiness-section" id="readiness-section" aria-labelledby="readiness-title">
         <div class="section-heading">
           <div><p class="overline">Live readiness</p><h2 id="readiness-title">Know exactly what is ready.</h2></div>
@@ -125,17 +207,17 @@
 
       <section class="handoff-section">
         <div class="section-heading compact">
-          <div><p class="overline">With Wideband</p><h2>Final proofs happen together.</h2></div>
-          <p>These stay visible but do not block your first session. Wideband returns to them after the custom layer is ready.</p>
+          <div><p class="overline">After the first text</p><h2>Finish the phone view and later setup.</h2></div>
+          <p>These steps stay visible while your agent works. Wideband returns to them as your first job and Fleetdeck are ready.</p>
         </div>
         <div class="handoff-list" id="handoff-list"></div>
       </section>
 
       <section class="client-complete" id="client-complete" hidden>
         <img src="/wideband-mark.png" alt="" class="complete-mark">
-        <p class="overline">Your part is complete</p>
-        <h2 id="completion-title">Wideband can take it from here.</h2>
-        <p id="completion-summary">Your approvals are saved on this Mac. Keep it plugged in and online while Wideband finishes the custom agent layer and final verification.</p>
+        <p class="overline">First text complete</p>
+        <h2 id="completion-title">Your head agent answered by text.</h2>
+        <p id="completion-summary">Keep this Mac plugged in and online while Wideband prepares your first job and Fleetdeck phone view.</p>
         <div class="completion-grid">
           <div><span>Machine</span><strong id="completion-machine">Reading verification…</strong></div>
           <div><span>Custom profile</span><strong id="completion-profile">Reading profile state…</strong></div>
@@ -225,6 +307,7 @@
       </div>
       <ol class="guide-instructions" id="guide-instructions"></ol>
       <div class="guide-privacy" id="guide-privacy" hidden><span>●</span><p></p></div>
+      <label class="guide-acknowledgment" id="guide-acknowledgment" hidden><input id="guide-acknowledgment-check" type="checkbox"><span id="guide-acknowledgment-label"></span></label>
       <div class="guide-open-actions" id="guide-open-actions"></div>
       <p class="guide-message" id="guide-message" aria-live="polite"></p>
       <footer>
@@ -289,7 +372,7 @@
   </dialog>
 
   <section class="runner" id="runner" hidden aria-live="polite">
-    <header><div><span class="pulse" id="runner-pulse"></span><strong id="runner-title">Running</strong></div><button class="quiet" id="runner-close" type="button">Close</button></header>
+    <header><div><img src="/wideband-mark.png" alt="" class="runner-mark"><span class="runner-brand">WIDEBAND / LIVE BUILD</span><span class="pulse" id="runner-pulse"></span><strong id="runner-title">Running</strong></div><button class="quiet" id="runner-close" type="button">Close</button></header>
     <pre id="runner-output"></pre>
   </section>
 

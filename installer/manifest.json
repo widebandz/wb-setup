@@ -19,31 +19,30 @@
         },
         {
           "id": "prepare.create-accounts",
-          "title": "Create the service accounts",
-          "description": "Create email, Apple ID, Anthropic, GitHub, Tailscale, then Vercel and Supabase—in that order.",
+          "title": "Create a separate agent Apple Account",
+          "description": "Give the agent Mac its own Apple Account so it can text your personal phone as a separate sender.",
           "actor": "client",
           "type": "guided",
-          "note": "GitHub comes before Tailscale, Vercel, and Supabase because those services should use the same GitHub identity.",
+          "note": "The agent Apple Account must differ from the Apple Account used on your personal iPhone.",
+          "client_priority": 1,
           "client_phase": "now",
           "client_guide": {
-            "eyebrow": "Accounts you own",
-            "intro": "These accounts remain in your name. Wideband will never ask you to hand over their passwords.",
+            "eyebrow": "Agent identity",
+            "intro": "Your agent needs a separate Apple Account so its iMessages arrive as messages from the agent, not from you.",
+            "purpose": "A separate sender makes the first text and every reply unambiguous on your phone.",
+            "success": "You can sign into the agent Apple Account yourself and receive its verification codes. The account is different from your personal phone's account.",
             "instructions": [
-              "Use the dedicated work email and Apple Account intended for this Mac.",
-              "Create GitHub first, with the exact username supplied in your Wideband build profile.",
-              "Create Anthropic, then use the same GitHub identity for Tailscale, Vercel, and Supabase wherever sign-in with GitHub is offered.",
-              "Complete every email or phone verification before returning here."
+              "Create or choose an Apple Account for the agent Mac that is separate from the Apple Account on your personal iPhone.",
+              "Use an email address you control and complete Apple's account verification on Apple's page.",
+              "Keep the password and verification codes in your own password manager. Never enter them in Wideband Setup.",
+              "Return here when the separate agent account is ready. Messages sign-in and a real two-way text test are separate later checks."
             ],
-            "privacy": "Passwords and two-factor codes are entered only into the provider's page.",
+            "privacy": "Wideband saves only your confirmation. Passwords and verification codes stay with Apple.",
+            "acknowledgment_label": "I confirm this agent Apple Account is different from the Apple Account on my personal iPhone.",
             "actions": [
-              {"action": "open_apple_id", "label": "Apple Account"},
-              {"action": "open_github", "label": "GitHub"},
-              {"action": "open_anthropic", "label": "Anthropic"},
-              {"action": "open_tailscale_account", "label": "Tailscale"},
-              {"action": "open_vercel", "label": "Vercel"},
-              {"action": "open_supabase", "label": "Supabase"}
+              {"action": "open_apple_id", "label": "Open Apple Account settings"}
             ],
-            "confirm_label": "My accounts are ready"
+            "confirm_label": "The agent account is ready"
           }
         },
         {
@@ -64,17 +63,20 @@
         {
           "id": "prepare.complete-setup-assistant",
           "title": "Complete macOS Setup Assistant",
-          "description": "Connect power and Wi-Fi, select region and language, create the admin account, and sign into the intended Apple ID.",
+          "description": "Connect power and Wi-Fi, create the admin account, and sign into the dedicated agent Apple Account.",
           "actor": "client",
           "type": "guided",
           "action": "open_apple_id",
+          "client_priority": 2,
           "client_phase": "now",
           "client_guide": {
             "eyebrow": "Mac basics",
             "intro": "Confirm this Mac is ready to become your always-on Wideband operator machine.",
+            "purpose": "The agent Mac needs a stable administrator session and its dedicated Apple Account before Messages can receive your texts.",
+            "success": "The Mac is powered, online, signed into the dedicated agent account, and the current macOS user is an administrator.",
             "instructions": [
               "Keep the Mac connected to power and a reliable network.",
-              "Try to sign into the intended Apple Account—not a temporary or technician account. If Setup Assistant reports an error, finish setup and sign in here from the desktop instead; that is not a Wideband install failure.",
+              "Sign into the dedicated agent Apple Account you just prepared, not your personal iPhone account or a temporary technician account. If Setup Assistant reports an error, finish setup and sign in here from the desktop instead; that is not a Wideband install failure.",
               "After a delayed or partially completed Apple Account sign-in, open Messages separately and confirm its iMessage account. Apple Account and Messages sign-in are two distinct checks.",
               "Confirm your current macOS user is an administrator.",
               "Finish any pending Migration Assistant or macOS update before continuing."
@@ -100,6 +102,27 @@
       "description": "Give the machine one coherent identity, then capture the operator judgment that cannot be templated.",
       "steps": [
         {
+          "id": "identify.name-your-system",
+          "title": "Name your OS and head agent",
+          "description": "Choose an OS display name, an editable head-agent name, an AI provider, and the first job to prepare for.",
+          "actor": "client",
+          "type": "onboarding",
+          "client_priority": 0,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Make it yours",
+            "intro": "Name your Wideband OS and head agent, choose an AI provider, and give the agent its first job.",
+            "purpose": "These choices make the setup personal and tell Wideband which provider and first-job tools to prepare.",
+            "success": "Your four choices are saved privately on this Mac. The OS name is a display name, not a change to the Mac hostname.",
+            "instructions": [
+              "Enter a short display name for your OS, such as Aurora.",
+              "Name your head agent, such as Trace. You can edit its name later.",
+              "Select Claude Code, Codex, Gemini CLI, or Grok Build. Preview providers wait for runtime verification.",
+              "Choose Research, Build a website, or Proposal (advanced), then save."
+            ]
+          }
+        },
+        {
           "id": "identify.run-bootstrap",
           "title": "Run the bootstrap",
           "description": "Install the agent, start Homebrew, fetch this setup repository, and write the build identity.",
@@ -118,26 +141,25 @@
         },
         {
           "id": "identify.authenticate-agent",
-          "title": "Authenticate Claude Code",
-          "description": "Start Claude Code and complete its browser authentication.",
+          "title": "Connect your AI provider",
+          "description": "Sign into the provider you selected before the head agent starts.",
           "actor": "client",
           "type": "guided",
-          "command": "claude",
-          "action": "open_claude_auth",
-          "note": "Installation is machine-verifiable; successful account authentication still requires the client to confirm it.",
+          "client_priority": 5,
+          "note": "The provider choice is saved locally; a live head-agent reply still requires runtime and account proof.",
           "client_phase": "now",
           "client_guide": {
             "eyebrow": "Your AI account",
-            "intro": "Connect Claude directly to your account. Wideband can see whether the tool works, but never your password.",
+            "intro": "Connect the AI provider you selected. Wideband checks the local tool and runtime before it can answer a text.",
+            "purpose": "The head agent must be signed in before it can read your first text and produce a reply.",
+            "success": "The selected provider is authenticated and the head agent answers a real text on your phone.",
             "instructions": [
-              "Select Open Claude sign-in below. A second Terminal window will open.",
-              "Follow the secure browser sign-in opened by Claude.",
-              "Approve the account you intend this custom agent to use.",
-              "Return here after Claude confirms authentication."
+              "Review the selected provider and its setup status below.",
+              "Complete sign-in directly with that provider when Wideband offers its verified setup path.",
+              "Return here when Wideband can verify the account and head-agent runtime."
             ],
-            "open_label": "Open Claude sign-in",
-            "privacy": "Authentication happens between you and Anthropic.",
-            "confirm_label": "Claude is connected"
+            "privacy": "Passwords and verification codes stay with your provider.",
+            "confirm_label": "Provider is connected"
           }
         },
         {
@@ -157,7 +179,7 @@
           "requires_confirmation": true,
           "checks": ["P5-MD", "P5-MDCAP"],
           "action": "open_interview",
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Make the agent yours",
             "intro": "This is the custom part: tell the agent how to work with you, where it may act, and where it must stop and ask.",
@@ -188,8 +210,8 @@
           "type": "guided",
           "checks": ["P0-SSH"],
           "action": "open_remote_login",
-          "client_priority": 60,
-          "client_phase": "now",
+          "client_priority": 160,
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Secure support access",
             "intro": "Remote Login gives the Wideband operator a private command-line support path without exposing it to the public internet.",
@@ -214,8 +236,8 @@
           "type": "guided",
           "checks": ["P0-SCREENSHARING"],
           "action": "open_screen_sharing",
-          "client_priority": 10,
-          "client_phase": "now",
+          "client_priority": 110,
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Visual support access",
             "intro": "Apple Screen Sharing lets your Wideband operator see and control this Mac when visual help is needed.",
@@ -241,7 +263,7 @@
           "type": "guided",
           "checks": ["P0-FDA"],
           "action": "request_full_disk_access",
-          "client_priority": 20,
+          "client_priority": 4,
           "client_phase": "now",
           "client_guide": {
             "eyebrow": "macOS permission",
@@ -267,8 +289,8 @@
           "type": "guided",
           "checks": ["P0-AX"],
           "action": "request_accessibility",
-          "client_priority": 30,
-          "client_phase": "now",
+          "client_priority": 130,
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "macOS permission",
             "intro": "Accessibility permission allows approved local automation to operate visible controls when a task requires it.",
@@ -305,8 +327,8 @@
           "type": "guided",
           "checks": ["P0-SCREEN"],
           "action": "request_screen_recording",
-          "client_priority": 40,
-          "client_phase": "now",
+          "client_priority": 140,
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "macOS permission",
             "intro": "Screen Recording permission is required for browser screenshots and visual verification; it does not start a recording by itself.",
@@ -344,8 +366,8 @@
           "type": "guided",
           "checks": ["P0-AUTOMATION"],
           "action": "request_messages_automation",
-          "client_priority": 50,
-          "client_phase": "now",
+          "client_priority": 150,
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "macOS permission",
             "intro": "macOS must explicitly allow the local automation layer to ask Messages to perform approved actions.",
@@ -381,40 +403,75 @@
           "actor": "client",
           "type": "guided",
           "action": "open_login_items",
+          "checks": ["P6-IMSGSERVICES"],
+          "client_priority": 8,
           "client_phase": "now",
           "client_guide": {
             "eyebrow": "Always-on services",
-            "intro": "Wideband's health checks and scheduled work use standard macOS background items.",
-            "purpose": "Health checks and scheduled work must survive closed windows and Mac restarts.",
-            "success": "Wideband Agent remains enabled under Allow in the Background.",
+            "intro": "After binding your text, Wideband checks that all four background messaging services loaded.",
+            "purpose": "The listener, router, head-agent keeper, and guarded outbox must keep working when this window closes.",
+            "success": "The live check sees all four messaging services loaded. If macOS lists Wideband under Allow in the Background, it is enabled.",
             "instructions": [
-              "Open Login Items & Extensions.",
-              "Under Allow in the Background, leave the Wideband items enabled.",
-              "If no Wideband item appears yet, the machine install is still running; return to this step shortly."
+              "Bind your owner-only iMessage chat first. Wideband loads the messaging jobs only after that binding succeeds.",
+              "Open Login Items & Extensions. If macOS lists Wideband under Allow in the Background, leave it enabled.",
+              "Select Check background services. If the check fails, review Login Items and use Setup tools to repair the service installation."
             ],
             "open_label": "Open Login Items",
-            "confirm_label": "Background items are allowed"
+            "confirm_label": "Check background services"
           }
         },
         {
           "id": "connect.messages",
           "title": "Sign into Messages",
-          "description": "Sign into iMessage using the intended operator account.",
+          "description": "Sign into iMessage with the separate agent Apple Account.",
           "actor": "client",
           "type": "guided",
           "action": "open_messages",
+          "client_priority": 3,
           "client_phase": "now",
           "client_guide": {
             "eyebrow": "Messaging channel",
-            "intro": "Messages is the private channel this Mac can use for approved briefs and alerts.",
+            "intro": "Sign Messages into the agent account so your phone can text the agent as a separate person.",
+            "purpose": "The agent Mac must receive iMessages at an identity different from your personal phone.",
+            "success": "Messages shows the separate agent Apple Account and an ordinary iMessage reaches this Mac. An agent reply is verified later.",
             "instructions": [
-              "Open Messages and sign in with the intended Apple Account.",
-              "In Messages settings, confirm the correct addresses and phone number are enabled.",
-              "Send one ordinary test message to confirm iMessage is active."
+              "Open Messages and sign in with the separate agent Apple Account. Complete Apple's verification personally.",
+              "In Messages settings, confirm the separate account's reachable addresses are enabled.",
+              "From your personal iPhone, send the agent account one ordinary iMessage and confirm it appears on this Mac. The later two-way agent test proves the runtime."
             ],
             "open_label": "Open Messages",
-            "privacy": "Sign-in stays inside Apple's Messages app.",
-            "confirm_label": "Messages is signed in"
+            "privacy": "Sign-in stays inside Apple's Messages app. Wideband does not collect your Apple Account email, password, or verification code.",
+            "confirm_label": "The Mac received my text"
+          }
+        },
+        {
+          "id": "connect.imessage-bind",
+          "title": "Connect your text to the head agent",
+          "description": "Bind one fresh, owner-only iMessage chat and start the persistent head agent and guarded reply worker.",
+          "actor": "client",
+          "type": "guided",
+          "action": "run_imessage_bind",
+          "checks": ["P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"],
+          "client_priority": 7,
+          "client_phase": "now",
+          "client_guide": {
+            "eyebrow": "Connect your text",
+            "intro": "Send one new iMessage from your personal phone. Wideband will bind only that exact one-to-one chat to your agent.",
+            "purpose": "The listener needs one verified chat before it can deliver your text to the head agent or send a reply.",
+            "success": "The live check sees the exact owner chat, a persistent head-agent session, and all four guarded messaging services.",
+            "instructions": [
+              "Confirm this Mac's Messages app is using the separate agent Apple Account and Wideband has staged the private head-agent workspace.",
+              "From your personal iPhone, send the agent account a new iMessage now. Use an individual chat, not a group chat, and keep it within ten minutes of binding.",
+              "Select Bind my text below. Wideband checks that the sender matches your private owner phone and that there is exactly one eligible chat.",
+              "Wait while Wideband loads the listener, router, persistent head agent, and guarded outbox. If a service is blocked, open Login Items & Extensions and allow Wideband in the background.",
+              "Select Check connection. A reply on your phone is the next proof."
+            ],
+            "privacy": "Binding uses the owner phone already saved in your private build identity. This guide never asks for your Apple password, code, or message contents.",
+            "actions": [
+              {"action": "run_imessage_bind", "label": "Bind my text"},
+              {"action": "open_login_items", "label": "Open Login Items"}
+            ],
+            "confirm_label": "Check connection"
           }
         },
         {
@@ -433,7 +490,7 @@
           "actor": "client",
           "type": "guided",
           "action": "open_mail",
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Recovery channel",
             "intro": "Email needs to work before the other services can send verification or recovery messages.",
@@ -452,7 +509,7 @@
           "description": "Sign into GitHub, Anthropic, Tailscale, Vercel, and Supabase with the intended identities.",
           "actor": "client",
           "type": "guided",
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Connect your services",
             "intro": "Sign into each provider in the default browser so later setup can use the accounts you own.",
@@ -475,13 +532,34 @@
         {
           "id": "connect.tailscale-app",
           "title": "Install standalone Tailscale",
-          "description": "Install the standalone download—not the Mac App Store build—and sign in.",
+          "description": "Install the standalone download, approve its macOS network extension, and sign in. Then confirm it reconnects after restart in the client guide.",
           "actor": "operator",
           "type": "guided",
-          "command": "printf '#!/bin/sh\\nexec \"/Applications/Tailscale.app/Contents/MacOS/Tailscale\" \"$@\"\\n' | sudo tee /opt/homebrew/bin/tailscale >/dev/null && sudo chmod +x /opt/homebrew/bin/tailscale",
+          "command": "printf '#!/bin/sh\\nexec /usr/bin/env TAILSCALE_BE_CLI=1 \"/Applications/Tailscale.app/Contents/MacOS/Tailscale\" \"$@\"\\n' | sudo tee /opt/homebrew/bin/tailscale >/dev/null && sudo chmod +x /opt/homebrew/bin/tailscale",
           "requires_confirmation": true,
           "checks": ["P4-TSCLI"],
           "action": "open_tailscale_download"
+        },
+        {
+          "id": "connect.tailscale-startup",
+          "title": "Keep Tailscale connected after restart",
+          "description": "Enable Tailscale's native Start on Login setting and confirm the private connection returns after a Mac restart.",
+          "actor": "client",
+          "type": "guided",
+          "client_phase": "later",
+          "client_guide": {
+            "eyebrow": "Private phone connection",
+            "intro": "Your private phone link needs Tailscale to reconnect when you sign back into this Mac.",
+            "purpose": "The Mac must rejoin your tailnet after a restart so your phone can reach its private pages.",
+            "success": "After you restart and sign into the Mac, Tailscale shows Connected without manually launching the app or running a command.",
+            "instructions": [
+              "Open the standalone Tailscale app's Settings and turn on Start on Login.",
+              "Confirm Tailscale is connected, then restart the Mac and sign into your usual macOS user.",
+              "Wait for Tailscale to reconnect on its own. Check its menu bar status before manually launching the app or running tailscale up.",
+              "If it stays disconnected, leave this step open and tell Wideband; signing in to Tailscale once does not prove restart persistence."
+            ],
+            "confirm_label": "Tailscale reconnected after restart"
+          }
         },
         {
           "id": "connect.tailscale-https",
@@ -506,6 +584,7 @@
             "instructions": [
               "Open the URL on your phone while connected to Tailscale.",
               "Confirm the page opens with a real padlock and no certificate warning.",
+              "After the Mac restarts and Tailscale reconnects, open the same private HTTPS link on your phone again.",
               "Do not approve or bypass a browser security warning—tell Wideband instead."
             ],
             "confirm_label": "The secure URL works"
@@ -528,6 +607,14 @@
           "checks": ["P3-CLI"]
         },
         {
+          "id": "install.imessage-foundation",
+          "title": "Install the first-text foundation",
+          "description": "Install only Wideband Agent, imsg, tmux, and the guarded iMessage service templates before optional full-stack tools.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_imessage_install"
+        },
+        {
           "id": "install.github-cli",
           "title": "Authenticate the GitHub CLI",
           "description": "Authenticate gh and confirm it is the one identity named in the build profile.",
@@ -543,6 +630,15 @@
           "actor": "machine",
           "type": "automatic",
           "action": "run_install"
+        },
+        {
+          "id": "install.imessage-runtime",
+          "title": "Stage the private head-agent runtime",
+          "description": "Install imsg and stage the owner-bound workspace using the saved names and private build identity.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_imessage_init",
+          "checks": ["P6-IMSGOS", "P6-IMSG", "P6-IMSGCFG"]
         },
         {
           "id": "install.claude-layer",
@@ -611,6 +707,22 @@
       "eyebrow": "Project and working environment",
       "description": "Connect the operator's actual work, secrets, deployment surface, and recoverable knowledge.",
       "steps": [
+        {
+          "id": "project.first-goal",
+          "title": "Prepare the chosen first job",
+          "description": "After a real agent reply, prepare the selected research, website, or proposal starting point and register the website preview in Fleetdeck when selected.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_first_goal_apply"
+        },
+        {
+          "id": "project.phone-surface",
+          "title": "Install the local Fleetdeck phone view",
+          "description": "Install the customer portal after the first job is prepared; Tailscale sign-in, HTTPS, and Add to Home Screen remain owner proofs.",
+          "actor": "machine",
+          "type": "automatic",
+          "action": "run_phone_install"
+        },
         {
           "id": "project.clone-work-repo",
           "title": "Clone the work repository",
@@ -727,20 +839,25 @@
         },
         {
           "id": "prove.messaging",
-          "title": "Prove the messaging channel",
-          "description": "Send the operator a real test message from the machine and confirm receipt.",
+          "title": "Receive a real reply from your agent",
+          "description": "Send a new text from your phone and confirm the head agent replies in that chat.",
           "actor": "client",
           "type": "guided",
-          "client_phase": "handoff",
+          "checks": ["P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"],
+          "requires_confirmation": true,
+          "client_priority": 9,
+          "client_phase": "now",
           "client_guide": {
-            "eyebrow": "Final proof with Wideband",
-            "intro": "A real message proves the account, permission, and automation path together.",
+            "eyebrow": "First working moment",
+            "intro": "Text the agent from your phone and wait for its answer in the same iMessage chat.",
+            "purpose": "A phone reply proves the listener, binding, agent session, and guarded outbox worked together.",
+            "success": "You personally saw a reply from the agent account on your phone, and Wideband's live runtime checks pass.",
             "instructions": [
-              "Ask Wideband to send the named test message from this Mac.",
-              "Confirm it arrives on the intended device and from the intended account.",
-              "Reply once so both directions are proven."
+              "From your personal iPhone, send the agent account a fresh question such as 'What can you help me with today?'",
+              "Wait for the head agent's answer to arrive in that same chat on your phone.",
+              "Only confirm this step after you personally see the answer. If it does not arrive, leave this step open and use Setup tools."
             ],
-            "confirm_label": "The test message arrived"
+            "confirm_label": "I received the agent's reply"
           }
         },
         {

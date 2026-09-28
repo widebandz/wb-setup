@@ -28,7 +28,7 @@ silently ignored. Run it after every edit.
 | `root` | yes | Project root, written `~/…`. Warns if it does not exist. |
 | `owner` | | Owning PM project or client. |
 | `routing_in` | | Where work arrives from (`imsg-router`, a chat binding, a scheduled job). |
-| `routing_out` | | Where results leave to. |
+| `routing_out` | | Where results leave to. A handoff to another session on this machine is written `session:<name> — what is handed over`; anything else is treated as leaving the machine. |
 | `chat_binding` | | Bound chat identifier, e.g. `imsg:chat-21`. Never a phone number. |
 | `tools` | | Tools and skills this session is allowed to use. |
 | `approval` | | External side effects that require a human decision first. |
@@ -80,6 +80,28 @@ Body sections:
 - Non-obvious things a returning agent needs: ordering, a service that must
   be up first, a state file it owns.
 ```
+
+### Handoffs between sessions
+
+When two sessions share a boundary, name the counterpart in both cards:
+
+```
+# media
+routing_out:
+  - session:GHL — finished assets, handed over for upload and scheduling
+
+# GHL
+routing_in:
+  - session:media — finished assets to upload and schedule
+```
+
+`doctor` reports a `session:` reference that resolves to no card, and refuses one
+that points at itself. Two sessions that trade the same work back and forth is a
+real failure mode — it has happened in both directions on this fleet — and the
+fix is that each card says out loud which half is not its own.
+
+A `session:` route stays on this machine, so it deliberately does **not** count
+as an external route for the promotion signal below.
 
 ### `bootstrap` is allowlisted
 

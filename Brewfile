@@ -15,6 +15,11 @@ brew "sqlite"     # reading the Messages DB in verify.sh
 brew "ffmpeg"     # media encode for capture and render
 brew "ttyd"       # fleetdeck's chat surface shells out to this
 
+# The iMessage head agent needs a real Messages transport. Trust only this
+# reviewed formula from the upstream imsg tap, not every formula in that tap.
+# Upstream imsg supports macOS 14+; the rest of wb-setup still supports 13.
+brew "steipete/tap/imsg", trusted: true if OS.mac? && MacOS.version >= :sonoma
+
 # ── stack ───────────────────────────────────────────────────────────────────
 brew "supabase/tap/supabase"
 

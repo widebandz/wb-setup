@@ -292,7 +292,7 @@ explicitly. A loop that runs by hand and fails on schedule is this class
 until proven otherwise — check the plist's `EnvironmentVariables` before
 anything else.
 
-The reverse also bites: a script that hardcodes `/Users/studio` works on one
+The reverse also bites: a script that hardcodes `/Users/yourname` works on one
 machine and nowhere else. `selftest.sh` asserts no loop contains an identity
 literal.
 
@@ -512,6 +512,31 @@ from `argv[0]`, so a symlink to it crashes; `exec` on the real path does not.
 
 **Proof:** `tailscale status` answers.
 
+## Tailscale is stopped after a Mac restart
+
+**Class:** persistence. A successful sign-in or `tailscale up` proves only that
+the current session is connected. The standalone macOS app has a native login
+helper, but it must be enabled in the Tailscale app's **Start on Login** setting.
+
+Open Tailscale's Settings, turn on **Start on Login**, and connect. Restart the
+Mac, sign into the same macOS user, and wait for Tailscale to show **Connected**
+without manually launching it or running `tailscale up`. Then reopen the
+private Fleetdeck HTTPS link from the phone. A command-line check can confirm
+that `BackendState` is `Running` and `Self.Online` is `true`:
+
+```bash
+TAILSCALE_BE_CLI=1 /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json
+```
+
+If the app starts but remains disconnected, review its VPN On Demand rules; a
+rule set to **Never** can stop the connection. Use Tailscale's own login helper
+and VPN settings rather than installing a second Wideband LaunchAgent. On
+macOS, Tailscale runs for a signed-in user; availability before macOS login is
+not a supported persistence expectation. See Tailscale's documentation for
+[Start on Login](https://tailscale.com/docs/features/tailscale-system-policies),
+[VPN On Demand](https://tailscale.com/docs/features/client/ios-vpn-on-demand),
+and [macOS login behavior](https://tailscale.com/docs/how-to/run-unattended).
+
 ## P4-TSSERVE — no serve mappings
 
 **Class:** reachability. Phone surfaces are unreachable.
@@ -652,6 +677,89 @@ claude mcp list
 interactively-authenticated servers are absent in headless runs by design.
 
 **Proof:** `claude mcp list` shows `✔ Connected`.
+
+## P6-IMSGOS — this macOS version cannot run the iMessage transport
+
+**Class:** bare-machine assumption. The upstream `imsg` transport requires
+macOS 14 or newer. Wideband Setup can still build its general workstation on
+macOS 13, but it cannot claim that texting the head agent works there.
+
+**Fix:** use a Mac running macOS 14 or newer for the iMessage head runtime.
+
+**Proof:** `sw_vers -productVersion` begins with 14 or higher, and
+`~/bin/wb-imessage check` reports `"macos_supported": true`.
+
+## P6-IMSG — the Messages transport is missing
+
+**Class:** ledger-vs-object. A Messages Automation grant is not a listener.
+
+**Fix:** run the guided iMessage install again. Its Brewfile installs the upstream
+`steipete/tap/imsg` formula with trust scoped to that formula. If Homebrew
+refuses a third-party tap, review the exact formula and its source before
+approving it. The [upstream install guide](https://github.com/openclaw/imsg/blob/main/docs/install.md)
+names this package and its macOS requirement.
+
+**Proof:** `/opt/homebrew/bin/imsg --version` succeeds. No test message is
+sent by this check.
+
+## P6-IMSGCFG — the private head runtime is not configured
+
+**Class:** identity. The transport needs the owner's phone number, chosen OS
+and agent names, and a private workspace before it can bind a chat.
+
+**Fix:** complete the naming step in Wideband Setup and run its **Set up head
+agent** action. That action passes the private answers on stdin to
+`wb-imessage init`; addresses do not belong in shell history or support logs.
+An existing runtime identity is preserved by repair.
+
+**Proof:** `~/bin/wb-imessage check` reports `"configured": true`.
+
+## P6-IMSGCHAT — the owner chat is not bound or no longer matches
+
+**Class:** identity. The route accepts only a one-to-one iMessage chat with the
+configured owner number. It pins the chat ID, GUID, participant, and signed-in
+Messages account. A stale row ID or a group chat is refused.
+
+**Fix:** the client personally signs a **separate Apple Account** into
+Messages on the agent Mac, then sends a fresh text from their phone. In the
+guided installer, confirm that separate-account step and run **Bind my text
+chat** within ten minutes. A changed binding needs operator review; do not
+silently retarget outbound messages.
+
+**Proof:** `~/bin/wb-imessage check` reports `"target_verified": true`.
+The final human proof is a real reply visible on the client's phone.
+
+## P6-IMSGHEAD — the persistent head agent is absent
+
+**Class:** ledger-vs-object. The `wb-head` session must have a recognized live
+agent in its active pane; a bare shell is not a destination for text.
+
+**Fix:** check that Claude is installed and signed in, then inspect
+`tmux list-panes -s -t '=wb-head' -F '#{pane_current_command}'`. The keeper
+creates a missing session on its next interval. It leaves an unexpected live
+shell alone for operator review.
+
+**Proof:** `~/bin/wb-imessage check` reports `"head_session": true`.
+
+## P6-IMSGSERVICES — an iMessage runtime service is not loaded
+
+**Class:** ledger-vs-object. The watcher, router, head keeper, and guarded
+outbox are four separate LaunchAgents. Before an exact chat is bound, their
+plists stay in the private `~/.wideband/imessage/launchagents/` staging folder,
+outside `~/Library/LaunchAgents/`. A plist in the live folder can start at the
+next GUI login even if `launchctl bootstrap` was never run.
+
+**Fix:** run Wideband Setup's iMessage install action again
+(`bash ~/srv/wb-setup/install.sh --imessage-only --no-verify`). While unbound,
+it moves only this organization's four iMessage plists out of LaunchAgents and
+boots out their loaded jobs. After the client binds the exact owner chat, the
+same command installs and loads them. Leave unrelated LaunchAgents untouched. Inspect
+`launchctl list` for `imessage-watch`, `imessage-route`, `imessage-keep`, and
+`imessage-outbox` under this Mac's `com.$ORG` prefix. If a service is loaded
+but failing, inspect its private log under `~/.wideband/imessage/logs/`.
+
+**Proof:** `~/bin/wb-imessage check` reports `"services_loaded": true`,
+then a real text receives a reply on the phone and still does after restart.
 
 ## P7-CONF / P7-TPM — tmux config or plugins missing
 

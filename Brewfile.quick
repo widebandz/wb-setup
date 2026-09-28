@@ -1,0 +1,8 @@
+# The client path installs only what a first owner-to-agent iMessage needs.
+# Full developer tools, Fleetdeck, and optional app stacks remain in Brewfile.
+brew "python"
+brew "tmux"
+
+# The upstream transport requires macOS 14 or newer. Trust this reviewed
+# formula only, rather than every formula from its tap.
+brew "steipete/tap/imsg", trusted: true if OS.mac? && MacOS.version >= :sonoma

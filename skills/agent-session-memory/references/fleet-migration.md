@@ -54,10 +54,17 @@ be offline, and deleting it is how a fleet quietly forgets a client.
 
 - **live sessions with no identity card** — the fleet has grown past what is
   written down. Run `adopt`, then fill in the judgment fields.
-- **live sessions with no assigned role** — drafted but never decided on. Rows
-  marked `**` have been alive longer than a week, which usually means the
-  session has a de facto concern worth naming. This is a prompt, not an error:
-  a genuinely disposable session is allowed to stay unassigned forever.
+- **live sessions with no assigned role** — drafted but never decided on.
+  `>>` sends off this machine (a chat binding, or a route that is not a
+  `session:` handoff): that is a role on day one whatever its age, and the
+  unassigned default of *ask before anything leaves this machine* is exactly
+  backwards for it. `>>` is derived from `~/.imsg-chatbind.json`, so a session
+  bound this morning is flagged this morning. `**` has been alive over a week
+  and probably has a de facto concern. Neither is an error: a genuinely
+  disposable session may stay unassigned forever.
+- **handoff drift** — a `session:` route naming a session with no card. Cheap to
+  fix and worth fixing: an unnamed counterpart is how two sessions start trading
+  the same work.
 - **cards with no live session** — offline concerns. `tm-standard apply`
   recreates the session; `tm-memory resume` gets an agent back into it.
 - **sessions not running an agent** — recovery candidates. These are exactly the

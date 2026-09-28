@@ -15,17 +15,23 @@
 set -uo pipefail
 
 RUN_VERIFY=1
+IMESSAGE_ONLY=0
+PHONE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --no-verify) RUN_VERIFY=0 ;;
+    --imessage-only) IMESSAGE_ONLY=1 ;;
+    --phone-only) PHONE_ONLY=1 ;;
     --help|-h)
-      echo "usage: bash install.sh [--no-verify]"
+      echo "usage: bash install.sh [--no-verify] [--imessage-only|--phone-only]"
       exit 0 ;;
     *)
       echo "unknown option: $arg" >&2
       exit 2 ;;
   esac
 done
+[ "$IMESSAGE_ONLY" = "1" ] && [ "$PHONE_ONLY" = "1" ] \
+  && { echo "choose one scoped install mode" >&2; exit 2; }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VARS="$HOME/.sop-vars"
@@ -52,17 +58,25 @@ for v in ORG BRAND MARK GH_USER GIT_EMAIL OPERATOR_PHONE WORK_REPO GRAPH_PACK; d
   printf '%s' "$val" | grep -q '[[:cntrl:]]' \
     && { echo "  ✗ REFUSING: $v contains a control character in $VARS"; exit 1; }
 done
-for v in ORG BRAND GH_USER OPERATOR_PHONE; do
+required_vars="ORG BRAND GH_USER OPERATOR_PHONE"
+[ "$IMESSAGE_ONLY" = "1" ] && required_vars="ORG OPERATOR_PHONE"
+[ "$PHONE_ONLY" = "1" ] && required_vars="ORG BRAND"
+for v in $required_vars; do
   eval "val=\${$v:-}"
   [ -n "$val" ] || { echo "  ✗ REFUSING: $v is empty in $VARS"; exit 1; }
 done
 printf '%s' "$ORG" | grep -Eq '^[a-z][a-z0-9-]{0,30}$' \
   || { echo "  ✗ REFUSING: ORG must be a lowercase slug in $VARS"; exit 1; }
-printf '%s' "$OPERATOR_PHONE" | grep -Eq '^\+[1-9][0-9]{7,14}$' \
-  || { echo "  ✗ REFUSING: OPERATOR_PHONE must be E.164 in $VARS"; exit 1; }
+if [ "$PHONE_ONLY" != "1" ] || [ -n "${OPERATOR_PHONE:-}" ]; then
+  printf '%s' "${OPERATOR_PHONE:-}" | grep -Eq '^\+[1-9][0-9]{7,14}$' \
+    || { echo "  ✗ REFUSING: OPERATOR_PHONE must be E.164 in $VARS"; exit 1; }
+fi
 
 miss=0
-for b in jq tmux git; do
+required_bins="jq tmux git"
+[ "$IMESSAGE_ONLY" = "1" ] && required_bins="python3 tmux"
+[ "$PHONE_ONLY" = "1" ] && required_bins="python3 tmux"
+for b in $required_bins; do
   command -v "$b" >/dev/null 2>&1 || { echo "  ✗ missing: $b   (brew install $b)"; miss=1; }
 done
 [ "$miss" = 0 ] || { echo; echo "install the missing tools, then re-run."; exit 1; }
@@ -141,6 +155,385 @@ render() {
   rm -f "$tmp"
 }
 
+install_imessage_runtime() {
+  # LaunchAgents/ is loaded at GUI login, even without an explicit bootstrap.
+  # Keep unbound templates in the private runtime directory until the named
+  # setup action has created an exact owner chat binding.
+  echo
+  echo "iMessage head runtime"
+  place "$HERE/imessage/runtime.py" "$HOME/bin/wb-imessage" 755
+  local stage="$HOME/.wideband/imessage/launchagents"
+  local disabled="$HOME/.wideband/imessage/disabled-launchagents"
+  local cfg="$HOME/.wideband/imessage/config.json" job l err reason="" failures=0 backup="" snapshot="" disabled_jobs=""
+  mkdir -p "$stage" "$disabled" || return 1
+  chmod 700 "$HOME/.wideband/imessage" "$stage" "$disabled" || return 1
+  for job in watch route keep outbox; do
+    l="$PREFIX.imessage-$job"
+    render "$HERE/imessage/plists/$job.plist.tmpl" "$stage/$l.plist"
+    [ -s "$stage/$l.plist" ] || { echo "  ✗ could not stage $l"; return 1; }
+  done
+
+  if [ "${NO_IMESSAGE:-0}" = "1" ]; then
+    reason="runtime activation disabled (NO_IMESSAGE=1)"
+  elif [ ! -x "$HOME/bin/wb-imessage" ] || ! command -v imsg >/dev/null 2>&1; then
+    reason="imsg unavailable; install steipete/tap/imsg before binding"
+  elif [ "$(sw_vers -productVersion | cut -d. -f1)" -lt 14 ]; then
+    reason="iMessage runtime requires macOS 14 or newer"
+  elif [ ! -f "$cfg" ] \
+       || ! "$PY" - "$cfg" <<'PY' >/dev/null 2>&1
+import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8"))
+    b = value["binding"]
+    assert value["schema_version"] == 1
+    assert isinstance(b["chat_id"], int) and b["chat_id"] > 0
+    assert all(isinstance(b[key], str) and b[key] for key in ("chat_guid", "account_login"))
+except (OSError, ValueError, KeyError, TypeError, AssertionError):
+    sys.exit(1)
+PY
+  then
+    reason="waiting for separate Apple Account and exact owner chat binding"
+  fi
+  if [ -z "$reason" ]; then
+    # A structurally valid saved binding is not enough. Confirm the pinned
+    # owner-only chat still matches Messages using the same FDA principal as
+    # the jobs before placing any plist in the login-loaded directory.
+    snapshot="$("$AGENT_EXECUTABLE" run-background-task "$PY" "$HOME/bin/wb-imessage" check 2>/dev/null || true)"
+    if ! printf '%s' "$snapshot" | "$PY" -c '
+import json, sys
+try:
+    value = json.load(sys.stdin)
+    assert value.get("target_verified") is True
+except (ValueError, AssertionError):
+    sys.exit(1)
+' >/dev/null 2>&1; then
+      reason="saved binding does not match the live owner chat under Wideband Agent"
+    fi
+  fi
+
+  if [ -n "$reason" ]; then
+    echo "  ~ $reason; LaunchAgents remain inactive"
+    # A prior release placed these plists in the live directory before binding.
+    # Remove only this organization's four labels so a reboot cannot start them.
+    for job in keep route watch outbox; do
+      l="$PREFIX.imessage-$job"
+      if [ -e "$LA/$l.plist" ] || [ -L "$LA/$l.plist" ]; then
+        if [ -z "$backup" ]; then
+          backup="$disabled/$(date '+%Y%m%d-%H%M%S')-$$"
+          mkdir -p "$backup" || return 1
+        fi
+        if mv "$LA/$l.plist" "$backup/$l.plist"; then
+          echo "  - $l.plist (moved out of LaunchAgents)"
+        else
+          echo "  ! could not move $l.plist out of LaunchAgents"
+          failures=1
+        fi
+      fi
+      if launchctl print "gui/$UID_N/$l" >/dev/null 2>&1; then
+        launchctl bootout "gui/$UID_N/$l" 2>/dev/null || true
+        for _ in $(seq 20); do
+          launchctl print "gui/$UID_N/$l" >/dev/null 2>&1 || break
+          sleep 0.3
+        done
+        if launchctl print "gui/$UID_N/$l" >/dev/null 2>&1; then
+          echo "  ! $l remains loaded; inspect it before continuing"
+          failures=1
+        fi
+      fi
+    done
+    return "$failures"
+  fi
+
+  mkdir -p "$HOME/.wideband/imessage/logs" || return 1
+  chmod 700 "$HOME/.wideband/imessage/logs" || return 1
+  # A previous stop can leave launchd's persistent disabled bit set even when
+  # no job is loaded. In that state bootstrap fails until the exact label is
+  # enabled again. Clear it only after the owner chat has been verified.
+  disabled_jobs="$(launchctl print-disabled "gui/$UID_N" 2>/dev/null || true)"
+  for job in keep route watch outbox; do
+      l="$PREFIX.imessage-$job"
+      if [ -L "$LA/$l.plist" ] || { [ -e "$LA/$l.plist" ] && [ ! -f "$LA/$l.plist" ]; }; then
+        echo "  ! refusing unexpected LaunchAgent path: $LA/$l.plist"
+        failures=1
+        continue
+      fi
+      place "$stage/$l.plist" "$LA/$l.plist" || { failures=1; continue; }
+      if launchctl print "gui/$UID_N/$l" >/dev/null 2>&1; then
+        launchctl bootout "gui/$UID_N/$l" 2>/dev/null || true
+        for _ in $(seq 20); do
+          launchctl print "gui/$UID_N/$l" >/dev/null 2>&1 || break
+          sleep 0.3
+        done
+        if launchctl print "gui/$UID_N/$l" >/dev/null 2>&1; then
+          echo "  ! $l could not be stopped for reload"
+          failures=1
+          continue
+        fi
+      fi
+      if grep -Fq "\"$l\" => disabled" <<< "$disabled_jobs"; then
+        if ! err="$(launchctl enable "gui/$UID_N/$l" 2>&1)"; then
+          echo "  ! $l could not be re-enabled: ${err:-unknown}"
+          failures=1
+          continue
+        fi
+      fi
+      if err="$(launchctl bootstrap "gui/$UID_N" "$LA/$l.plist" 2>&1)"; then
+        echo "  ✓ $l"
+      else
+        echo "  ! $l FAILED to load: ${err:-unknown}"
+        failures=1
+      fi
+  done
+  return "$failures"
+}
+
+install_phone_portal() {
+  # This step follows the first successful text. It installs only Fleetdeck's
+  # customer portal; the writable chat/ttyd/adopt surfaces stay disabled.
+  local fd="$HOME/srv/fleetdeck" state="$HOME/.wideband/setup/state.json"
+  local bundle="$HERE/vendor/fleetdeck" stage="" portal_port prefix base portal_values
+  local upgrade_result="" upgrade_backup="" portal_upgraded=0
+  local portal_pid_before="" portal_pid_after=""
+  # Bash functions see their caller's locals. Every failure after a managed
+  # source upgrade comes through here so the old portal and manifest return.
+  phone_portal_fail() {
+    local reason="$1" label="${prefix:-$PREFIX}.fleetdeck-portal"
+    echo "  ✗ $reason"
+    if [ "$portal_upgraded" = "1" ]; then
+      if [ -n "$upgrade_backup" ] \
+         && "$PY" "$HERE/packaging/bundle-fleetdeck.py" restore \
+              "$bundle" "$fd" "$upgrade_backup" >/dev/null; then
+        echo "  - previous Fleetdeck portal source restored; client data preserved"
+        if launchctl print "gui/$UID_N/$label" >/dev/null 2>&1; then
+          launchctl kickstart -k "gui/$UID_N/$label" >/dev/null 2>&1 \
+            || echo "  ! previous portal could not restart; inspect its LaunchAgent"
+        elif [ -f "$LA/$label.plist" ] && [ ! -L "$LA/$label.plist" ]; then
+          launchctl bootstrap "gui/$UID_N" "$LA/$label.plist" >/dev/null 2>&1 \
+            || echo "  ! previous portal could not reload; inspect its LaunchAgent"
+        fi
+      else
+        echo "  ! portal source rollback needs review; previous backup was kept"
+      fi
+    fi
+    return 1
+  }
+  echo
+  echo "Fleetdeck phone portal"
+  mkdir -p "$HOME/.wideband/setup"
+  chmod 700 "$HOME/.wideband/setup"
+  umask 077
+  if ! "$PY" - "$state" <<'PY' >/dev/null 2>&1
+import json, os, stat, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, encoding="utf-8") as f:
+        info = os.fstat(f.fileno())
+        assert stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+        assert not info.st_mode & 0o077 and info.st_size <= 64 * 1024
+        meta = json.load(f)["metadata"]
+        assert all(isinstance(meta.get(k), str) and meta[k] for k in ("os_name", "agent_name", "first_goal"))
+except (OSError, ValueError, KeyError, TypeError, AssertionError):
+    sys.exit(1)
+PY
+  then
+    echo "  ✗ finish OS name, agent name and first goal before installing the phone portal"
+    return 1
+  fi
+  if ! "$PY" "$HERE/packaging/phone-access-token.py" "$HOME"; then
+    echo "  ✗ private phone access could not be prepared"
+    return 1
+  fi
+
+  if [ -L "$fd" ]; then
+    echo "  ✗ $fd is a symlink; left untouched"
+    return 1
+  elif [ -e "$fd/.git" ]; then
+    echo "  = $fd (existing repository preserved)"
+  elif [ -f "$fd/.wideband-fleetdeck-bundle.json" ]; then
+    if ! "$PY" "$HERE/packaging/bundle-fleetdeck.py" verify-managed "$fd"; then
+      echo "  ✗ existing bundled Fleetdeck source was edited or damaged; left untouched"
+      return 1
+    fi
+    if [ -e "$bundle" ] || [ -L "$bundle" ]; then
+      if ! upgrade_result="$("$PY" "$HERE/packaging/bundle-fleetdeck.py" upgrade "$bundle" "$fd")"; then
+        echo "  ✗ packaged Fleetdeck source cannot safely upgrade; client data left untouched"
+        return 1
+      fi
+      if [ "${upgrade_result%%$'\n'*}" = "upgraded" ] \
+         && [ "$upgrade_result" != "${upgrade_result#*$'\n'}" ]; then
+        upgrade_backup="${upgrade_result#*$'\n'}"
+        portal_upgraded=1
+        echo "  + generated Fleetdeck customer portal upgraded; client data preserved"
+      elif [ "$upgrade_result" != "current" ]; then
+        echo "  ✗ unexpected Fleetdeck upgrade result"
+        return 1
+      fi
+    fi
+    echo "  = $fd (existing bundled source and data preserved)"
+  elif [ -e "$fd" ]; then
+    echo "  ✗ $fd exists but is not a Fleetdeck checkout; left untouched"
+    return 1
+  else
+    mkdir -p "$HOME/srv" || return 1
+    stage="$(mktemp -d "$HOME/srv/.fleetdeck-stage.XXXXXX")" || return 1
+    if [ -e "$bundle" ] || [ -L "$bundle" ]; then
+      if [ ! -d "$bundle" ] || [ -L "$bundle" ] \
+         || ! "$PY" "$HERE/packaging/bundle-fleetdeck.py" verify "$bundle"; then
+        echo "  ✗ packaged Fleetdeck source failed verification"
+        rm -rf "$stage"
+        return 1
+      fi
+      if ! /usr/bin/ditto "$bundle" "$stage" \
+         || ! "$PY" "$HERE/packaging/bundle-fleetdeck.py" verify "$stage"; then
+        echo "  ✗ could not stage the packaged Fleetdeck source"
+        rm -rf "$stage"
+        return 1
+      fi
+      echo "  + Fleetdeck staged from the setup app"
+    else
+      if ! command -v git >/dev/null 2>&1; then
+        echo "  ✗ Fleetdeck was not bundled and Git is unavailable for the public-clone fallback"
+        rm -rf "$stage"
+        return 1
+      fi
+      if ! git clone -q --depth 1 https://github.com/widebandz/fleetdeck.git "$stage" 2>/dev/null; then
+        echo "  ✗ could not fetch Fleetdeck"
+        rm -rf "$stage"
+        return 1
+      fi
+      echo "  + Fleetdeck staged from the public repository"
+    fi
+    if [ ! -f "$stage/install.sh" ] || ! grep -q 'CUSTOMER_MODE' "$stage/install.sh"; then
+      echo "  ✗ staged Fleetdeck source lacks the customer-mode portal guard"
+      rm -rf "$stage"
+      return 1
+    fi
+    if [ -e "$fd" ] || [ -L "$fd" ] || ! mv "$stage" "$fd"; then
+      echo "  ✗ $fd appeared while Fleetdeck was staged; left untouched"
+      rm -rf "$stage"
+      return 1
+    fi
+    echo "  + $fd"
+  fi
+  if ! grep -q 'CUSTOMER_MODE' "$fd/install.sh"; then
+    phone_portal_fail "Fleetdeck source lacks customer-mode portal guard; update it before continuing"
+    return 1
+  fi
+  if [ ! -f "$fd/config.json" ]; then
+    "$PY" - "$fd/config.example.json" "$fd/config.json" "$BRAND" "$PREFIX" <<'PY' || { phone_portal_fail "Fleetdeck configuration could not be prepared"; return 1; }
+import json, os, sys
+source, dest, brand, prefix = sys.argv[1:]
+with open(source, encoding="utf-8") as f:
+    config = json.load(f)
+config.update(brand=brand, label_prefix=prefix, machine="")
+try:
+    fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+except FileExistsError:
+    pass
+else:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+        f.write("\n")
+PY
+  else
+    echo "  = $fd/config.json (operator-owned; preserved)"
+  fi
+
+  if ! "$PY" - "$fd/config.json" "$state" <<'PY' >/dev/null 2>&1
+import json, sys
+config = json.load(open(sys.argv[1], encoding="utf-8"))
+meta = json.load(open(sys.argv[2], encoding="utf-8"))["metadata"]
+onboarding = config.get("onboarding")
+if onboarding is not None:
+    assert isinstance(onboarding, dict)
+    assert all(onboarding.get(key) == meta.get(key) for key in ("os_name", "agent_name", "first_goal"))
+PY
+  then
+    phone_portal_fail "existing Fleetdeck onboarding identity conflicts with this setup; left untouched"
+    return 1
+  fi
+
+  if ! portal_values="$("$PY" - "$fd/config.json" <<'PY'
+import json, re, sys
+config = json.load(open(sys.argv[1], encoding="utf-8"))
+prefix = config.get("label_prefix", "com.example")
+port = config.get("ports", {}).get("portal", 8790)
+assert isinstance(prefix, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{1,99}", prefix) and ".." not in prefix
+assert type(port) is int and 1024 <= port <= 65535
+print(prefix, port)
+PY
+)"; then
+    phone_portal_fail "Fleetdeck portal label or port is invalid"
+    return 1
+  fi
+  read -r prefix portal_port <<<"$portal_values"
+  if [ "$portal_upgraded" = "1" ]; then
+    portal_pid_before="$(launchctl print "gui/$UID_N/$prefix.fleetdeck-portal" 2>/dev/null \
+      | awk '$1 == "pid" && $2 == "=" { print $3; exit }')"
+  fi
+  if ! ( cd "$fd" && TAILSCALE_BE_CLI=1 ./install.sh portal ) \
+      >"$HOME/.wideband/setup/fleetdeck-portal-install.log" 2>&1; then
+    phone_portal_fail "Fleetdeck portal installation failed; see fleetdeck-portal-install.log"
+    return 1
+  fi
+  if [ "$portal_upgraded" = "1" ] \
+     && launchctl print "gui/$UID_N/$prefix.fleetdeck-portal" >/dev/null 2>&1; then
+    portal_pid_after="$(launchctl print "gui/$UID_N/$prefix.fleetdeck-portal" 2>/dev/null \
+      | awk '$1 == "pid" && $2 == "=" { print $3; exit }')"
+    if [ -z "$portal_pid_after" ] || [ "$portal_pid_before" = "$portal_pid_after" ]; then
+      launchctl kickstart -k "gui/$UID_N/$prefix.fleetdeck-portal" \
+        || { phone_portal_fail "upgraded Fleetdeck portal could not restart"; return 1; }
+    fi
+  fi
+  # Fleetdeck seeds services.json during its install. Reconcile the first goal
+  # afterward if its tile is absent. Keep an already healthy first site and
+  # curated services.json untouched during a portal-only source upgrade.
+  if "$PY" "$HERE/first_goal/runner.py" check >/dev/null 2>&1 \
+     && "$PY" - "$fd/services.json" "$state" "$HOME/.wideband/first-goal/status.json" <<'PY' >/dev/null 2>&1
+import json, sys
+services = json.load(open(sys.argv[1], encoding="utf-8"))
+metadata = json.load(open(sys.argv[2], encoding="utf-8"))["metadata"]
+goal = metadata["first_goal"]
+if goal == "website":
+    status = json.load(open(sys.argv[3], encoding="utf-8"))
+    assert any(isinstance(item, dict) and item.get("id") == "first-project"
+               and item.get("source") == "wideband-first-goal"
+               and item.get("port") == status.get("port")
+               for item in services["services"])
+PY
+  then
+    echo "  = existing first project and Fleetdeck registration preserved"
+  else
+    if ! "$PY" "$HERE/first_goal/runner.py" apply \
+         >"$HOME/.wideband/setup/first-goal-phone.log" 2>&1; then
+      phone_portal_fail "first project could not register with Fleetdeck; see first-goal-phone.log"
+      return 1
+    fi
+  fi
+  if ! launchctl print "gui/$UID_N/$prefix.fleetdeck-portal" >/dev/null 2>&1; then
+    phone_portal_fail "Fleetdeck portal LaunchAgent is not loaded"
+    return 1
+  fi
+  for base in chat adopt skin; do
+    if launchctl print "gui/$UID_N/$prefix.fleetdeck-$base" >/dev/null 2>&1 \
+       || [ -f "$LA/$prefix.fleetdeck-$base.plist" ]; then
+      phone_portal_fail "writable or operator Fleetdeck surface remains active: $base"
+      return 1
+    fi
+  done
+  if ! "$PY" - "$portal_port" <<'PY' >/dev/null 2>&1
+import sys, urllib.request
+with urllib.request.urlopen(f"http://127.0.0.1:{int(sys.argv[1])}/healthz", timeout=3) as r:
+    assert r.status == 200 and r.read(32).strip() == b"ok"
+PY
+  then
+    phone_portal_fail "Fleetdeck portal did not answer on loopback"
+    return 1
+  fi
+  echo "  ✓ Fleetdeck customer portal answers on loopback"
+  echo "    verify an HTTPS front such as Tailscale Serve before presenting a phone link"
+}
+
 # The packaged installer places this app before install.sh runs. Keep the
 # original curl/bootstrap path working too: by this point Homebrew has supplied
 # Command Line Tools, so a missing helper can be built locally without fetching
@@ -194,10 +587,24 @@ ensure_wideband_agent() {
   echo "  + $HOME/Applications/Wideband Agent.app (built locally)"
 }
 
+if [ "$PHONE_ONLY" = "1" ]; then
+  install_phone_portal
+  exit $?
+fi
+
 ensure_wideband_agent || {
   echo "  ✗ could not install the branded Wideband background helper"
   exit 1
 }
+
+if [ "$IMESSAGE_ONLY" = "1" ]; then
+  install_imessage_runtime || exit 1
+  if [ "$RUN_VERIFY" = "0" ]; then
+    echo "  iMessage runtime reconciliation finished; verification follows in the guide"
+    exit 0
+  fi
+  exec bash "$HERE/verify.sh" --imessage-only
+fi
 
 # ── the Claude layer ─────────────────────────────────────────────────────────
 echo "claude layer"
@@ -321,6 +728,9 @@ for src in "$HERE"/loops/*; do
     echo "  ! $l FAILED to load: ${err:-unknown}"
   fi
 done
+
+# ── one-owner iMessage head runtime ─────────────────────────────────────────
+install_imessage_runtime || exit 1
 
 # ── fleetdeck ────────────────────────────────────────────────────────────────
 # Every value it needs is already in ~/.sop-vars, so there is nothing here for

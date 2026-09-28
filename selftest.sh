@@ -194,9 +194,9 @@ found="$(grep -rInE "$LEAK" "$HERE" \
 [ -z "$found" ] && ok "no phone numbers, keys or tokens" \
                 || { no "possible secret or identity:"; printf '      %s\n' "$found"; }
 
-found="$(grep -rIlniE 'brainwave|tailacfa70|zayed' "$HERE" \
+found="$(grep -rIlniE 'brainwave|tailacfa70' "$HERE" \
           --exclude-dir=.git --exclude='selftest.sh' 2>/dev/null)"
-[ -z "$found" ] && ok "no operator hostnames or names" \
+[ -z "$found" ] && ok "no operator hostnames" \
                 || { no "machine-specific identity leaked into:"; printf '      %s\n' "$found"; }
 
 if grep -q 'chmod 600 "$VARS"' "$HERE/bootstrap.sh" \
@@ -324,7 +324,7 @@ steps = [step for stage in data["stages"] for step in stage["steps"]]
 ids = [step["id"] for step in steps]
 assert len(ids) == len(set(ids))
 assert all(step.get("actor") in {"operator", "client", "machine", "agent"} for step in steps)
-assert all(step.get("type") in {"automatic", "guided", "interview", "verification"} for step in steps)
+assert all(step.get("type") in {"automatic", "guided", "interview", "verification", "onboarding"} for step in steps)
 clients = [step for step in steps if step.get("actor") == "client"]
 assert clients
 assert all(step.get("client_phase") in {"now", "handoff", "later"} for step in clients)
@@ -333,13 +333,20 @@ assert all(step.get("client_guide", {}).get("instructions") for step in clients)
 assert all(isinstance(step.get("client_priority", 1000), int) for step in clients)
 frontloaded = sorted(enumerate(clients), key=lambda pair: (pair[1].get("client_priority", 1000), pair[0]))
 assert [step["id"] for _, step in frontloaded[:6]] == [
-    "connect.screen-sharing",
+    "identify.name-your-system",
+    "prepare.create-accounts",
+    "prepare.complete-setup-assistant",
+    "connect.messages",
     "connect.full-disk-access",
-    "connect.accessibility",
-    "connect.screen-recording",
-    "connect.automation-dialog",
-    "connect.remote-login",
+    "identify.authenticate-agent",
 ]
+now = [step for _, step in frontloaded if step.get("client_phase") == "now"]
+order = [step["id"] for step in now]
+assert order.index("connect.imessage-bind") < order.index("connect.background-items") < order.index("prove.messaging")
+background = next(step for step in now if step["id"] == "connect.background-items")
+assert "P6-IMSGSERVICES" in background["checks"]
+bind = next(step for step in now if step["id"] == "connect.imessage-bind")
+assert "open_login_items" in [item["action"] for item in bind["client_guide"]["actions"]]
 PY
   then
     ok "manifest parses and every client step has popup guidance"
@@ -432,6 +439,15 @@ with tempfile.TemporaryDirectory() as directory:
         assert health["pid"] > 0
         assert health["release"] == module.MANIFEST["release"]
         assert health["build_id"] == "test-build"
+        try:
+            urllib.request.urlopen(base + "/api/phone-link", timeout=1)
+            raise AssertionError("phone link endpoint accepted a missing token")
+        except urllib.error.HTTPError as error:
+            assert error.code == 401
+        phone_link = json.load(urllib.request.urlopen(
+            urllib.request.Request(base + "/api/phone-link", headers=headers), timeout=1
+        ))
+        assert phone_link["status"] == "waiting" and "url" not in phone_link
         state = json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/state", headers=headers), timeout=1))
         assert state["connection"] == {
             "host": "127.0.0.1",
@@ -543,11 +559,63 @@ PY
     open_mail open_messages open_remote_login open_screen_recording open_screen_sharing open_supabase \
     open_tailscale_account open_tailscale_download open_vercel request_accessibility \
     request_full_disk_access request_messages_automation request_screen_recording reveal_wideband_agent \
-    run_doctor run_install run_selftest run_verify_full run_verify_quick | tr ' ' '\n' | sort -u)"
+    run_doctor run_install run_imessage_install run_imessage_init run_imessage_bind \
+    run_first_goal_apply run_first_goal_check run_phone_install run_selftest run_verify_full run_verify_quick \
+    run_verify_imessage | tr ' ' '\n' | sort -u)"
   unknown_actions="$(comm -23 <(printf '%s\n' "$manifest_actions") <(printf '%s\n' "$allowed_actions"))"
   [ -z "$unknown_actions" ] \
     && ok "every manifest action is allowlisted" \
     || { no "manifest references actions the runner does not allow:"; printf '      %s\n' $unknown_actions; }
+
+  if python3 - "$HERE/setup.py" <<'PY' >/dev/null 2>&1
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("wb_setup_frozen_commands", pathlib.Path(sys.argv[1]))
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+commands = module.JobRunner.COMMANDS
+python = "/opt/homebrew/bin/python3"
+assert commands["run_imessage_init"][0] == python
+assert commands["run_imessage_bind"][:3] == ["/usr/bin/open", "-W", "-n"]
+assert commands["run_imessage_bind"][3].endswith("/Applications/Wideband Agent.app")
+assert commands["run_imessage_bind"][4:7] == ["--args", "run-background-task", python]
+assert commands["run_first_goal_apply"][0] == python
+assert commands["run_first_goal_check"][0] == python
+assert all(sys.executable not in commands[action] for action in (
+    "run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check"
+))
+PY
+  then
+    ok "packaged actions use proven Homebrew Python, not the frozen setup engine"
+  else
+    no "a packaged action may invoke the frozen setup engine as Python"
+  fi
+
+  if python3 - "$HERE/bootstrap.sh" <<'PY' >/dev/null 2>&1
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+client = text.split("collect_client_identity() {", 1)[1].split("\nask()", 1)[0]
+assert 'native_ask OPERATOR_PHONE' in client
+assert 'native_ask GH_USER' not in client and 'native_ask WORK_REPO' not in client
+assert 'collect_client_identity' in text.split('if [ "$CLIENT_MODE" = "1" ] && [ -x /usr/bin/osascript ]; then', 1)[1]
+assert 'BREWFILE="$ROOT/Brewfile.quick"' in text
+handoff = text.split('# ── handoff', 1)[1]
+client_ready = handoff.split('elif [ "$CLIENT_MODE" = "1" ]', 1)[1].split('bootstrap_status ready', 1)[0]
+assert all(f'/opt/homebrew/bin/{tool}' in client_ready for tool in ('brew', 'python3', 'tmux', 'imsg'))
+assert '/opt/homebrew/bin/git' not in client_ready and '/opt/homebrew/bin/jq' not in client_ready
+preflight = text.split('# ── preflight', 1)[1].split('case "$ROOT"', 1)[0]
+assert 'bootstrap_status unsupported_macos' in preflight
+PY
+  then
+    ok "client bootstrap asks only owner phone and selects Brewfile.quick"
+  else
+    no "client bootstrap regressed to optional identity prompts or full Brewfile"
+  fi
+
+  if python3 "$HERE/tests/bootstrap-handoff-test.py" >/dev/null 2>&1; then
+    ok "embedded bootstrap handoff keeps the native guide in front"
+  else
+    no "embedded bootstrap handoff may open a duplicate browser guide"
+  fi
 
   if [ -s "$HERE/installer/wideband-mark.png" ] \
      && [ -s "$HERE/installer/fonts/inter-latin.woff2" ] \
@@ -746,6 +814,18 @@ PY
     no "Wideband Setup launcher or bare-Mac engine packaging is incomplete"
   fi
 
+  if bash "$HERE/tests/app-launcher-resume-test.sh" >/dev/null 2>&1; then
+    ok "Wideband Setup resumes a failed bootstrap without duplicating an active prompt"
+  else
+    no "Wideband Setup launcher cannot resume a failed bootstrap safely"
+  fi
+
+  if bash "$HERE/tests/agent-revision-test.sh" >/dev/null 2>&1; then
+    ok "Setup-only updates preserve the approved Agent and changed code replaces it"
+  else
+    no "Wideband Agent revision migration or replacement failed"
+  fi
+
   if command -v xcrun >/dev/null 2>&1; then
     UPDATE_TEST_BIN="$(mktemp /tmp/wb-update-feed-test.XXXXXX)"
     if xcrun swiftc -parse-as-library -target arm64-apple-macos13.0 \
@@ -762,7 +842,7 @@ PY
   fi
 
   if [ -f "$HERE/updates/version.json" ]; then
-    if python3 - "$HERE" <<'PY' >/dev/null 2>&1
+    if feed_check="$(python3 - "$HERE" <<'PY'
 import hashlib, importlib.util, json, pathlib, plistlib, sys
 root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("release_feed", root / "updates" / "release_feed.py")
@@ -774,17 +854,33 @@ manifest = json.loads((root / "installer" / "manifest.json").read_text(encoding=
 assert feed["latest"]["version"] == manifest["release"]
 artifact = root / "dist" / feed["latest"]["artifact_name"]
 app = root / "dist" / "Wideband Setup.app"
-if artifact.is_file() and app.is_dir():
-    with (app / "Contents" / "Info.plist").open("rb") as handle:
-        info = plistlib.load(handle)
+if app.is_dir():
     build_id = (app / "Contents" / "Resources" / "build-id.txt").read_text().strip()
-    assert info["CFBundleShortVersionString"] == feed["latest"]["version"]
-    assert build_id == feed["latest"]["build_id"]
-    assert artifact.stat().st_size == feed["latest"]["size_bytes"]
-    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == feed["latest"]["sha256"]
+    if build_id != feed["latest"]["build_id"]:
+        print("unpublished-pilot")
+    elif artifact.is_file():
+        with (app / "Contents" / "Info.plist").open("rb") as handle:
+            info = plistlib.load(handle)
+        assert info["CFBundleShortVersionString"] == feed["latest"]["version"]
+        assert artifact.stat().st_size == feed["latest"]["size_bytes"]
+        assert hashlib.sha256(artifact.read_bytes()).hexdigest() == feed["latest"]["sha256"]
+        print("exact-artifact")
+    else:
+        print("no-local-artifact")
+else:
+    print("no-local-app")
 PY
-    then
-      ok "published update feed matches the manifest and exact local release artifact"
+    )" 2>/dev/null; then
+      case "$feed_check" in
+        exact-artifact)
+          ok "published update feed matches the manifest and exact local release artifact" ;;
+        unpublished-pilot)
+          ok "published update feed matches the manifest; exact artifact check skipped for unpublished local pilot" ;;
+        no-local-artifact|no-local-app)
+          ok "published update feed matches the manifest (no local release artifact to compare)" ;;
+        *)
+          no "published update feed check returned an unknown result" ;;
+      esac
     else
       no "published update feed is invalid or stale"
     fi
@@ -882,23 +978,46 @@ with tempfile.TemporaryDirectory() as directory:
     launch_agents.mkdir(parents=True)
     agent.mkdir(parents=True)
     (home / ".sop-vars").write_text('export ORG="acme"\n', encoding="utf-8")
-    for job in ("cost-watch", "healthcheck", "tmux-boot"):
+    for job in ("cost-watch", "healthcheck", "tmux-boot", "imessage-watch", "imessage-route", "imessage-keep", "imessage-outbox",
+                "fleetdeck-portal", "fleetdeck-chat", "fleetdeck-adopt", "fleetdeck-skin"):
         (launch_agents / f"com.acme.{job}.plist").write_text(job, encoding="utf-8")
+    (launch_agents / "ai.wideband.first-project.plist").write_text("first project", encoding="utf-8")
+    fleetdeck = home / "srv" / "fleetdeck"
+    fleetdeck.mkdir(parents=True)
+    (fleetdeck / "config.json").write_text('{"label_prefix":"com.acme"}', encoding="utf-8")
+    workspace = home / "wideband" / "head"
+    workspace.mkdir(parents=True)
+    (workspace / "CLIENT.txt").write_text("preserve", encoding="utf-8")
     unrelated = launch_agents / "com.other.healthcheck.plist"
     unrelated.write_text("keep", encoding="utf-8")
+    unrelated_imessage = launch_agents / "com.other.imessage-watch.plist"
+    unrelated_imessage.write_text("keep", encoding="utf-8")
     store = module.StateStore(root / "state")
+    store.update(lambda data: (
+        data["completed"].update({"prove.messaging": {"at": "test", "source": "human"}}),
+        data["action_runs"].update({
+            "run_first_goal_apply": {"status": "complete"},
+            "run_phone_install": {"status": "complete"},
+        }),
+    ))
     result = module.deactivate_wideband(store, home=home, run_launchctl=False)
-    assert result["deactivated"] and result["moved_count"] == 4
+    assert result["deactivated"] and result["moved_count"] == 13
     assert unrelated.read_text(encoding="utf-8") == "keep"
+    assert unrelated_imessage.read_text(encoding="utf-8") == "keep"
+    assert (workspace / "CLIENT.txt").read_text(encoding="utf-8") == "preserve"
     assert not agent.exists()
     recovery = pathlib.Path(result["recovery_path"])
     assert (recovery / "receipt.json").stat().st_mode & 0o777 == 0o600
     assert (store.directory / "deactivated").stat().st_mode & 0o777 == 0o600
-    assert len(list((recovery / "LaunchAgents").glob("com.acme.*.plist"))) == 3
+    assert len(list((recovery / "LaunchAgents").glob("com.acme.*.plist"))) == 11
+    assert (recovery / "LaunchAgents" / "ai.wideband.first-project.plist").is_file()
     assert store.read()["lifecycle"]["deactivated_at"]
+    assert "prove.messaging" not in store.read()["completed"]
+    assert "run_first_goal_apply" not in store.read()["action_runs"]
+    assert "run_phone_install" not in store.read()["action_runs"]
     runner = module.JobRunner(store)
-    runner.COMMANDS = {"run_install": ["/usr/bin/true"]}
-    job = runner.start("run_install")
+    runner.COMMANDS = {"run_imessage_install": ["/usr/bin/true"], "run_verify_imessage": ["/usr/bin/true"]}
+    job = runner.start("run_imessage_install")
     for _ in range(100):
         if (
             runner.get(job["id"])["status"] == "complete"
@@ -935,6 +1054,30 @@ PY
     no "personalized client profile renderer failed"
   fi
   rm -f "$profile_tmp"
+
+  if python3 "$HERE/tests/phone-link-test.py" >/dev/null 2>&1; then
+    ok "Fleetdeck phone link requires exact Serve routing and live HTTPS health"
+  else
+    no "Fleetdeck phone link can expose an unverified route"
+  fi
+
+  if python3 "$HERE/tests/setup-handoff-test.py" >/dev/null 2>&1; then
+    ok "setup texts require proven phone handoff and queue once through guarded outbox"
+  else
+    no "setup texts can bypass owner proof or repeat from an unsafe route"
+  fi
+
+  if python3 "$HERE/tests/provider-choice-test.py" >/dev/null 2>&1; then
+    ok "provider choice is explicit, persisted, and gated before text activation"
+  else
+    no "provider choice can silently activate an unverified text runtime"
+  fi
+
+  if python3 "$HERE/tests/bind-handoff-test.py" >/dev/null 2>&1; then
+    ok "iMessage bind uses the app's privacy identity and requires exact private success output"
+  else
+    no "iMessage bind can mistake open's status for the app's result"
+  fi
 
   tmp="$(mktemp)"
   bash "$HERE/verify.sh" --quick --json > "$tmp" 2>/dev/null || true

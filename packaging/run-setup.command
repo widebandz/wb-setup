@@ -27,9 +27,20 @@ if [ -f "$HOME/.sop-vars" ]; then
 fi
 
 # The packaged engine makes the guide available before Homebrew or Command Line
-# Tools exist. It also avoids invoking macOS's /usr/bin/python3 developer-tools
-# stub, which otherwise opens an unrelated install dialog on a bare Mac.
-if [ -x "$ENGINE" ] && { [ -f "$CONNECTION" ] || { [ -x /opt/homebrew/bin/python3 ] && [ -f "$HOME/.sop-vars" ]; }; }; then
+# Tools exist. A preexisting Python and identity file do not prove the new
+# client text foundation is installed; an upgraded 0.6.0 Mac still needs the
+# quick bundle that supplies imsg.
+QUICK_READY=0
+if [ -f "$HOME/.sop-vars" ] \
+   && [ -x /opt/homebrew/bin/brew ] \
+   && [ -x /opt/homebrew/bin/python3 ] \
+   && [ -x /opt/homebrew/bin/tmux ]; then
+  OS_MAJOR="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)"
+  if [ "$OS_MAJOR" -lt 14 ] || [ -x /opt/homebrew/bin/imsg ]; then
+    QUICK_READY=1
+  fi
+fi
+if [ -x "$ENGINE" ] && [ "$QUICK_READY" = 1 ]; then
   export WB_SETUP_ROOT="$HERE"
   exec "$ENGINE" "${SETUP_ARGS[@]}"
 fi

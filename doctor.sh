@@ -172,11 +172,11 @@ if [ -x "$TSBIN" ]; then
   # `status --json` is pretty-printed, so the key/value separator is `": "` and
   # not `":"`. A pattern without the space silently matches nothing and prints
   # an empty field, which reads as "Tailscale is down" when it is fine.
-  tsjson="$("$TSBIN" status --json 2>/dev/null)"
+  tsjson="$(TAILSCALE_BE_CLI=1 "$TSBIN" status --json 2>/dev/null)"
   kv "backend" "$(printf '%s' "$tsjson" | sed -n 's/.*"BackendState": *"\([^"]*\)".*/\1/p' | head -1)"
   kv "self"    "$(printf '%s' "$tsjson" | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1 | sed 's/\.$//')"
   echo
-  "$TSBIN" serve status 2>/dev/null | sed 's/^/  /' || echo "  (serve status unavailable)"
+  TAILSCALE_BE_CLI=1 "$TSBIN" serve status 2>/dev/null | sed 's/^/  /' || echo "  (serve status unavailable)"
 else
   echo "  no Tailscale CLI"
 fi

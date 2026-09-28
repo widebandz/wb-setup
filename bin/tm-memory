@@ -32,6 +32,7 @@
 #    TM_MEMORY_DIR      memory root            (~/.config/agent-session-memory)
 #    TM_TMUX_SOCKET     tmux -L socket name    (tests use an isolated server)
 #    TM_ROUTING         router config          (~/.imsg-routing.json)
+#    TM_CHATBIND        chat bindings          (~/.imsg-chatbind.json)
 #    TM_SESSIONS_CONF   tm-standard's standard
 #    TM_MEMORY_LAUNCHERS  comma-separated approved bootstrap commands
 # ═══════════════════════════════════════════════════════════════════════════
@@ -52,6 +53,7 @@ HOME = Path.home()
 
 MEMORY_DIR = Path(os.environ.get("TM_MEMORY_DIR") or HOME / ".config/agent-session-memory")
 ROUTING_PATH = Path(os.environ.get("TM_ROUTING") or HOME / ".imsg-routing.json")
+CHATBIND_PATH = Path(os.environ.get("TM_CHATBIND") or HOME / ".imsg-chatbind.json")
 SESSIONS_CONF = Path(
     os.environ.get("TM_SESSIONS_CONF")
     or HOME / ".config/tmux-command-center/config/sessions.conf"
@@ -302,6 +304,66 @@ def load_routing():
         return json.loads(ROUTING_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+
+
+def load_chatbind():
+    """session → {chat_id, mode} from the chat-binding config. Read-only.
+
+    Deliberately narrow. That file also holds participant phone numbers, and a
+    card is durable memory every agent on the machine can read. Only the chat id
+    and the reply mode are taken; `check` would reject a card carrying the rest.
+    """
+    if not CHATBIND_PATH.exists():
+        return {}
+    try:
+        data = json.loads(CHATBIND_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for b in data.get("bound") or []:
+        session, chat_id = b.get("session"), b.get("chat_id")
+        if not session or chat_id is None:
+            continue
+        out[session] = {"chat_id": chat_id, "mode": str(b.get("external_mode") or "")}
+    return out
+
+
+# A route written `session:<name>` is a handoff to another session on this
+# machine. Naming the counterpart session in both cards is what stops two
+# sessions quietly trading the same work back and forth.
+SESSION_REF_RE = re.compile(r"^session:([A-Za-z0-9][A-Za-z0-9._-]{0,39})\b")
+
+
+def session_refs(card):
+    out = []
+    for key in ("routing_in", "routing_out"):
+        for entry in card.get(key) or []:
+            m = SESSION_REF_RE.match(str(entry).strip())
+            if m:
+                out.append((key, m.group(1)))
+    return out
+
+
+def external_routes(card):
+    """Routes that actually leave this machine — internal handoffs excluded."""
+    return [
+        r for r in (card.get("routing_out") or [])
+        if not SESSION_REF_RE.match(str(r).strip())
+    ]
+
+
+def is_bound(card):
+    """Does this session send to somewhere off this machine?
+
+    A binding is a role on day one. Age is a weak proxy: the session that most
+    needs an identity can be hours old, and the unassigned default — fresh
+    start, ask before anything leaves this machine — is exactly wrong for a
+    session whose entire job is to send things off it.
+
+    A handoff to another session is not that. It stays on the machine, so it
+    must not trip the external signal.
+    """
+    return bool(str(card.get("chat_binding") or "").strip()) or bool(external_routes(card))
 
 
 def agent_matchers(routing):
@@ -775,6 +837,7 @@ def cmd_doctor(args):
     print(f"{BOLD}live{RESET}     {len(live)} session(s), {len(cards)} card(s)\n")
 
     ages = session_ages()
+    bindings = load_chatbind()
     uncovered = [s for s in live if not resolve(s, cards)]
     unassigned = sorted(
         n for n, c in cards.items() if c.get("role") != "assigned" and n in live_set
@@ -802,12 +865,38 @@ def cmd_doctor(args):
         print(f"{BOLD}live sessions with no assigned role{RESET}  ({len(unassigned)})")
         for n in unassigned:
             age = ages.get(n)
-            mark = "**" if age is not None and age >= UNASSIGNED_PROMPT_DAYS else "··"
-            age_s = f"{age}d" if age is not None else "?"
-            print(f"  {mark} {n:<14} {age_s:<6} {cards[n].get('concern', '') or '—'}"[:100])
-        print("  → these recover as a fresh start, not as a role. ** has run longer than")
-        print(f"     {UNASSIGNED_PROMPT_DAYS} days: if it has a de facto concern, name it and set "
-              "`role: assigned`\n")
+            if is_bound(cards[n]) or n in bindings:
+                mark, why = ">>", "bound"
+            elif age is not None and age >= UNASSIGNED_PROMPT_DAYS:
+                mark, why = "**", f"{age}d"
+            else:
+                mark, why = "··", f"{age}d" if age is not None else "?"
+            print(f"  {mark} {n:<14} {why:<7} {cards[n].get('concern', '') or '—'}"[:100])
+        print("  → these recover as a fresh start, not as a role.")
+        print("     >> sends off this machine (chat binding or external route) — a role on")
+        print("        day one whatever its age, and 'ask before anything leaves this")
+        print("        machine' is exactly the wrong default for it.")
+        print(f"     ** has run over {UNASSIGNED_PROMPT_DAYS} days, so it probably has a de facto "
+              "concern.\n")
+
+    for name in sorted(cards):
+        for key, target in session_refs(cards[name]):
+            if not resolve(target, cards):
+                problems.append(Problem(
+                    "warn", name,
+                    f"{key} hands off to session {target!r}, which has no identity card",
+                ))
+            elif target == name:
+                problems.append(Problem("error", name, f"{key} hands off to itself"))
+
+    for name, bind in sorted(bindings.items()):
+        card = resolve(name, cards)
+        if card and not str(card.get("chat_binding") or "").strip():
+            problems.append(Problem(
+                "warn", name,
+                f"bound to chat {bind['chat_id']} in the chat-binding config, "
+                f"but the card records no chat_binding",
+            ))
 
     if bare:
         print(f"{BOLD}sessions not running an agent{RESET}  ({len(bare)})")
@@ -897,6 +986,7 @@ def cmd_adopt(args):
     descriptions = routing.get("sessions") or {}
     cards, _ = all_cards()
 
+    bindings = load_chatbind()
     targets = [args.session] if args.session else live_sessions()
     if args.session and not session_exists(args.session) and args.session not in descriptions:
         die(f"{args.session!r} is not a live session and is not described in routing", 2)
@@ -926,6 +1016,20 @@ def cmd_adopt(args):
             elif pane in ("claude", "node") or VERSION_COMMAND_RE.match(pane or ""):
                 bootstrap = "claude"
 
+        bind = bindings.get(name)
+        routing_in = ["imsg-router"] if name in descriptions else []
+        routing_out, chat_binding = [], ""
+        approval = ["publishing, deploying, pushing, or sending anything outside this machine"]
+        if bind:
+            chat_binding = f"imsg:chat-{bind['chat_id']}"
+            routing_in.append(f"imsg-chatbind (chat {bind['chat_id']})")
+            routing_out.append(f"imsg-chatbind reply to chat {bind['chat_id']}")
+            if bind["mode"].startswith(("draft", "private-draft")):
+                approval.insert(0, (
+                    f"any reply reaching chat {bind['chat_id']} — bound "
+                    f"{bind['mode']}, so drafts are held for operator approval"
+                ))
+
         fields = {
             "session": name,
             "role": "unassigned",
@@ -933,13 +1037,11 @@ def cmd_adopt(args):
             "concern": concern[:160],
             "root": tilde(root),
             "owner": UNVERIFIED,
-            "routing_in": ["imsg-router"] if name in descriptions else [],
-            "routing_out": [],
-            "chat_binding": "",
+            "routing_in": routing_in,
+            "routing_out": routing_out,
+            "chat_binding": chat_binding,
             "tools": [],
-            "approval": [
-                "publishing, deploying, pushing, or sending anything outside this machine",
-            ],
+            "approval": approval,
             "bootstrap": bootstrap,
             "recovery_checks": [],
             "updated": today(),

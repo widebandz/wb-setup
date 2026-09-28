@@ -14,9 +14,12 @@ TARGET="$HOME/srv/wb-setup"
 STATE="$HOME/.wideband/setup"
 MARKER="$STATE/payload-build"
 AGENT_MARKER="$STATE/agent-build"
+AGENT_REVISION_MARKER="$STATE/agent-revision"
+AGENT_CDHASH_MARKER="$STATE/agent-cdhash"
 SETUP_APP_MARKER="$STATE/setup-app-build"
 DEACTIVATED="$STATE/deactivated"
 BUILD_ID="$(sed -n '1p' "$RESOURCES/build-id.txt" 2>/dev/null)"
+AGENT_REVISION="$(sed -n '1p' "$RESOURCES/agent-revision.txt" 2>/dev/null)"
 NATIVE_PID="${WB_SETUP_NATIVE_PID:-}"
 NATIVE_ACTIVE=0
 
@@ -41,9 +44,12 @@ launch_terminal() {
 
 core_ready() {
   [ -f "$HOME/.sop-vars" ] \
-    && [ -x /opt/homebrew/bin/git ] \
-    && [ -x /opt/homebrew/bin/jq ] \
-    && [ -x /opt/homebrew/bin/tmux ]
+    && [ -x /opt/homebrew/bin/brew ] \
+    && [ -x /opt/homebrew/bin/python3 ] \
+    && [ -x /opt/homebrew/bin/tmux ] || return 1
+  local os_major
+  os_major="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)"
+  [ "$os_major" -lt 14 ] || [ -x /opt/homebrew/bin/imsg ]
 }
 
 connection_is_live() {
@@ -77,8 +83,11 @@ launch_background() {
   return 0
 }
 
-[ -n "$BUILD_ID" ] && [ -f "$PAYLOAD/setup.py" ] && [ -d "$AGENT_SOURCE" ] \
+[ -n "$BUILD_ID" ] && [[ "$AGENT_REVISION" =~ ^[0-9a-f]{64}$ ]] \
+  && [ -f "$PAYLOAD/setup.py" ] && [ -d "$AGENT_SOURCE" ] \
+  && [ -f "$RESOURCES/agent-revision.sh" ] \
   && [ -x "$ENGINE_SOURCE" ] || fail
+. "$RESOURCES/agent-revision.sh" || fail
 /bin/mkdir -p "$TARGET" "$STATE" "$HOME/Applications" || fail
 /bin/chmod 700 "$STATE" 2>/dev/null || fail
 
@@ -92,6 +101,8 @@ fi
 # Leave behind the exact verified setup app so a client who double-clicks it
 # directly from the disk image can eject the image and still resume later.
 SETUP_APP_INSTALLED="$(sed -n '1p' "$SETUP_APP_MARKER" 2>/dev/null)"
+PREVIOUS_SETUP_APP="$SETUP_APP_TARGET"
+PREVIOUS_PAYLOAD_BUILD="$(sed -n '1p' "$MARKER" 2>/dev/null)"
 SOURCE_IS_INSTALLED=0
 case "$SETUP_APP_SOURCE" in
   /Applications/*|"$HOME/Applications/"*) SOURCE_IS_INSTALLED=1 ;;
@@ -103,6 +114,7 @@ if [ "$SOURCE_IS_INSTALLED" != 1 ] \
     SETUP_APP_BACKUP="$STATE/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/Wideband Setup.app"
     /bin/mkdir -p "$(dirname "$SETUP_APP_BACKUP")" || fail
     /bin/mv "$SETUP_APP_TARGET" "$SETUP_APP_BACKUP" || fail
+    PREVIOUS_SETUP_APP="$SETUP_APP_BACKUP"
   fi
   /usr/bin/ditto --norsrc --noextattr --noqtn "$SETUP_APP_SOURCE" "$SETUP_APP_TARGET" || fail
   ( umask 077; printf '%s\n' "$BUILD_ID" > "$SETUP_APP_MARKER" ) || fail
@@ -111,15 +123,55 @@ fi
 # Install the exact app that requests and verifies macOS privacy grants. Keep
 # replaced copies in the setup backup area so an interrupted update never
 # destroys the previous helper or touches an unrelated application.
+wb_agent_valid "$AGENT_SOURCE" || fail
+[ "$(wb_agent_revision "$AGENT_SOURCE" "$PAYLOAD" "$STATE")" = "$AGENT_REVISION" ] || fail
 AGENT_INSTALLED="$(sed -n '1p' "$AGENT_MARKER" 2>/dev/null)"
-if [ ! -f "$DEACTIVATED" ] \
-   && { [ "$AGENT_INSTALLED" != "$BUILD_ID" ] || [ ! -x "$AGENT_TARGET/Contents/MacOS/Wideband Agent" ]; }; then
+previous_setup_agent_matches() {
+  local prior_build embedded
+  prior_build="$(sed -n '1p' "$PREVIOUS_SETUP_APP/Contents/Resources/build-id.txt" 2>/dev/null)"
+  if [ "$prior_build" = "$AGENT_INSTALLED" ]; then
+    embedded="$PREVIOUS_SETUP_APP/Contents/Resources/Wideband Agent.app"
+    wb_agent_valid "$embedded" \
+      && [ "$(wb_agent_cdhash "$embedded")" = "$INSTALLED_CDHASH" ]
+  else
+    # The client may have copied the new Setup.app over the old one before
+    # opening it. The old payload and Agent markers still provide lineage;
+    # their signed, normalized code must independently match the new revision.
+    [ -z "$prior_build" ] || [ "$prior_build" = "$BUILD_ID" ]
+  fi
+}
+AGENT_REUSE=0
+if [ ! -f "$DEACTIVATED" ] && wb_agent_valid "$AGENT_TARGET"; then
+  INSTALLED_CDHASH="$(wb_agent_cdhash "$AGENT_TARGET")"
+  if [ -n "$INSTALLED_CDHASH" ] \
+     && [ "$(sed -n '1p' "$AGENT_REVISION_MARKER" 2>/dev/null)" = "$AGENT_REVISION" ] \
+     && [ "$(sed -n '1p' "$AGENT_CDHASH_MARKER" 2>/dev/null)" = "$INSTALLED_CDHASH" ]; then
+    AGENT_REUSE=1
+  elif [ -n "$INSTALLED_CDHASH" ] \
+       && [ ! -f "$AGENT_REVISION_MARKER" ] \
+       && [ -n "$AGENT_INSTALLED" ] \
+       && [ "$AGENT_INSTALLED" = "$PREVIOUS_PAYLOAD_BUILD" ] \
+       && [ "$AGENT_INSTALLED" = "$SETUP_APP_INSTALLED" ] \
+       && previous_setup_agent_matches \
+       && [ "$(wb_agent_revision "$AGENT_TARGET" "$TARGET" "$STATE" 2>/dev/null)" = "$AGENT_REVISION" ]; then
+    # One-time migration from packages that only recorded the Setup build ID.
+    AGENT_REUSE=1
+    ( umask 077; printf '%s\n' "$AGENT_REVISION" > "$AGENT_REVISION_MARKER" ) || fail
+    ( umask 077; printf '%s\n' "$INSTALLED_CDHASH" > "$AGENT_CDHASH_MARKER" ) || fail
+  fi
+fi
+if [ ! -f "$DEACTIVATED" ] && [ "$AGENT_REUSE" != 1 ]; then
   if [ -e "$AGENT_TARGET" ]; then
     AGENT_BACKUP="$STATE/package-backups/$(date '+%Y%m%d-%H%M%S')-$$/Wideband Agent.app"
     /bin/mkdir -p "$(dirname "$AGENT_BACKUP")" || fail
     /bin/mv "$AGENT_TARGET" "$AGENT_BACKUP" || fail
   fi
   /usr/bin/ditto --norsrc --noextattr --noqtn "$AGENT_SOURCE" "$AGENT_TARGET" || fail
+  wb_agent_valid "$AGENT_TARGET" || fail
+  INSTALLED_CDHASH="$(wb_agent_cdhash "$AGENT_TARGET")"
+  [ -n "$INSTALLED_CDHASH" ] || fail
+  ( umask 077; printf '%s\n' "$AGENT_REVISION" > "$AGENT_REVISION_MARKER" ) || fail
+  ( umask 077; printf '%s\n' "$INSTALLED_CDHASH" > "$AGENT_CDHASH_MARKER" ) || fail
   ( umask 077; printf '%s\n' "$BUILD_ID" > "$AGENT_MARKER" ) || fail
 fi
 
@@ -141,7 +193,7 @@ if [ "$NATIVE_ACTIVE" != 1 ] && [ ! -f "$STATE/native-welcome-seen" ]; then
   if [ -f "$RESOURCES/client-profile.env" ]; then
     WELCOME_DETAIL="Your Wideband build profile is already loaded. The branded setup guide opens immediately and shows live progress while Terminal prepares this Mac."
   else
-    WELCOME_DETAIL="This generic pilot collects the build identity in a few plain-language popups. The branded setup guide opens immediately and shows live progress while Terminal prepares this Mac."
+    WELCOME_DETAIL="This generic pilot asks for your personal phone number in one macOS dialog. The branded guide then helps you name your OS and agent, choose a first job, and shows live progress while Terminal prepares this Mac."
   fi
   /usr/bin/osascript - "$RESOURCES/AppIcon.icns" "$WELCOME_DETAIL" <<'APPLESCRIPT' >/dev/null 2>&1 || exit 0
 on run argv
@@ -170,7 +222,13 @@ fi
 # A bare Mac still gets Terminal for Homebrew's one visible sudo prompt; the
 # native window remains in front and explains exactly why that prompt exists.
 if connection_is_live; then
-  exit 0
+  # The guide can stay live after bootstrap exits at a canceled owner-phone
+  # prompt. In that state a later app launch must reopen Terminal to resume
+  # bootstrap, while an in-progress bootstrap must keep its single prompt.
+  if [ "$(sed -n '1p' "$STATE/bootstrap-status" 2>/dev/null)" = needs_attention ] \
+     && ! core_ready; then
+    launch_terminal || fail
+  fi
 elif core_ready; then
   launch_background || fail
 else
