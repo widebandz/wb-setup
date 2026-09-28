@@ -766,9 +766,19 @@ recovered; both reports point to UTM 4.7.5's macOS screenshot/rendering path
 (`NSView.cacheDisplay` → vImage), with no evidence of a guest service fault.
 UTM Preferences → Display → Disable VM screenshot was enabled before the final
 restart. That successful run is evidence for the workaround, not proof of the
-exact graphics fault. Phone Safari/Home Screen proof and the two guarded
-setup handoff texts remain pending; the latter must not be queued until the
-owner confirms the new phone board.
+exact graphics fault. The owner then confirmed on their iPhone that the full
+private board, its apps, and the Home Screen icon worked. Setup recorded
+`prove.phone-board` after `/api/phone-link` returned ready. During a short
+isolated VM iMessage route window, the owner-authorized handoff queued exactly
+two setup texts; the VM outbox reported `sent: 2`, `pending: 0`, `review: 0`
+for that handoff. The VM's watch, route, and outbox jobs were unloaded again,
+and the host Trace watch, router, chat binding, and outbox jobs were restored.
+Physical receipt of the two texts on the owner's iPhone was requested after
+the send and is separate from the outbox's send record.
+During restoration, the host watch and chat-binding jobs were already loaded;
+their duplicate bootstrap returned a launchd error. The host router was still
+absent and was bootstrapped explicitly. Future route windows should verify
+the router's actual state throughout instead of inferring it from the watch.
 
 The latest Setup-only DMG upgrade kept the VM's approved Wideband Agent CDHash
 `05ddf55e70a5c5e75bb9ebe7a43e73a600dffa72` unchanged. A fresh Agent
