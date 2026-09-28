@@ -1,6 +1,10 @@
 # wb-setup
 
-Bare M-chip Mac → a complete operator build. One line:
+For the full 0.7.0 phone pilot, download the
+[unsigned DMG from the v0.7.0 release](https://github.com/widebandz/wb-setup/releases/tag/v0.7.0).
+It contains the reviewed Fleetdeck and Knowledge Graph bundles tested in UTM.
+The source bootstrap below builds the operator foundation but does not include
+those bundled customer phone apps:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash

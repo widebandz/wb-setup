@@ -21,14 +21,14 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery status on 2026-09-28: the 0.6.0 GitHub Release and its three
-  assets are public. `https://os.wideband.ai/version` returned HTTPS 200 from
-  GitHub Pages on that date. A 0.7.0 feed must be generated from its own exact
-  artifact and checked again after publication.
-- Last published-release Apple Silicon VM checkpoint: 2026-09-23. It covered
-  installation, the real macOS permission prompt, repair, port fallback,
-  disconnect recovery, support export, reboot, and resume from the installed
-  app. The newer private real-stack UTM pilot is recorded below.
+- Update delivery status on 2026-09-28: the v0.7.0 GitHub prerelease and its
+  unsigned DMG/checksums are public. The Pages workflow succeeded;
+  `https://os.wideband.ai/version` advertised the exact 0.7.0 build and SHA-256
+  from the VM network. A fresh public DMG download matched that SHA-256.
+- Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
+  upgraded the earlier clean UTM pilot and recovered its private board, map,
+  graph, terminal, Notes, and setup link. The earlier clean-install/reboot and
+  owner iPhone proof are recorded below.
 
 Generated build IDs and hashes belong to artifacts, not source. Read
 `dist/Wideband Setup.app/Contents/Resources/build-id.txt` and
@@ -702,14 +702,14 @@ September 28, 2026.
 
 ### 0.6.0 onboarding pilot in UTM, September 28, 2026
 
-The latest local unsigned real-stack pilot build is
+The earlier local unsigned real-stack pilot build was
 `0.6.0-20260928161906`, DMG SHA-256
 `a999f594974a7209eb1b070f23270ee4630290e0c355f0923083a6d659f3874b`.
 The source and embedded self-tests each pass 83/83; the DMG and recursive app
 signature verify.
 That exact artifact was installed in the `Wideband E2E Clean 2` macOS VM and
-its phone-install action completed. It is a private, unpublished pilot, not the
-public 0.6.0 release: on September 28, the live `os.wideband.ai/version` feed
+its phone-install action completed. At that time it was a private, unpublished
+pilot, not the public 0.6.0 release: earlier on September 28, the live `os.wideband.ai/version` feed
 still advertises build `0.6.0-20260924002330` and the latest GitHub Release is
 `v0.6.0` from September 24. The owner later chose to publish the new version
 as an explicitly unsigned pilot and authorized the reviewed Glitch Cat source
@@ -792,6 +792,28 @@ protected board, graph, watch, notes, and PWA manifest route returned HTTPS
 200. Agent revision matching now preserves a signed, unchanged Agent across
 Setup-only upgrades, including an in-place Setup app replacement; changed
 Agent code or a damaged signature still replaces it.
+
+### 0.7.0 public pilot delivery, September 28, 2026
+
+The owner authorized public distribution of the reviewed Glitch Cat source
+inside this installer and chose an explicitly unsigned pilot. Source and host
+packaged self-tests passed 83/83; the exact UTM guest payload passed 81/81
+because that guest has no Node CLI for two conditional JavaScript parse checks.
+The browser E2E passed on the immediately preceding documentation-only build.
+The final DMG build `0.7.0-20260928185839` passed recursive ad-hoc signature,
+arm64, disk-image, bundle-manifest, and private-file checks. Its SHA-256 is
+`659b97a1129ecbdaa1cbb66b47e07c008b2981da3cff64ab4774d317c258f759`.
+
+That exact DMG matched the guest hash and upgraded the UTM pilot. Setup opened
+at the exact build; the phone link was ready, four private Serve routes and
+their real board/map/graph/terminal pages responded, the live terminal had a
+session, five stack jobs stayed loaded, and Notes retained its data. The VM's
+duplicate iMessage watch/router/outbox jobs stayed unloaded. GitHub Release
+`v0.7.0` publishes the DMG and checksums as a prerelease. GitHub Pages workflow
+`36469456141` succeeded, the branded feed returned the exact build and hash
+from the VM network, and a new public DMG download matched it. The published
+pilot is ad-hoc signed and requires macOS Open Anyway on first launch; it is
+not Developer ID signed or notarized.
 
 ## Lessons that must not regress
 
