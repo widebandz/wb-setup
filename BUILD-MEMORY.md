@@ -773,8 +773,9 @@ isolated VM iMessage route window, the owner-authorized handoff queued exactly
 two setup texts; the VM outbox reported `sent: 2`, `pending: 0`, `review: 0`
 for that handoff. The VM's watch, route, and outbox jobs were unloaded again,
 and the host Trace watch, router, chat binding, and outbox jobs were restored.
-Physical receipt of the two texts on the owner's iPhone was requested after
-the send and is separate from the outbox's send record.
+The owner separately confirmed that both setup texts arrived on their iPhone.
+That physical receipt closes the guarded handoff check beyond the outbox's
+send record.
 During restoration, the host watch and chat-binding jobs were already loaded;
 their duplicate bootstrap returned a launchd error. The host router was still
 absent and was bootstrapped explicitly. Future route windows should verify
