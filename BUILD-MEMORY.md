@@ -814,6 +814,10 @@ duplicate iMessage watch/router/outbox jobs stayed unloaded. GitHub Release
 from the VM network, and a new public DMG download matched it. The published
 pilot is ad-hoc signed and requires macOS Open Anyway on first launch; it is
 not Developer ID signed or notarized.
+Cool published the community announcement in Skool's Releases category at
+`https://www.skool.com/wideband-8959/wideband-setup-v070-is-live-fleetdeck-imessage-pilot`.
+The rendered post retained the direct DMG link, checksum, pilot limitations,
+and install guidance; its email broadcast was left off.
 
 ## Lessons that must not regress
 
