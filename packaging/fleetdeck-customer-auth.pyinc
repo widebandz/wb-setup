@@ -1,0 +1,162 @@
+"""Customer adapter injected into the reviewed Fleetdeck portal before main().
+
+The board, service scan, glyphs, Notes beta, and read-only head view above this
+adapter are the actual Fleetdeck implementation. This class narrows its HTTP
+surface and adds the same owner-only capability used by Wideband Setup.
+"""
+
+import customer_access
+
+
+def customer_map_url():
+    """Derive the VM-local map capability; never store it in config or source."""
+    origin = os.environ.get("FLEETDECK_MAP_ORIGIN", "")
+    capability = customer_access.token()
+    if not origin or not capability:
+        return ""
+    try:
+        address = urlsplit(origin)
+        if (address.scheme != "https" or address.hostname != HOST
+                or address.port != 18970 or address.path or address.query
+                or address.fragment or address.username or address.password):
+            return ""
+    except ValueError:
+        return ""
+    return f"{origin}/p/{capability}/fleet-map"
+
+
+NETMAP_URL = customer_map_url()
+
+# The map and graph engine listen only for their owner-gated fronts. They are
+# plumbing behind the working map button and graph proxy, not separate apps.
+INTERNAL.update((18790, 4180))
+
+
+CUSTOMER_PATHS = frozenset({
+    "/", "/phone", "/board", "/agent", "/project", "/graph", "/watch",
+    "/notes", "/api/watch", "/api/notes",
+})
+CUSTOMER_GET_PATHS = CUSTOMER_PATHS | frozenset({
+    "/api/status", "/api", "/app/graph", "/manifest.webmanifest",
+    "/phone.webmanifest", "/icon-180.png", "/icon-192.png",
+    "/icon-512.png",
+})
+CUSTOMER_NOTE_POSTS = frozenset({
+    "/api/notes", "/api/notes/status", "/api/notes/edit", "/api/notes/delete",
+})
+
+
+# Regardless of a stale or operator-curated config, the customer portal has no
+# launchctl, tmux input, routing, voice, or agent dispatch action surface.
+AGENT_ACTIONS = False
+CONTROL_TOKEN = ""
+if not NETMAP_URL:
+    PAGE = re.sub(r'<a id="netmap"[^>]*>.*?</a>', "", PAGE, flags=re.S)
+# Notes is a real route on this portal, so it needs neither a registry entry
+# nor a second service. Use the existing small header chip on the full board.
+cashflow_chip = ('<a id="cashflow" href="/cashflow"\n'
+                 '     title="Cashflow — the accountant\'s cash view">__CASHFLOW_LABEL__</a>')
+if PAGE.count(cashflow_chip) != 1 or PAGE.count("#cashflow") != 5:
+    raise RuntimeError("Fleetdeck board Notes slot changed; review customer adapter")
+PAGE = PAGE.replace(cashflow_chip,
+                    '<a id="notes" href="/notes" '
+                    'title="Notes beta — capture and organize ideas">Notes β</a>', 1)
+PAGE = PAGE.replace("#cashflow", "#notes")
+PAGE = re.sub(r'<a id="simple"[^>]*>.*?</a>', "", PAGE, flags=re.S)
+
+
+class CustomerHandler(Handler):
+    """The real dynamic board with a private session and a read-only boundary."""
+
+    def _send(self, code, body, ctype, extra=None):
+        headers = {"Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"}
+        headers.update(extra or {})
+        return super()._send(code, body, ctype, headers)
+
+    def _customer_path(self):
+        return self.path.split("?", 1)[0].rstrip("/") or "/"
+
+    def do_GET(self):
+        path = self._customer_path()
+        if path == "/healthz":
+            return self._send(200, "ok\n", "text/plain")
+        token = customer_access.token()
+        if not token or not allowed(self.client_address[0]):
+            return self._send(403, "forbidden\n", "text/plain")
+
+        match = re.fullmatch(r"/p/([0-9a-f]{64})(/.*)?", path)
+        if match:
+            route = match.group(2) or "/"
+            if not hmac.compare_digest(match.group(1), token) or route not in CUSTOMER_PATHS:
+                return self._send(403, "forbidden\n", "text/plain")
+            destination = "/board" if route in ("/", "/phone") else route
+            return self._send(303, "", "text/plain", {
+                "Set-Cookie": customer_access.cookie_header(token),
+                "Location": destination,
+            })
+        if not customer_access.has_session(self.headers.get("Cookie"), token):
+            return self._send(403, "forbidden\n", "text/plain")
+        if path not in CUSTOMER_GET_PATHS and not (
+                path.startswith("/icons/") and path.endswith(".png")):
+            return self._send(404, "not here\n", "text/plain")
+
+        if path in ("/", "/phone", "/board"):
+            return self._board()
+        if path == "/graph":
+            # Reuse Fleetdeck's live registry-resolved app shell. The upstream
+            # onboarding detail at /graph is only a setup diagram.
+            original = self.path
+            try:
+                self.path = "/app/graph"
+                return super().do_GET()
+            finally:
+                self.path = original
+        if path in ("/api", "/api/status"):
+            return self._send(200, json.dumps(cached_scan()), "application/json")
+        if path in ("/manifest.webmanifest", "/phone.webmanifest"):
+            return self._send(200, json.dumps({
+                "name": f"{BRAND} // {MACHINE}", "short_name": MACHINE,
+                "start_url": f"/p/{token}/board", "scope": "/",
+                "display": "standalone", "background_color": "#05070a",
+                "theme_color": "#05070a", "icons": [
+                    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                ],
+            }), "application/manifest+json")
+        if path == "/project":
+            info = onboarding_config() or {}
+            project = first_goal_status(info) if info else {}
+            link = project.get("phone_url") or info.get("first_project_url") or ""
+            body = ('<!doctype html><html><head><meta name="viewport" '
+                    'content="width=device-width,initial-scale=1">'
+                    '<title>First project // Fleetdeck</title></head>'
+                    '<body style="background:#05070a;color:#d6e4ec;'
+                    'font:15px ui-monospace,monospace;padding:28px">'
+                    '<a style="color:#4fe3c1" href="/board">&lsaquo; Fleetdeck</a>'
+                    '<h1>First project</h1>')
+            if link:
+                body += (f'<p><a style="color:#4fe3c1" href="{esc_html(link)}">'
+                         'Open first project</a></p>')
+            else:
+                body += '<p>Your first project link will appear when ready.</p>'
+            return self._send(200, body + '</body></html>', "text/html; charset=utf-8")
+        return super().do_GET()
+
+    def do_POST(self):
+        path = self._customer_path()
+        token = customer_access.token()
+        if (not token or not allowed(self.client_address[0])
+                or not customer_access.has_session(self.headers.get("Cookie"), token)):
+            self._discard_body()
+            return self._send(403, "forbidden\n", "text/plain")
+        if path not in CUSTOMER_NOTE_POSTS:
+            self._discard_body()
+            return self._send(404, "not here\n", "text/plain")
+        origin = self.headers.get("Origin")
+        if origin and origin != f"https://{HOST}:{PORT}":
+            self._discard_body()
+            return self._send(403, "forbidden\n", "text/plain")
+        if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin"):
+            self._discard_body()
+            return self._send(403, "forbidden\n", "text/plain")
+        return super().do_POST()

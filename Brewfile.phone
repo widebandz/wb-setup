@@ -1,0 +1,4 @@
+# Installed only after the first owner-to-agent text, when the owner chooses
+# the full phone workspace. The first-text foundation stays small.
+brew "node"    # Glitch Cat knowledge graph viewer and indexer
+brew "ttyd"    # Fleetdeck's authenticated loopback terminal backend

@@ -34,6 +34,15 @@ done
   && { echo "choose one scoped install mode" >&2; exit 2; }
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Customer phone mode installs a reviewed, managed Fleetdeck bundle. An
+# existing checkout has its own source and configuration; leave it untouched
+# before changing permissions, installing tools, or minting an access token.
+if [ "$PHONE_ONLY" = "1" ] && { [ -e "$HOME/srv/fleetdeck/.git" ] \
+                              || [ -L "$HOME/srv/fleetdeck/.git" ]; }; then
+  echo "  ✗ existing Fleetdeck checkout at $HOME/srv/fleetdeck; preserved"
+  echo "    The managed customer phone stack needs an isolated bundled source."
+  exit 1
+fi
 VARS="$HOME/.sop-vars"
 LA="$HOME/Library/LaunchAgents"
 UID_N="$(id -u)"
@@ -288,8 +297,8 @@ except (ValueError, AssertionError):
 }
 
 install_phone_portal() {
-  # This step follows the first successful text. It installs only Fleetdeck's
-  # customer portal; the writable chat/ttyd/adopt surfaces stay disabled.
+  # This step follows the first successful text. Reconcile the real Fleetdeck
+  # board first, then its VM-local terminal map, graph and guarded tmux chat.
   local fd="$HOME/srv/fleetdeck" state="$HOME/.wideband/setup/state.json"
   local bundle="$HERE/vendor/fleetdeck" stage="" portal_port prefix base portal_values
   local upgrade_result="" upgrade_backup="" portal_upgraded=0
@@ -343,12 +352,24 @@ PY
     echo "  ✗ private phone access could not be prepared"
     return 1
   fi
+  if [ ! -d "$bundle" ] || [ -L "$bundle" ] \
+     || ! "$PY" "$HERE/packaging/bundle-fleetdeck.py" verify "$bundle" \
+     || [ ! -d "$HERE/vendor/glitch-cat-pilot-bundle" ] \
+     || ! "$PY" "$HERE/packaging/glitch-cat-pilot.py" verify \
+            "$HERE/vendor/glitch-cat-pilot-bundle"; then
+    echo "  ✗ the reviewed real Fleetdeck and Knowledge Graph bundles are required"
+    return 1
+  fi
+  if ! command -v brew >/dev/null 2>&1 \
+     || ! brew bundle --file="$HERE/Brewfile.phone" \
+          >"$HOME/.wideband/setup/phone-tools-install.log" 2>&1; then
+    echo "  ✗ phone workspace tools could not install; see phone-tools-install.log"
+    return 1
+  fi
 
   if [ -L "$fd" ]; then
     echo "  ✗ $fd is a symlink; left untouched"
     return 1
-  elif [ -e "$fd/.git" ]; then
-    echo "  = $fd (existing repository preserved)"
   elif [ -f "$fd/.wideband-fleetdeck-bundle.json" ]; then
     if ! "$PY" "$HERE/packaging/bundle-fleetdeck.py" verify-managed "$fd"; then
       echo "  ✗ existing bundled Fleetdeck source was edited or damaged; left untouched"
@@ -531,7 +552,12 @@ PY
     return 1
   fi
   echo "  ✓ Fleetdeck customer portal answers on loopback"
-  echo "    verify an HTTPS front such as Tailscale Serve before presenting a phone link"
+  if ! "$PY" "$HERE/packaging/phone-stack.py" \
+       >"$HOME/.wideband/setup/phone-stack-install.log" 2>&1; then
+    phone_portal_fail "the real terminal network, Knowledge Graph, or tmux chat did not activate; see phone-stack-install.log"
+    return 1
+  fi
+  echo "  ✓ real Fleetdeck board, terminal network, Knowledge Graph and tmux chat are installed"
 }
 
 # The packaged installer places this app before install.sh runs. Keep the

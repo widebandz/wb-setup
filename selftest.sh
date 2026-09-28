@@ -1061,6 +1061,18 @@ PY
     no "Fleetdeck phone link can expose an unverified route"
   fi
 
+  if python3 "$HERE/tests/customer-graph-proxy-test.py" >/dev/null 2>&1; then
+    ok "Knowledge Graph phone route requires owner access and forwards real local data"
+  else
+    no "Knowledge Graph phone route exposes data without owner access"
+  fi
+
+  if bash "$HERE/tests/phone-existing-checkout-test.sh" >/dev/null 2>&1; then
+    ok "phone install preserves an existing Fleetdeck checkout before mutating client state"
+  else
+    no "phone install may change an existing Fleetdeck checkout or client state"
+  fi
+
   if python3 "$HERE/tests/setup-handoff-test.py" >/dev/null 2>&1; then
     ok "setup texts require proven phone handoff and queue once through guarded outbox"
   else

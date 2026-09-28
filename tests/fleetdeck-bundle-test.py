@@ -5,12 +5,17 @@ from __future__ import annotations
 
 import json
 import hashlib
+import http.client
 import importlib.util
+import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import unittest
 from unittest import mock
 
@@ -38,10 +43,76 @@ class FleetdeckBundleTest(unittest.TestCase):
             "LICENSE": "public license\n",
             "NOTICE": "public notice\n",
             "launchagents/fleetdeck-portal.plist.tmpl": "__ROOT__/portal_server.py\n",
+            "launchagents/fleetdeck-chat.plist.tmpl": "__ROOT__/chat_server.py <string>tailscale</string>\n",
+            "glyphs.json": '{"server":"<path/>"}\n',
+            "make-icons.py": "# generic icon renderer\n",
+            "ttyd-index.html": "<!doctype html>\n",
+            "assets/icon-180.png": "public icon 180\n",
             "assets/icon-192.png": "public icon 192\n",
             "assets/icon-512.png": "public icon 512\n",
-            # A tracked operator portal is deliberately excluded from the bundle.
-            "portal_server.py": "operator portal: owner@internal.example\n",
+            "icons/server.png": "generic service icon\n",
+            "portal_server.py": textwrap.dedent('''\
+                from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+                import os, re, json, hmac, stat
+                from http.cookies import SimpleCookie
+                PAGE = """#cashflow #cashflow #cashflow #cashflow #cashflow
+                <a id="netmap" href="__NETMAP__">Live Terminal Network</a>
+                <a id="cashflow" href="/cashflow"
+                     title="Cashflow — the accountant's cash view">__CASHFLOW_LABEL__</a>"""
+                NOTES_PAGE = """ function ago(ts){
+                   var s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+                }"""
+                INTERNAL = {8784}
+                SEED_NOTES = [{"title": "Instant iMessage Agent Installer"}]
+                OPERATOR_PHONE = os.environ.get("WB_OPERATOR_PHONE", "operator-phone")
+                TRACE_IMESSAGE_HANDLE = "operator-apple-account"
+                NETMAP_URL = "operator-map"
+                CASHFLOW_PATH = "~/finance-ops/cashflow.html"
+                WHISPER_MODEL = "operator-model"
+                VOICE_URL = "http://127.0.0.1:8890"
+                NOTES_PATH = "~/.fleetdeck-notes.json"
+                TRACE_SESSION = "trace"
+                def scan(): pass
+                def onboarding_config(): pass
+                class Handler(BaseHTTPRequestHandler):
+                    def _send(self, code, body, ctype, extra=None): pass
+                    def do_GET(self):
+                        path = self.path
+                        if path == "/healthz": pass
+                    def do_POST(self): pass
+                    def _discard_body(self): pass
+                    def _board(self): pass
+                def main():
+                    srv = ThreadingHTTPServer((BIND, PORT), Handler)
+                '''),
+            "chat_server.py": textwrap.dedent('''\
+                import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat
+                from http.server import BaseHTTPRequestHandler
+                def customer_mode(): return True
+                BASE = "/t"
+                class H(BaseHTTPRequestHandler):
+                    def authed(self):
+                        return True
+                    def try_key(self):
+                        return True
+                    def do_GET(self):
+                        if self.path.startswith("/?key=") and self.try_key():
+                            return
+                        if not self.authed():
+                            return
+                        path = self.path.split("?")[0]
+                        if path == BASE or path.startswith(BASE + "/"):
+                            return self.proxy()
+                    def do_POST(self):
+                        if not self.authed():
+                            return
+                    def reply(self, *args): pass
+                    def proxy(self): pass
+                if __name__ == "__main__":
+                    if customer_mode():
+                        print("refusing writable chat in customer mode; use portal /watch", flush=True)
+                        raise SystemExit(78)
+                '''),
             "test_fleetdeck.py": "operator test\n",
             "README.md": "operator readme\n",
         }
@@ -79,6 +150,32 @@ class FleetdeckBundleTest(unittest.TestCase):
         shutil.copytree(old, installed)
         return old, installed
 
+    def legacy_installed(self, current: Path) -> Path:
+        """A prior five-card managed install, for the v1→actual-board upgrade."""
+        installed = self.base / "installed-fleetdeck"
+        installed.mkdir()
+        for name in bundler.LEGACY_REQUIRED:
+            source = (ROOT / "packaging" / "customer-portal.py") if name == "portal_server.py" else current / name
+            target = installed / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        (installed / "config.example.json").write_text(json.dumps({
+            "brand": "fleetdeck", "machine": "", "label_prefix": "com.example",
+            "ports": {"portal": 8790, "chat": 8783, "ttyd": 8784, "adopt": 8793},
+            "agents": {"show": False, "actions": False, "include": [], "exclude": []},
+        }, indent=2) + "\n")
+        (installed / "services.example.json").write_text(json.dumps({
+            "groups": [{"id": "apps", "label": "apps"}], "services": [],
+        }, indent=2) + "\n")
+        hashes = {name: hashlib.sha256((installed / name).read_bytes()).hexdigest()
+                  for name in bundler.LEGACY_REQUIRED}
+        (installed / bundler.MANIFEST).write_text(json.dumps({
+            "schema_version": 1, "source": "customer-allowlisted-working-tree",
+            "files": hashes,
+        }, indent=2, sort_keys=True) + "\n")
+        self.run_bundle("verify-managed", str(installed))
+        return installed
+
     def test_tracked_working_tree_is_bundled_without_local_data(self) -> None:
         (self.source / "install.sh").write_text(
             '#!/bin/sh\nCUSTOMER_MODE=1\n# reviewed working-tree change\n', encoding="utf-8")
@@ -94,6 +191,8 @@ class FleetdeckBundleTest(unittest.TestCase):
         self.run_bundle("verify", str(target))
         self.assertIn("reviewed working-tree change", (target / "install.sh").read_text())
         self.assertIn("def onboarding_config", (target / "portal_server.py").read_text())
+        self.assertIn("CustomerHandler", (target / "portal_server.py").read_text())
+        self.assertIn("FLEETDECK_CUSTOMER_TERMINALS", (target / "chat_server.py").read_text())
         self.assertFalse((target / "portal_server.py").read_bytes()
                          == (self.source / "portal_server.py").read_bytes())
         self.assertFalse((target / ".git").exists())
@@ -102,12 +201,7 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertFalse((target / name).exists(), name)
         manifest = json.loads((target / ".wideband-fleetdeck-bundle.json").read_text())
         self.assertEqual(manifest["source"], "customer-allowlisted-working-tree")
-        self.assertEqual(set(manifest["files"]), {
-            "install.sh", "bin/fleetdeck", "VERSION", "LICENSE", "NOTICE",
-            "portal_server.py", "config.example.json",
-            "services.example.json", "launchagents/fleetdeck-portal.plist.tmpl",
-            "assets/icon-192.png", "assets/icon-512.png",
-        })
+        self.assertEqual(set(manifest["files"]), bundler.REQUIRED | {"icons/server.png"})
 
         installed = self.base / "installed-fleetdeck"
         shutil.copytree(target, installed)
@@ -196,7 +290,9 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertEqual((installed / name).read_bytes(), content, name)
 
     def test_upgrade_accepts_previous_health_route_marker(self) -> None:
-        current, installed = self.old_and_installed()
+        current = self.base / "current-bundle"
+        self.run_bundle("build", str(self.source), str(current))
+        installed = self.legacy_installed(current)
         old_portal = installed / "portal_server.py"
         old_source = old_portal.read_text(encoding="utf-8")
         self.assertIn('raw_path == "/healthz"', old_source)
@@ -276,7 +372,7 @@ class FleetdeckBundleTest(unittest.TestCase):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["files"]["install.sh"] = hashlib.sha256(installer.read_bytes()).hexdigest()
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        self.assertIn("outside the generated portal", self.run_bundle(
+        self.assertIn("outside reviewed managed files", self.run_bundle(
             "upgrade", str(modified_package), str(installed), success=False).stderr)
         self.assertEqual((installed / "portal_server.py").read_bytes(), original_portal)
         self.assertEqual((installed / ".wideband-fleetdeck-bundle.json").read_bytes(), original_manifest)
@@ -321,6 +417,214 @@ class FleetdeckBundleTest(unittest.TestCase):
         self.assertEqual(private.read_bytes(), b"owner config\n")
         self.assertFalse([path for path in installed.glob(".wideband-fleetdeck-*")
                           if path.name != bundler.MANIFEST])
+
+    def test_current_fleetdeck_board_and_chat_are_real_and_private(self) -> None:
+        source = Path(os.environ.get("FLEETDECK_TEST_SOURCE", ROOT.parent / "fleetdeck"))
+        if not (source / ".git").exists():
+            self.skipTest("current Fleetdeck checkout is not available")
+        bundle = self.base / "actual-board"
+        self.run_bundle("build", str(source), str(bundle))
+        self.run_bundle("verify", str(bundle))
+        portal_source = (bundle / "portal_server.py").read_text()
+        chat_source = (bundle / "chat_server.py").read_text()
+        self.assertIn("def scan():", portal_source)
+        self.assertIn("CustomerHandler", portal_source)
+        self.assertIn("FLEETDECK_CUSTOMER_TERMINALS", chat_source)
+        self.assertNotIn('self.path.startswith("/?key=")', chat_source)
+        self.assertIsNone(bundler.STATIC_IDENTITY.search(portal_source.encode()))
+        self.assertIsNone(bundler.PHONE_IDENTITY.search(portal_source.encode()))
+        self.assertNotIn("Instant iMessage Agent Installer", portal_source)
+        self.assertIn("return 'saved'", portal_source)
+        self.assertIn("<string>127.0.0.1</string>",
+                      (bundle / "launchagents/fleetdeck-chat.plist.tmpl").read_text())
+
+        token = self.base / "access-token"
+        token.write_text("a" * 64)
+        token.chmod(0o600)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+        config = json.loads((bundle / "config.example.json").read_text())
+        config["ports"]["portal"] = port
+        config["onboarding"] = {"os_name": "Test OS", "agent_name": "Test Agent",
+                                "first_goal": "website", "head_session": "wb-head"}
+        (bundle / "config.json").write_text(json.dumps(config))
+        (bundle / "services.json").write_bytes((bundle / "services.example.json").read_bytes())
+        env = {**os.environ, "FLEETDECK_ACCESS_TOKEN_PATH": str(token),
+               "FLEETDECK_NOTES_PATH": str(self.base / "notes-beta.json"),
+               "FLEETDECK_HOST": "client.tail000.ts.net",
+               "FLEETDECK_MAP_ORIGIN": "https://client.tail000.ts.net:18970"}
+
+        # The private map listener's bare root rejects requests. It must not
+        # appear as a tappable unregistered app, while a different listener
+        # remains discoverable by Fleetdeck's real scan.
+        probe = subprocess.run([sys.executable, "-c", "\n".join((
+            "import json, sys",
+            "sys.path.insert(0, sys.argv[1])",
+            "import portal_server as portal",
+            "portal.listeners = lambda: {18790: {'cmd': 'map-probe', 'cls': 'tailnet'}, "
+            "4180: {'cmd': 'graph-engine', 'cls': 'host'}, "
+            "18791: {'cmd': 'other-probe', 'cls': 'tailnet'}}",
+            "portal.serve_map = lambda: {}",
+            "portal.launch_agents = lambda: []",
+            "print(json.dumps(portal.scan()['extra']))",
+        )), str(bundle)], env=env, capture_output=True, text=True, timeout=10)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertEqual([item["port"] for item in json.loads(probe.stdout)], [18791])
+
+        def request(port: int, path: str, *, cookie: str = "", method: str = "GET",
+                    body: bytes | None = None, extra: dict[str, str] | None = None
+                    ) -> tuple[int, dict[str, str], bytes]:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            headers = {"Cookie": cookie} if cookie else {}
+            headers.update(extra or {})
+            if body is not None:
+                headers["Content-Type"] = "application/json"
+            try:
+                conn.request(method, path, body=body, headers=headers)
+                response = conn.getresponse()
+                return response.status, dict(response.getheaders()), response.read()
+            finally:
+                conn.close()
+
+        portal = subprocess.Popen([sys.executable, str(bundle / "portal_server.py")],
+                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            for _ in range(50):
+                try:
+                    if request(port, "/healthz")[0] == 200:
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                self.fail("actual Fleetdeck portal did not start")
+            self.assertEqual(request(port, "/board")[0], 403)
+            status, headers, _ = request(port, "/p/" + "a" * 64 + "/phone")
+            self.assertEqual((status, headers.get("Location")), (303, "/board"))
+            self.assertIn("Secure; HttpOnly; SameSite=Strict", headers["Set-Cookie"])
+            cookie = headers["Set-Cookie"].split(";", 1)[0]
+            status, headers, page = request(port, "/board", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertIn(b"api/status", page)
+            self.assertIn(b"/p/" + b"a" * 64 + b"/fleet-map", page)
+            self.assertNotIn(b'<a id="cashflow"', page)
+            self.assertIn(b'<a id="notes" href="/notes"', page)
+            self.assertIn(b'Notes \xce\xb2', page)
+            self.assertEqual(headers.get("Referrer-Policy"), "no-referrer")
+            status, _, phone = request(port, "/phone", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertIn(b'<a id="notes" href="/notes"', phone)
+            status, _, api = request(port, "/api/status", cookie=cookie)
+            self.assertEqual(status, 200)
+            services = json.loads(api)["services"]
+            self.assertNotIn("notes", {item["id"] for item in services})
+            status, _, graph = request(port, "/graph", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertIn(b"Graph is not running", graph)
+            self.assertNotIn(b"Your starter map", graph)
+            status, _, manifest = request(port, "/manifest.webmanifest", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(manifest)["start_url"], "/p/" + "a" * 64 + "/board")
+            self.assertEqual(request(port, "/api/agent", cookie=cookie,
+                                     method="POST", body=b"{}")[0], 404)
+            self.assertEqual(request(port, "/p/" + "b" * 64 + "/board")[0], 403)
+            status, _, notes_page = request(port, "/notes", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertIn(b'Notes \xce\xb2', notes_page)
+            status, _, created = request(
+                port, "/api/notes", cookie=cookie, method="POST",
+                body=b'{"text":"Customer note from Fleetdeck board"}',
+                extra={"Origin": f"https://client.tail000.ts.net:{port}",
+                       "Sec-Fetch-Site": "same-origin"})
+            self.assertEqual(status, 200)
+            note = json.loads(created)["note"]
+            self.assertEqual(note["original"], "Customer note from Fleetdeck board")
+            status, _, notes = request(port, "/api/notes", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(notes)["notes"][0]["id"], note["id"])
+            self.assertEqual(json.loads((self.base / "notes-beta.json").read_text())
+                             ["notes"][0]["id"], note["id"])
+        finally:
+            portal.terminate()
+            portal.wait(timeout=5)
+            if portal.stderr:
+                portal.stderr.close()
+
+        disabled = subprocess.run([sys.executable, str(bundle / "chat_server.py")],
+                                  env={**env, "BIND": "127.0.0.1"},
+                                  capture_output=True, timeout=5)
+        self.assertEqual(disabled.returncode, 78)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            chat_port = listener.getsockname()[1]
+        code = ("import sys; sys.path.insert(0, sys.argv[1]); "
+                "from http.server import ThreadingHTTPServer; import chat_server; "
+                "ThreadingHTTPServer(('127.0.0.1', int(sys.argv[2])), chat_server.H).serve_forever()")
+        chat = subprocess.Popen([sys.executable, "-c", code, str(bundle), str(chat_port)],
+                                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            for _ in range(50):
+                try:
+                    if request(chat_port, "/")[0] == 403:
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                self.fail("actual Fleetdeck chat handler did not start")
+            self.assertEqual(request(chat_port, "/?key=old-bypass")[0], 403)
+            self.assertEqual(request(chat_port, "/t/ws")[0], 403)
+            self.assertEqual(request(chat_port, "/api/send", method="POST", body=b"{}")[0], 403)
+            with socket.create_connection(("127.0.0.1", chat_port), timeout=5) as raw:
+                raw.sendall(("GET /p/" + "a" * 64 + "/chat HTTP/1.0\r\n"
+                             "Host: 127.0.0.1\r\n\r\n").encode("ascii"))
+                response = bytearray()
+                while chunk := raw.recv(4096):
+                    response.extend(chunk)
+            header = bytes(response).split(b"\r\n\r\n", 1)[0]
+            self.assertEqual(header.count(b"HTTP/1.0 303"), 1)
+            self.assertEqual(header.count(b"Set-Cookie:"), 1)
+            self.assertEqual(header.count(b"Location: /"), 1)
+            status, headers, _ = request(chat_port, "/p/" + "a" * 64 + "/chat")
+            self.assertEqual((status, headers.get("Location")), (303, "/"))
+            chat_cookie = headers["Set-Cookie"].split(";", 1)[0]
+            self.assertEqual(chat_cookie, cookie)
+            self.assertEqual(request(chat_port, "/", cookie=chat_cookie)[0], 200)
+            self.assertEqual(request(chat_port, "/api/send", cookie=chat_cookie,
+                                     method="POST", body=b"{}",
+                                     extra={"Origin": "https://other.tail000.ts.net:8783"})[0], 403)
+            self.assertEqual(request(chat_port, "/t/ws", cookie=chat_cookie,
+                                     extra={"Upgrade": "websocket",
+                                            "Origin": "https://other.tail000.ts.net:8783"})[0], 403)
+        finally:
+            chat.terminate()
+            chat.wait(timeout=5)
+            if chat.stderr:
+                chat.stderr.close()
+
+    def test_actual_board_upgrade_adds_files_without_changing_client_data(self) -> None:
+        source = Path(os.environ.get("FLEETDECK_TEST_SOURCE", ROOT.parent / "fleetdeck"))
+        if not (source / ".git").exists():
+            self.skipTest("current Fleetdeck checkout is not available")
+        current = self.base / "actual-board"
+        self.run_bundle("build", str(source), str(current))
+        installed = self.legacy_installed(current)
+        (installed / "config.json").write_text('{"client":"keep"}\n')
+        (installed / "services.json").write_text('{"services":[]}\n')
+        (installed / "notes-beta.json").write_text('{"notes":[{"id":"keep"}]}\n')
+        result = self.run_bundle("upgrade", str(current), str(installed)).stdout.strip().splitlines()
+        self.assertEqual(result[0], "upgraded")
+        self.run_bundle("verify-managed", str(installed))
+        self.run_bundle("check-current", str(current), str(installed))
+        self.assertTrue((installed / "customer_access.py").exists())
+        self.assertTrue((installed / "glyphs.json").exists())
+        self.assertEqual((installed / "config.json").read_text(), '{"client":"keep"}\n')
+        self.assertEqual((installed / "notes-beta.json").read_text(),
+                         '{"notes":[{"id":"keep"}]}\n')
+        self.run_bundle("restore", str(current), str(installed), result[1])
+        self.run_bundle("verify-managed", str(installed))
+        self.assertFalse((installed / "customer_access.py").exists())
+        self.assertEqual((installed / "notes-beta.json").read_text(),
+                         '{"notes":[{"id":"keep"}]}\n')
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ PROFILE=""
 SIGN_IDENTITY="${WIDEBAND_SIGN_IDENTITY:--}"
 NOTARY_PROFILE="${WIDEBAND_NOTARY_PROFILE:-}"
 FLEETDECK_SOURCE=""
+GRAPH_SOURCE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --profile)
@@ -33,8 +34,14 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --fleetdeck-source=*) FLEETDECK_SOURCE="${1#*=}"; shift ;;
+    --graph-source)
+      [ "$#" -ge 2 ] || { echo "--graph-source requires a Glitch Cat checkout path" >&2; exit 2; }
+      GRAPH_SOURCE="$2"
+      shift 2
+      ;;
+    --graph-source=*) GRAPH_SOURCE="${1#*=}"; shift ;;
     --help|-h)
-      echo "usage: ./packaging/build-app.sh [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile] [--fleetdeck-source /path/to/fleetdeck]"
+      echo "usage: ./packaging/build-app.sh [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile] [--fleetdeck-source /path/to/fleetdeck] [--graph-source /path/to/glitch-cat]"
       exit 0
       ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -74,6 +81,8 @@ trap cleanup EXIT INT TERM
 [ -z "$PROFILE" ] || [ -f "$PROFILE" ] || { echo "client profile not found: $PROFILE" >&2; exit 1; }
 [ -z "$FLEETDECK_SOURCE" ] || [ -d "$FLEETDECK_SOURCE" ] \
   || { echo "Fleetdeck source checkout not found: $FLEETDECK_SOURCE" >&2; exit 1; }
+[ -z "$GRAPH_SOURCE" ] || [ -d "$GRAPH_SOURCE" ] \
+  || { echo "Glitch Cat source checkout not found: $GRAPH_SOURCE" >&2; exit 1; }
 
 VERSION="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' "$ROOT/installer/manifest.json")"
 BUILD_NUMBER="$(date -u '+%Y%m%d%H%M%S')"
@@ -106,6 +115,7 @@ fi
   --exclude '*.pyc' \
   --exclude '.DS_Store' \
   --exclude '/vendor/fleetdeck/' \
+  --exclude '/vendor/glitch-cat-pilot-bundle/' \
   "$ROOT/" "$PAYLOAD/"
 
 # A customer release can carry the exact reviewed Fleetdeck working tree. The
@@ -115,6 +125,10 @@ fi
 if [ -n "$FLEETDECK_SOURCE" ]; then
   /usr/bin/python3 "$ROOT/packaging/bundle-fleetdeck.py" \
     build "$FLEETDECK_SOURCE" "$PAYLOAD/vendor/fleetdeck"
+fi
+if [ -n "$GRAPH_SOURCE" ]; then
+  /usr/bin/python3 "$ROOT/packaging/glitch-cat-pilot.py" \
+    bundle "$GRAPH_SOURCE" "$PAYLOAD/vendor/glitch-cat-pilot-bundle"
 fi
 
 # Bundle the localhost engine so the branded checklist can open immediately on

@@ -12,6 +12,7 @@ import argparse
 import datetime as dt
 import fcntl
 import hashlib
+import hmac
 import http.client
 import json
 import os
@@ -66,16 +67,23 @@ HANDOFF_FILE_NAMES = (
 HANDOFF_OUTBOX_STATES = ("pending", "processing", "sent", "review", "rejected")
 HANDOFF_PROCESSING_STALE_SECONDS = 90  # imsg's 60-second timeout plus margin
 HANDOFF_PAGE_MARKERS = {
-    "/phone": ("<title>Board ·", "FLEETDECK"),
-    "/agent": ("<title>Agent ·", "Talk in Messages"),
-    "/project": ("<title>Project ·", "First project"),
-    "/graph": ("<title>Knowledge graph ·", "Knowledge graph"),
-    "/watch": ("<title>Watch ·", 'aria-label="Head agent terminal"'),
-    "/notes": ("<title>Notes beta ·", "Capture an idea"),
+    "/board": (" // portal</title>", '<main id="app">'),
+    "/agent": ("Talk in Messages", "HEAD AGENT"),
+    "/project": ("<title>First project // Fleetdeck</title>", "First project"),
+    "/notes": (" // notes</title>", "Notes β"),
 }
+BOARD_TLS_PORT = 8790
+FLEET_MAP_TLS_PORT = 18970
+FLEET_MAP_LOCAL_PORT = 18790
+GRAPH_TLS_PORT = 8792
+GRAPH_LOCAL_PORT = 4181
+CHAT_TLS_PORT = 8783
+CHAT_LOCAL_PORT = 8783
 PHONE_TOKEN_PATTERN = re.compile(r"[0-9a-f]{64}")
-PHONE_LINK_PATH_PATTERN = re.compile(r"(/p/[0-9a-f]{64})/phone")
-PHONE_ROUTE_PATTERN = re.compile(r"/p/[0-9a-f]{64}(/(?:phone|agent|project|graph|watch|notes|api/watch|api/notes))")
+PHONE_LINK_PATH_PATTERN = re.compile(r"(/p/[0-9a-f]{64})/board")
+PHONE_ROUTE_PATTERN = re.compile(
+    r"/p/([0-9a-f]{64})(/(?:board|agent|project|notes|api/status|api/notes|fleet-map|api/fleet-map|graph|api/stats|api/graph|chat))"
+)
 BIND_SUCCESS_OUTPUT = {
     "owner chat bound and first message queued; run installer to activate services",
     "existing owner chat binding verified",
@@ -1137,53 +1145,161 @@ def portal_healthz(scheme: str, host: str, port: int) -> bool:
         connection.close()
 
 
-def portal_handoff_page(host: str, port: int, path: str) -> bool:
-    """Prove each texted Fleetdeck route is this customer portal's HTML page."""
-    route = PHONE_ROUTE_PATTERN.fullmatch(path)
-    markers = HANDOFF_PAGE_MARKERS.get(route.group(1)) if route else None
-    if not markers:
-        return False
+def _handoff_https_get(host: str, port: int, path: str, accept: str, *,
+                       cookie: str = "", limit: int = 256 * 1024) -> tuple[int, str, bytes, str, str]:
+    """Fetch one exact HTTPS path; never follow a redirect or log a capability."""
     connection = http.client.HTTPSConnection(host, port, timeout=4, context=ssl.create_default_context())
     try:
-        connection.request("GET", path, headers={"Accept": "text/html"})
+        headers = {"Accept": accept, "Cache-Control": "no-store"}
+        if cookie:
+            headers["Cookie"] = cookie
+        connection.request("GET", path, headers=headers)
         response = connection.getresponse()
-        if (response.status != 200
-                or (response.getheader("Content-Type") or "").split(";", 1)[0].strip().lower() != "text/html"):
-            return False
-        body = response.read(64 * 1024 + 1)
-        if len(body) > 64 * 1024:
-            return False
-        html = body.decode("utf-8")
-        return all(marker in html for marker in markers)
-    except (OSError, UnicodeError, http.client.HTTPException):
-        return False
+        body = response.read(limit + 1)
+        if len(body) > limit:
+            raise ValueError("handoff response exceeded its limit")
+        return (response.status,
+                (response.getheader("Content-Type") or "").split(";", 1)[0].strip().lower(),
+                body, response.getheader("Location") or "", response.getheader("Set-Cookie") or "")
     finally:
         connection.close()
+
+
+def _handoff_cookie(token: str, header: str) -> str | None:
+    """Accept only the reviewed Fleetdeck HMAC session, never a raw bearer."""
+    expected = hmac.new(bytes.fromhex(token), b"wideband-fleetdeck-session-v1", hashlib.sha256).hexdigest()
+    parts = [part.strip() for part in header.split(";")]
+    if (not parts or parts[0] != f"wb_fleetdeck_session={expected}"
+            or not {"path=/", "secure", "httponly", "samesite=strict"}.issubset(
+                {part.lower() for part in parts[1:]})):
+        return None
+    return parts[0]
+
+
+def _handoff_bootstrap(host: str, port: int, token: str, route: str,
+                       destination: str) -> str | None:
+    status, _mime, _body, location, header = _handoff_https_get(
+        host, port, f"/p/{token}{route}", "text/html")
+    if status != 303 or location != destination:
+        return None
+    return _handoff_cookie(token, header)
+
+
+def portal_handoff_page(host: str, port: int, path: str) -> bool:
+    """Prove the actual board, map, graph, and terminal pages over HTTPS."""
+    route = PHONE_ROUTE_PATTERN.fullmatch(path)
+    try:
+        if route:
+            token, suffix = route.groups()
+            if suffix in HANDOFF_PAGE_MARKERS and port == BOARD_TLS_PORT:
+                cookie = _handoff_bootstrap(host, port, token, suffix, suffix)
+                if cookie is None:
+                    return False
+                status, mime, body, _location, _header = _handoff_https_get(
+                    host, port, suffix, "text/html", cookie=cookie)
+                markers = HANDOFF_PAGE_MARKERS[suffix]
+                if suffix == "/board":
+                    markers += (f'<a id="netmap" href="https://{host}:{FLEET_MAP_TLS_PORT}'
+                                f'/p/{token}/fleet-map"',)
+            elif suffix == "/chat" and port == CHAT_TLS_PORT:
+                cookie = _handoff_bootstrap(host, port, token, suffix, "/")
+                if cookie is None:
+                    return False
+                status, mime, body, _location, _header = _handoff_https_get(
+                    host, port, "/", "text/html", cookie=cookie)
+                markers = ("<title>▩ fleet</title>", "/api/sessions")
+            elif suffix == "/fleet-map" and port == FLEET_MAP_TLS_PORT:
+                status, mime, body, _location, _header = _handoff_https_get(
+                    host, port, path, "text/html")
+                markers = ("<title>Live terminal network · Fleetdeck</title>",
+                           f"/p/{token}/api/fleet-map")
+            elif suffix == "/graph" and port == GRAPH_TLS_PORT:
+                cookie = _handoff_bootstrap(host, port, token, suffix, "/")
+                if cookie is None:
+                    return False
+                status, mime, body, _location, _header = _handoff_https_get(
+                    host, port, "/", "text/html", cookie=cookie)
+                markers = ("<title>Wideband — knowledge graph</title>", "/api/graph")
+            else:
+                return False
+        else:
+            return False
+        html = body.decode("utf-8")
+        return status == 200 and mime == "text/html" and all(marker in html for marker in markers)
+    except (OSError, ValueError, UnicodeError, http.client.HTTPException):
+        return False
 
 
 def portal_handoff_api(host: str, port: int, path: str) -> bool:
-    """Prove the two dynamic phone views have working read endpoints."""
-    route = PHONE_ROUTE_PATTERN.fullmatch(path)
-    suffix = route.group(1) if route else None
-    if suffix not in ("/api/watch", "/api/notes"):
-        return False
-    connection = http.client.HTTPSConnection(host, port, timeout=4, context=ssl.create_default_context())
+    """Require live source data for every linked Fleetdeck service."""
+    base, mark, query = path.partition("?")
+    route = PHONE_ROUTE_PATTERN.fullmatch(base)
+    suffix = route.group(2) if route else None
     try:
-        connection.request("GET", path, headers={"Accept": "application/json"})
-        response = connection.getresponse()
-        if (response.status != 200
-                or (response.getheader("Content-Type") or "").split(";", 1)[0].strip().lower() != "application/json"):
+        if port == BOARD_TLS_PORT and route and suffix in ("/api/status", "/api/notes"):
+            token = route.group(1)
+            bootstrap = "/board" if suffix == "/api/status" else suffix
+            cookie = _handoff_bootstrap(host, port, token, bootstrap, bootstrap)
+            if cookie is None:
+                return False
+            status, mime, body, _location, _header = _handoff_https_get(
+                host, port, suffix, "application/json", cookie=cookie, limit=2 * 1024 * 1024)
+        elif port == FLEET_MAP_TLS_PORT and suffix == "/api/fleet-map":
+            status, mime, body, _location, _header = _handoff_https_get(
+                host, port, path, "application/json", limit=2 * 1024 * 1024)
+        elif (port == GRAPH_TLS_PORT and route and suffix in ("/api/stats", "/api/graph")
+              and (not mark if suffix == "/api/stats" else query == "lens=surface")):
+            token = route.group(1)
+            cookie = _handoff_bootstrap(host, port, token, "/graph", "/")
+            if cookie is None:
+                return False
+            status, mime, body, _location, _header = _handoff_https_get(
+                host, port, suffix + ("?" + query if mark else ""), "application/json",
+                cookie=cookie, limit=8 * 1024 * 1024)
+        elif port == CHAT_TLS_PORT and suffix == "/chat":
+            token = route.group(1)
+            cookie = _handoff_bootstrap(host, port, token, "/chat", "/")
+            if cookie is None:
+                return False
+            status, mime, body, _location, _header = _handoff_https_get(
+                host, port, "/healthz", "application/json", cookie=cookie)
+            if status != 200 or mime != "application/json":
+                return False
+            health = json.loads(body)
+            if (not isinstance(health, dict) or health.get("ok") is not True
+                    or health.get("ttyd") is not True
+                    or type(health.get("sessions")) is not int or health["sessions"] < 1):
+                return False
+            status, mime, body, _location, _header = _handoff_https_get(
+                host, port, "/api/sessions", "application/json", cookie=cookie,
+                limit=2 * 1024 * 1024)
+        else:
             return False
-        # The notes collection and terminal output can be large. Read only the
-        # response envelope; its first keys are fixed by customer-portal.py.
-        prefix = response.read(256).decode("utf-8")
-        if suffix == "/api/watch":
-            return bool(re.match(r'^\s*\{\s*"running"\s*:\s*true\s*,\s*"text"\s*:\s*"', prefix))
-        return bool(re.match(r'^\s*\{\s*"notes"\s*:\s*\[', prefix))
+        if status != 200 or mime != "application/json":
+            return False
+        value = json.loads(body)
+        if port == BOARD_TLS_PORT and suffix == "/api/status":
+            return isinstance(value, dict) and isinstance(value.get("services"), list) and bool(value["services"])
+        if port == BOARD_TLS_PORT and suffix == "/api/notes":
+            return isinstance(value, dict) and isinstance(value.get("notes"), list)
+        if port == FLEET_MAP_TLS_PORT:
+            return (isinstance(value, dict) and value.get("schema_version") == "agent-fleet.snapshot.v1"
+                    and value.get("status") in ("fresh", "partial")
+                    and isinstance(value.get("nodes"), list)
+                    and any(isinstance(node, dict) and node.get("id") == "session:wb-head"
+                            and node.get("observed") is True for node in value["nodes"]))
+        if port == GRAPH_TLS_PORT and suffix == "/api/stats":
+            return (isinstance(value, dict) and type(value.get("nodes")) is int and value["nodes"] > 0
+                    and type(value.get("edges")) is int and value["edges"] > 0
+                    and isinstance(value.get("run"), dict) and bool(value["run"].get("at")))
+        if port == GRAPH_TLS_PORT:
+            return (isinstance(value, dict) and isinstance(value.get("nodes"), list)
+                    and bool(value["nodes"]) and isinstance(value.get("edges"), list)
+                    and bool(value["edges"]))
+        return (port == CHAT_TLS_PORT and isinstance(value, list)
+                and any(isinstance(item, dict) and item.get("name") == "wb-head" for item in value))
     except (OSError, ValueError, UnicodeError, http.client.HTTPException):
         return False
-    finally:
-        connection.close()
 
 
 def phone_access_token(home: Path) -> str | None:
@@ -1228,8 +1344,9 @@ def phone_portal_link(
     runner: Any = subprocess.run,
     probe: Any = portal_healthz,
     surface_probe: Any = portal_handoff_page,
+    api_probe: Any = portal_handoff_api,
 ) -> dict[str, str]:
-    """Expose a phone URL only when this Mac's exact HTTPS Serve route works."""
+    """Expose a phone URL only after the full VM Fleetdeck stack answers."""
     waiting = lambda detail: {"status": "waiting", "detail": detail}
     attention = lambda detail: {"status": "needs_attention", "detail": detail}
     if state.get("lifecycle", {}).get("deactivated_at"):
@@ -1240,7 +1357,7 @@ def phone_portal_link(
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
         port = config["ports"]["portal"]
-        if type(port) is not int or not 1 <= port <= 65535:
+        if type(port) is not int or port != BOARD_TLS_PORT:
             raise ValueError("invalid portal port")
     except (OSError, ValueError, KeyError, TypeError):
         return attention("Fleetdeck portal configuration is unavailable. Repair the phone view.")
@@ -1304,19 +1421,32 @@ def phone_portal_link(
             continue
         if not probe("https", dns_name, tls_port):
             return waiting("Tailscale Serve is mapped, but its HTTPS health check failed. Check Tailscale sign-in and HTTPS certificates.")
-        if not surface_probe(dns_name, tls_port, f"/p/{token}/phone"):
+        if not surface_probe(dns_name, tls_port, f"/p/{token}/board"):
             return attention("Fleetdeck's private phone page is not answering with this access link. Repair the phone view.")
+        if not _private_handoff_serve_routes(home, runner, dns_name):
+            return waiting("The VM's private map, graph, and terminal HTTPS routes are not ready yet.")
+        prefix = f"/p/{token}"
+        pages = ((FLEET_MAP_TLS_PORT, prefix + "/fleet-map"),
+                 (GRAPH_TLS_PORT, prefix + "/graph"), (CHAT_TLS_PORT, prefix + "/chat"))
+        endpoints = ((BOARD_TLS_PORT, prefix + "/api/status"),
+                     (FLEET_MAP_TLS_PORT, prefix + "/api/fleet-map"),
+                     (GRAPH_TLS_PORT, prefix + "/api/stats"),
+                     (GRAPH_TLS_PORT, prefix + "/api/graph?lens=surface"),
+                     (CHAT_TLS_PORT, prefix + "/chat"))
+        if (any(not surface_probe(dns_name, service_port, path) for service_port, path in pages)
+                or any(not api_probe(dns_name, service_port, path) for service_port, path in endpoints)):
+            return attention("The VM's live Fleetdeck board, map, graph, or terminals are not ready. Repair the phone view.")
         suffix = "" if tls_port == 443 else f":{tls_port}"
         return {
             "status": "ready",
-            "url": f"https://{dns_name}{suffix}/p/{token}/phone",
+            "url": f"https://{dns_name}{suffix}/p/{token}/board",
             "detail": "Fleetdeck's HTTPS route answered on this Mac. Open it on your phone to confirm phone reachability, then add it to the home screen.",
         }
     return waiting("Tailscale Serve has no HTTPS route to this Fleetdeck portal. Set up Serve, then check again.")
 
 
 def _handoff_messages(phone_url: str, agent_name: str, os_name: str, tm_shortcut: bool) -> tuple[str, str]:
-    """Build short owner-chat texts from one verified private Fleetdeck origin."""
+    """Build short owner-chat texts from the fixed, verified VM routes."""
     try:
         url = urllib.parse.urlsplit(phone_url)
         port = url.port
@@ -1327,20 +1457,24 @@ def _handoff_messages(phone_url: str, agent_name: str, os_name: str, tm_shortcut
             or url.query or url.fragment or not url.hostname
             or not re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+\.ts\.net", url.hostname)):
         raise RuntimeError("Fleetdeck did not provide a valid private phone link")
-    if port is not None and not 1 <= port <= 65535:
+    if port != BOARD_TLS_PORT:
         raise RuntimeError("Fleetdeck did not provide a valid private phone link")
     if url.netloc != url.hostname + (f":{port}" if port is not None else ""):
         raise RuntimeError("Fleetdeck did not provide a valid private phone link")
     origin = urllib.parse.urlunsplit((url.scheme, url.netloc, "", "", ""))
     prefix = route.group(1)
+    map_url = f"https://{url.hostname}:{FLEET_MAP_TLS_PORT}{prefix}/fleet-map"
+    graph_url = f"https://{url.hostname}:{GRAPH_TLS_PORT}{prefix}/graph"
+    chat_url = f"https://{url.hostname}:{CHAT_TLS_PORT}{prefix}/chat"
     dashboard = (
         f"{agent_name} is ready on {os_name}. Save your private Fleetdeck links; "
         "connect Tailscale on your iPhone before opening them.\n"
         f"Dashboard: {phone_url}\n"
         f"Agent: {origin}{prefix}/agent\n"
         f"Project: {origin}{prefix}/project\n"
-        f"Knowledge graph: {origin}{prefix}/graph\n"
-        f"Live terminal (read only): {origin}{prefix}/watch\n"
+        f"Knowledge graph: {graph_url}\n"
+        f"Live terminal network: {map_url}\n"
+        f"Interactive terminals: {chat_url}\n"
         f"Notes (beta): {origin}{prefix}/notes\n"
         "Open the dashboard in Safari, then Share > Add to Home Screen. Pin this chat for the links."
     )
@@ -1358,6 +1492,53 @@ def _handoff_messages(phone_url: str, agent_name: str, os_name: str, tm_shortcut
     if any(len(message) > 1500 for message in (dashboard, commands)):
         raise RuntimeError("the setup handoff is too long for the guarded text outbox")
     return dashboard, commands
+
+
+def _private_handoff_serve_routes(home: Path, runner: Any, host: str) -> bool:
+    """Require each separate phone service to proxy to this Mac's exact loopback port."""
+    candidates = (
+        Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
+        home / "Applications" / "Tailscale.app" / "Contents" / "MacOS" / "Tailscale",
+        Path("/opt/homebrew/bin/tailscale"),
+    )
+    binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
+    if binary is None:
+        return False
+
+    def read(*args: str) -> dict[str, Any] | None:
+        try:
+            result = runner([str(binary), *args], capture_output=True, text=True, timeout=5,
+                            check=False, env={**os.environ, "TAILSCALE_BE_CLI": "1"})
+            value = json.loads(result.stdout) if result.returncode == 0 else None
+            return value if isinstance(value, dict) else None
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+
+    status = read("status", "--json") or {}
+    self_status = status.get("Self")
+    dns = self_status.get("DNSName") if isinstance(self_status, dict) else None
+    if not isinstance(dns, str) or dns.lower().rstrip(".") != host:
+        return False
+    serve = read("serve", "status", "--json") or {}
+    tcp, web, funnel = serve.get("TCP"), serve.get("Web"), serve.get("AllowFunnel", {})
+    if not all(isinstance(item, dict) for item in (tcp, web, funnel)):
+        return False
+    for tls_port, local_port in ((FLEET_MAP_TLS_PORT, FLEET_MAP_LOCAL_PORT),
+                                 (GRAPH_TLS_PORT, GRAPH_LOCAL_PORT),
+                                 (CHAT_TLS_PORT, CHAT_LOCAL_PORT)):
+        hostport = f"{host}:{tls_port}"
+        settings = web.get(hostport)
+        if (funnel.get(hostport) is True or not isinstance(settings, dict)
+                or not isinstance(tcp.get(str(tls_port)), dict)
+                or tcp[str(tls_port)].get("HTTPS") is not True):
+            return False
+        handlers = settings.get("Handlers")
+        root = handlers.get("/") if isinstance(handlers, dict) else None
+        if (not isinstance(root, dict)
+                or root.get("Proxy") not in (f"http://127.0.0.1:{local_port}",
+                                              f"http://127.0.0.1:{local_port}/")):
+            return False
+    return True
 
 
 def handoff_delivery_status(home: Path, state: dict[str, Any]) -> dict[str, Any]:
@@ -1529,7 +1710,8 @@ def queue_setup_handoff(
         raise RuntimeError("confirm the Fleetdeck board works on the phone before the setup handoff")
     if not state.get("handoff", {}).get("approved_at"):
         raise RuntimeError("approve the setup texts in Wideband Setup before they are queued")
-    link = phone_portal_link(home, state, runner=runner, probe=probe, surface_probe=surface_probe)
+    link = phone_portal_link(home, state, runner=runner, probe=probe,
+                             surface_probe=surface_probe, api_probe=api_probe)
     if link.get("status") != "ready" or not link.get("url"):
         raise RuntimeError("verify the private Fleetdeck HTTPS phone link before the setup handoff")
 
@@ -1553,16 +1735,33 @@ def queue_setup_handoff(
             or not isinstance(binding.get("account_login"), str) or not binding["account_login"]):
         raise RuntimeError("the private iMessage binding does not match this Claude setup")
 
+    parsed_link = urllib.parse.urlsplit(link["url"])
+    host, port = parsed_link.hostname, parsed_link.port or 443
+    prefix = parsed_link.path.removesuffix("/board")
+    if not host or any(not surface_probe(host, port, prefix + path) for path in HANDOFF_PAGE_MARKERS):
+        raise RuntimeError("verify every Fleetdeck phone page over private HTTPS before the setup handoff")
+    if not _private_handoff_serve_routes(home, runner, host):
+        raise RuntimeError("verify the VM's private map, graph, and terminal HTTPS routes before the setup handoff")
+    external_pages = (
+        (FLEET_MAP_TLS_PORT, prefix + "/fleet-map"),
+        (GRAPH_TLS_PORT, prefix + "/graph"),
+        (CHAT_TLS_PORT, prefix + "/chat"),
+    )
+    if any(not surface_probe(host, service_port, path) for service_port, path in external_pages):
+        raise RuntimeError("verify the VM's live map, graph, and terminal pages before the setup handoff")
+    dynamic_endpoints = (
+        (BOARD_TLS_PORT, prefix + "/api/status"),
+        (BOARD_TLS_PORT, prefix + "/api/notes"),
+        (FLEET_MAP_TLS_PORT, prefix + "/api/fleet-map"),
+        (GRAPH_TLS_PORT, prefix + "/api/stats"),
+        (GRAPH_TLS_PORT, prefix + "/api/graph?lens=surface"),
+        (CHAT_TLS_PORT, prefix + "/chat"),
+    )
+    if any(not api_probe(host, service_port, path) for service_port, path in dynamic_endpoints):
+        raise RuntimeError("verify the VM's live board, map, graph, and terminal data before the setup handoff")
     tm = home / "bin" / "tm"
     messages = _handoff_messages(link["url"], names["agent_name"], names["os_name"],
                                  tm.is_file() and os.access(tm, os.X_OK))
-    parsed_link = urllib.parse.urlsplit(link["url"])
-    host, port = parsed_link.hostname, parsed_link.port or 443
-    prefix = parsed_link.path.removesuffix("/phone")
-    if not host or any(not surface_probe(host, port, prefix + path) for path in HANDOFF_PAGE_MARKERS):
-        raise RuntimeError("verify every Fleetdeck phone page over private HTTPS before the setup handoff")
-    if any(not api_probe(host, port, prefix + path) for path in ("/api/watch", "/api/notes")):
-        raise RuntimeError("verify Fleetdeck's live terminal and notes read endpoints before the setup handoff")
     outbox = runtime_state / "outbox"
     try:
         root_info = outbox.lstat()

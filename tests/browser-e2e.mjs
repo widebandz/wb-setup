@@ -254,7 +254,7 @@ try {
       if (path === "/api/phone-link") {
         calls.push({ path, method: options?.method || "GET" });
         return new Response(JSON.stringify({
-          status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/phone",
+          status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/board",
           detail: "Private phone link verified.",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -292,7 +292,7 @@ try {
         snapshot.verification_rollup[id] = "pass";
       }
       phonePortalProof = {
-        status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/phone",
+        status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/board",
         run: "handoff-browser-proof", checkedAt: Date.now(),
       };
       renderFirstGoal();

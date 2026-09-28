@@ -20,8 +20,13 @@ DNS = "aurora.example-tailnet.ts.net"
 PORT = 8790
 TOKEN = "a" * 64
 SERVE = {
-    "TCP": {str(PORT): {"HTTPS": True}},
-    "Web": {f"{DNS}:{PORT}": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{PORT}"}}}},
+    "TCP": {str(port): {"HTTPS": True} for port in
+            (PORT, setup.FLEET_MAP_TLS_PORT, setup.GRAPH_TLS_PORT, setup.CHAT_TLS_PORT)},
+    "Web": {f"{DNS}:{port}": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{local}"}}}
+            for port, local in ((PORT, PORT),
+                                (setup.FLEET_MAP_TLS_PORT, setup.FLEET_MAP_LOCAL_PORT),
+                                (setup.GRAPH_TLS_PORT, setup.GRAPH_LOCAL_PORT),
+                                (setup.CHAT_TLS_PORT, setup.CHAT_LOCAL_PORT))},
 }
 
 
@@ -53,8 +58,10 @@ class PhoneLinkTest(unittest.TestCase):
         self.dns = DNS
         self.probe_calls = []
         self.surface_calls = []
+        self.api_calls = []
         self.https_healthy = True
         self.surface_healthy = True
+        self.api_healthy = True
 
     def run_tailscale(self, command, **kwargs):
         self.assertEqual(kwargs["env"]["TAILSCALE_BE_CLI"], "1")
@@ -75,25 +82,44 @@ class PhoneLinkTest(unittest.TestCase):
         self.surface_calls.append((host, port, path))
         return self.surface_healthy
 
+    def api_probe(self, host, port, path):
+        self.api_calls.append((host, port, path))
+        return self.api_healthy
+
     def inspect(self):
         return setup.phone_portal_link(
             self.home, self.state, runner=self.run_tailscale,
-            probe=self.probe, surface_probe=self.surface_probe,
+            probe=self.probe, surface_probe=self.surface_probe, api_probe=self.api_probe,
         )
 
     def test_ready_requires_local_and_https_health(self):
         result = self.inspect()
         self.assertEqual(result["status"], "ready")
-        self.assertEqual(result["url"], f"https://{DNS}:{PORT}/p/{TOKEN}/phone")
+        self.assertEqual(result["url"], f"https://{DNS}:{PORT}/p/{TOKEN}/board")
         self.assertEqual(self.probe_calls, [("http", "127.0.0.1", PORT), ("https", DNS, PORT)])
-        self.assertEqual(self.surface_calls, [(DNS, PORT, f"/p/{TOKEN}/phone")])
+        self.assertEqual(self.surface_calls, [
+            (DNS, PORT, f"/p/{TOKEN}/board"),
+            (DNS, setup.FLEET_MAP_TLS_PORT, f"/p/{TOKEN}/fleet-map"),
+            (DNS, setup.GRAPH_TLS_PORT, f"/p/{TOKEN}/graph"),
+            (DNS, setup.CHAT_TLS_PORT, f"/p/{TOKEN}/chat"),
+        ])
+        self.assertIn((DNS, setup.FLEET_MAP_TLS_PORT, f"/p/{TOKEN}/api/fleet-map"), self.api_calls)
+        self.assertIn((DNS, setup.GRAPH_TLS_PORT, f"/p/{TOKEN}/api/stats"), self.api_calls)
+        self.assertIn((DNS, setup.CHAT_TLS_PORT, f"/p/{TOKEN}/chat"), self.api_calls)
 
     def test_wrong_access_token_or_old_portal_never_exposes_link(self):
         self.surface_healthy = False
         result = self.inspect()
         self.assertEqual(result["status"], "needs_attention")
         self.assertNotIn("url", result)
-        self.assertEqual(self.surface_calls, [(DNS, PORT, f"/p/{TOKEN}/phone")])
+        self.assertEqual(self.surface_calls, [(DNS, PORT, f"/p/{TOKEN}/board")])
+
+    def test_incomplete_live_stack_never_exposes_link(self):
+        self.serve["Web"].pop(f"{DNS}:{setup.FLEET_MAP_TLS_PORT}")
+        self.assertNotIn("url", self.inspect())
+        self.serve = json.loads(json.dumps(SERVE))
+        self.api_healthy = False
+        self.assertNotIn("url", self.inspect())
 
     def test_missing_or_unsafe_access_token_never_exposes_link(self):
         self.token_file.unlink()

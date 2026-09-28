@@ -2,7 +2,9 @@
 """Isolated setup-text handoff proof. No real Tailscale or iMessage calls."""
 
 import importlib.util
+import hashlib
 import http.client
+import hmac
 import json
 import os
 import stat
@@ -83,8 +85,13 @@ class SetupHandoffTest(unittest.TestCase):
             },
         }))
         self.serve = {
-            "TCP": {str(PORT): {"HTTPS": True}},
-            "Web": {f"{DNS}:{PORT}": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{PORT}"}}}},
+            "TCP": {str(port): {"HTTPS": True} for port in
+                    (PORT, setup.FLEET_MAP_TLS_PORT, setup.GRAPH_TLS_PORT, setup.CHAT_TLS_PORT)},
+            "Web": {f"{DNS}:{port}": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{local}"}}}
+                    for port, local in ((PORT, PORT),
+                                        (setup.FLEET_MAP_TLS_PORT, setup.FLEET_MAP_LOCAL_PORT),
+                                        (setup.GRAPH_TLS_PORT, setup.GRAPH_LOCAL_PORT),
+                                        (setup.CHAT_TLS_PORT, setup.CHAT_LOCAL_PORT))},
         }
         self.calls = []
         self.page_calls = []
@@ -128,10 +135,12 @@ class SetupHandoffTest(unittest.TestCase):
         self.assertEqual(self.queue(), {"status": "queued", "queued": 2})
         self.assertEqual([path.name for path in sorted(self.files())], list(setup.HANDOFF_FILE_NAMES))
         first, second = [path.read_text(encoding="utf-8") for path in sorted(self.files())]
-        self.assertIn(f"Dashboard: https://{DNS}:{PORT}{PREFIX}/phone", first)
-        for path in ("/agent", "/project", "/graph", "/watch", "/notes"):
+        self.assertIn(f"Dashboard: https://{DNS}:{PORT}{PREFIX}/board", first)
+        for path in ("/agent", "/project", "/notes"):
             self.assertIn(f"https://{DNS}:{PORT}{PREFIX}{path}", first)
-        self.assertIn("Live terminal (read only)", first)
+        self.assertIn(f"Knowledge graph: https://{DNS}:{setup.GRAPH_TLS_PORT}{PREFIX}/graph", first)
+        self.assertIn(f"Live terminal network: https://{DNS}:{setup.FLEET_MAP_TLS_PORT}{PREFIX}/fleet-map", first)
+        self.assertIn(f"Interactive terminals: https://{DNS}:{setup.CHAT_TLS_PORT}{PREFIX}/chat", first)
         self.assertIn("Notes (beta)", first)
         self.assertIn("https://apps.apple.com/us/app/tailscale/id1470499037", second)
         self.assertIn("https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908", second)
@@ -147,15 +156,26 @@ class SetupHandoffTest(unittest.TestCase):
         self.assertEqual(self.store.read()["handoff"]["version"], 1)
         self.assertEqual(self.store.read()["handoff"]["status"], "queued")
         self.assertEqual([path for _host, _port, path in self.page_calls],
-                         [PREFIX + "/phone"] + [PREFIX + path for path in setup.HANDOFF_PAGE_MARKERS])
-        self.assertTrue(all(host == DNS and port == PORT for host, port, _path in self.page_calls))
-        self.assertEqual([path for _host, _port, path in self.api_calls],
-                         [PREFIX + "/api/watch", PREFIX + "/api/notes"])
+                         [PREFIX + "/board", PREFIX + "/fleet-map", PREFIX + "/graph", PREFIX + "/chat"]
+                         + [PREFIX + path for path in setup.HANDOFF_PAGE_MARKERS]
+                         + [PREFIX + "/fleet-map", PREFIX + "/graph", PREFIX + "/chat"])
+        self.assertTrue(all(host == DNS for host, _port, _path in self.page_calls))
+        self.assertEqual([(port, path) for _host, port, path in self.api_calls],
+                         [(PORT, PREFIX + "/api/status"),
+                          (setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map"),
+                          (setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"),
+                          (setup.GRAPH_TLS_PORT, PREFIX + "/api/graph?lens=surface"),
+                          (setup.CHAT_TLS_PORT, PREFIX + "/chat"),
+                          (PORT, PREFIX + "/api/status"), (PORT, PREFIX + "/api/notes"),
+                          (setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map"),
+                          (setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"),
+                          (setup.GRAPH_TLS_PORT, PREFIX + "/api/graph?lens=surface"),
+                          (setup.CHAT_TLS_PORT, PREFIX + "/chat")])
         (self.runtime / "outbox" / "pending" / setup.HANDOFF_FILE_NAMES[0]).unlink()
         self.assertEqual(self.queue(), {"status": "held", "queued": 0})
         self.assertEqual(len(self.files()), 1)
         self.assertEqual(self.store.read()["handoff"]["status"], "held")
-        self.assertEqual(self.calls.count(["status", "--json"]), 2)
+        self.assertEqual(self.calls.count(["status", "--json"]), 6)
 
     def test_delivery_status_tracks_pending_sent_and_stale_processing_without_retry(self):
         self.assertEqual(setup.handoff_delivery_status(self.home, self.store.read())["status"], "not_queued")
@@ -370,41 +390,112 @@ class SetupHandoffTest(unittest.TestCase):
             self.queue()
         self.assertEqual(self.files(), [])
 
+    def test_missing_or_public_separate_service_never_queues_links(self):
+        for port in (setup.FLEET_MAP_TLS_PORT, setup.GRAPH_TLS_PORT, setup.CHAT_TLS_PORT):
+            key = f"{DNS}:{port}"
+            original = self.serve["Web"].pop(key)
+            with self.assertRaisesRegex(RuntimeError, "private Fleetdeck HTTPS"):
+                self.queue()
+            self.assertEqual(self.files(), [])
+            self.serve["Web"][key] = original
+            self.serve["AllowFunnel"] = {key: True}
+            with self.assertRaisesRegex(RuntimeError, "private Fleetdeck HTTPS"):
+                self.queue()
+            self.assertEqual(self.files(), [])
+            self.serve.pop("AllowFunnel")
+
     def test_every_customer_route_must_answer_over_private_https(self):
         for path in setup.HANDOFF_PAGE_MARKERS:
             self.broken_page = PREFIX + path
             self.page_calls.clear()
-            expected_error = "private Fleetdeck HTTPS" if path == "/phone" else "every Fleetdeck phone page"
+            expected_error = "private Fleetdeck HTTPS" if path == "/board" else "every Fleetdeck phone page"
             with self.assertRaisesRegex(RuntimeError, expected_error):
                 self.queue()
             self.assertEqual(self.files(), [])
             self.assertIn((DNS, PORT, PREFIX + path), self.page_calls)
         self.broken_page = None
-        for path in ("/api/watch", "/api/notes"):
-            self.broken_api = PREFIX + path
-            self.api_calls.clear()
-            with self.assertRaisesRegex(RuntimeError, "read endpoints"):
+        for port, path in ((setup.FLEET_MAP_TLS_PORT, PREFIX + "/fleet-map"),
+                           (setup.GRAPH_TLS_PORT, PREFIX + "/graph"),
+                           (setup.CHAT_TLS_PORT, PREFIX + "/chat")):
+            self.broken_page = path
+            with self.assertRaisesRegex(RuntimeError, "private Fleetdeck HTTPS"):
                 self.queue()
             self.assertEqual(self.files(), [])
-            self.assertIn((DNS, PORT, PREFIX + path), self.api_calls)
+            self.assertIn((DNS, port, path), self.page_calls)
+        self.broken_page = None
+        for port, path in ((PORT, PREFIX + "/api/status"),
+                           (PORT, PREFIX + "/api/notes"),
+                           (setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map"),
+                           (setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"),
+                           (setup.GRAPH_TLS_PORT, PREFIX + "/api/graph?lens=surface"),
+                           (setup.CHAT_TLS_PORT, PREFIX + "/chat")):
+            self.broken_api = path
+            self.api_calls.clear()
+            expected = ("live board, map, graph, and terminal data" if path == PREFIX + "/api/notes"
+                        else "private Fleetdeck HTTPS")
+            with self.assertRaisesRegex(RuntimeError, expected):
+                self.queue()
+            self.assertEqual(self.files(), [])
+            self.assertIn((DNS, port, path), self.api_calls)
+        self.broken_api = None
 
-    def test_page_probe_rejects_redirects_wrong_html_and_missing_markers(self):
-        pages = {PREFIX + path: "<html>" + " ".join(markers) + "</html>"
-                 for path, markers in setup.HANDOFF_PAGE_MARKERS.items()}
+    def test_live_probes_require_exact_cookie_page_and_data(self):
+        cookie_value = hmac.new(bytes.fromhex(TOKEN), b"wideband-fleetdeck-session-v1",
+                                hashlib.sha256).hexdigest()
+        cookie = (f"wb_fleetdeck_session={cookie_value}; Path=/; Max-Age=2592000; "
+                  "Secure; HttpOnly; SameSite=Strict")
 
         class Response:
-            def __init__(self, page, status=200, mime="text/html; charset=utf-8"):
-                self.status, self.page, self.mime = status, page.encode(), mime
+            def __init__(self, body="", status=200, mime="text/html; charset=utf-8",
+                         location="", set_cookie=""):
+                self.status = status
+                self.body = body.encode() if isinstance(body, str) else body
+                self.headers = {"Content-Type": mime, "Location": location, "Set-Cookie": set_cookie}
 
             def getheader(self, name):
-                return self.mime if name == "Content-Type" else None
+                return self.headers.get(name)
 
             def read(self, amount):
-                return self.page[:amount]
+                return self.body[:amount]
+
+        responses = {}
+        for suffix, markers in setup.HANDOFF_PAGE_MARKERS.items():
+            responses[(PORT, PREFIX + suffix)] = Response(status=303, location=suffix, set_cookie=cookie)
+            netmap = (f'<a id="netmap" href="https://{DNS}:{setup.FLEET_MAP_TLS_PORT}'
+                      f'{PREFIX}/fleet-map"' if suffix == "/board" else "")
+            responses[(PORT, suffix)] = Response("<html>" + " ".join(markers) + netmap + "</html>")
+        responses[(PORT, "/api/status")] = Response(json.dumps({"services": [{"id": "head"}]}), mime="application/json")
+        responses[(PORT, PREFIX + "/api/notes")] = Response(status=303, location="/api/notes", set_cookie=cookie)
+        responses[(PORT, "/api/notes")] = Response(json.dumps({"notes": []}), mime="application/json")
+        responses[(setup.FLEET_MAP_TLS_PORT, PREFIX + "/fleet-map")] = Response(
+            f"<title>Live terminal network · Fleetdeck</title> {PREFIX}/api/fleet-map")
+        responses[(setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map")] = Response(json.dumps({
+            "schema_version": "agent-fleet.snapshot.v1", "status": "fresh",
+            "nodes": [{"id": "session:wb-head", "observed": True}],
+        }), mime="application/json")
+        responses[(setup.GRAPH_TLS_PORT, PREFIX + "/graph")] = Response(
+            status=303, location="/", set_cookie=cookie)
+        responses[(setup.GRAPH_TLS_PORT, "/")] = Response(
+            "<title>Wideband — knowledge graph</title> /api/graph")
+        responses[(setup.GRAPH_TLS_PORT, "/api/stats")] = Response(json.dumps({
+            "nodes": 2, "edges": 1, "run": {"at": "2026-09-28T00:00:00Z"},
+        }), mime="application/json")
+        responses[(setup.GRAPH_TLS_PORT, "/api/graph?lens=surface")] = Response(json.dumps({
+            "nodes": [{"id": "local"}, {"id": "agent"}], "edges": [{"from": "local", "to": "agent"}],
+        }), mime="application/json")
+        responses[(setup.CHAT_TLS_PORT, PREFIX + "/chat")] = Response(
+            status=303, location="/", set_cookie=cookie)
+        responses[(setup.CHAT_TLS_PORT, "/")] = Response("<title>▩ fleet</title> /api/sessions")
+        responses[(setup.CHAT_TLS_PORT, "/healthz")] = Response(json.dumps({
+            "ok": True, "ttyd": True, "sessions": 1,
+        }), mime="application/json")
+        responses[(setup.CHAT_TLS_PORT, "/api/sessions")] = Response(json.dumps([
+            {"name": "wb-head"},
+        ]), mime="application/json")
 
         class Connection:
             def __init__(self, host, port, **_kwargs):
-                self.assert_host = (host, port)
+                self.port = port
                 self.path = None
 
             def request(self, method, path, **_kwargs):
@@ -413,40 +504,65 @@ class SetupHandoffTest(unittest.TestCase):
                 self.path = path
 
             def getresponse(self):
-                return responses[self.path]
+                return responses[(self.port, self.path)]
 
             def close(self):
                 pass
 
-        responses = {path: Response(page) for path, page in pages.items()}
-        responses[PREFIX + "/api/watch"] = Response(json.dumps({"running": True, "text": "ready"}), mime="application/json")
-        responses[PREFIX + "/api/notes"] = Response(json.dumps({"notes": []}), mime="application/json")
         with mock.patch.object(setup.http.client, "HTTPSConnection", Connection):
-            for path in pages:
-                self.assertTrue(setup.portal_handoff_page(DNS, PORT, path), path)
-            for path in (PREFIX + "/api/watch", PREFIX + "/api/notes"):
-                self.assertTrue(setup.portal_handoff_api(DNS, PORT, path), path)
-            responses[PREFIX + "/project"] = Response(pages[PREFIX + "/project"], status=302)
-            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/project"))
-            for status in (403, 404):
-                responses[PREFIX + "/phone"] = Response(pages[PREFIX + "/phone"], status=status)
-                self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/phone"))
-            responses[PREFIX + "/project"] = Response(pages[PREFIX + "/project"], mime="text/plain")
-            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/project"))
-            responses[PREFIX + "/project"] = Response("<html>generic page</html>")
-            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/project"))
-            responses[PREFIX + "/api/notes"] = Response(json.dumps({"notes": []}), status=503, mime="application/json")
-            self.assertFalse(setup.portal_handoff_api(DNS, PORT, PREFIX + "/api/notes"))
-            responses[PREFIX + "/api/watch"] = Response(json.dumps({"running": "yes"}), mime="application/json")
-            self.assertFalse(setup.portal_handoff_api(DNS, PORT, PREFIX + "/api/watch"))
-            responses[PREFIX + "/api/watch"] = Response(json.dumps({"running": False, "text": ""}), mime="application/json")
-            self.assertFalse(setup.portal_handoff_api(DNS, PORT, PREFIX + "/api/watch"))
-            self.assertFalse(setup.portal_handoff_page(DNS, PORT, "/phone"))
-            self.assertFalse(setup.portal_handoff_api(DNS, PORT, "/api/notes"))
-            self.assertFalse(setup.portal_handoff_page(DNS, PORT, "/p/" + "A" * 64 + "/phone"))
+            for suffix in setup.HANDOFF_PAGE_MARKERS:
+                self.assertTrue(setup.portal_handoff_page(DNS, PORT, PREFIX + suffix), suffix)
+            for port, path in ((setup.FLEET_MAP_TLS_PORT, PREFIX + "/fleet-map"),
+                               (setup.GRAPH_TLS_PORT, PREFIX + "/graph"),
+                               (setup.CHAT_TLS_PORT, PREFIX + "/chat")):
+                self.assertTrue(setup.portal_handoff_page(DNS, port, path), path)
+            for port, path in ((PORT, PREFIX + "/api/status"),
+                               (PORT, PREFIX + "/api/notes"),
+                               (setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map"),
+                               (setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"),
+                               (setup.GRAPH_TLS_PORT, PREFIX + "/api/graph?lens=surface"),
+                               (setup.CHAT_TLS_PORT, PREFIX + "/chat")):
+                self.assertTrue(setup.portal_handoff_api(DNS, port, path), path)
+            responses[(PORT, PREFIX + "/board")].headers["Location"] = "https://other.example/board"
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/board"))
+            responses[(PORT, PREFIX + "/board")].headers["Location"] = "/board"
+            responses[(PORT, PREFIX + "/board")].headers["Set-Cookie"] = "wb_fleetdeck_session=fake; Secure"
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/board"))
+            responses[(PORT, PREFIX + "/board")].headers["Set-Cookie"] = cookie
+            responses[(PORT, "/board")] = Response(
+                "<html>" + " ".join(setup.HANDOFF_PAGE_MARKERS["/board"]) + "</html>")
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/board"))
+            responses[(PORT, "/board")] = Response(
+                "<html>" + " ".join(setup.HANDOFF_PAGE_MARKERS["/board"])
+                + f'<a id="netmap" href="https://other.example:{setup.FLEET_MAP_TLS_PORT}'
+                  f'{PREFIX}/fleet-map"></html>')
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/board"))
+            responses[(setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map")] = Response(json.dumps({
+                "schema_version": "agent-fleet.snapshot.v1", "status": "stale",
+                "nodes": [{"id": "session:wb-head", "observed": True}],
+            }), mime="application/json")
+            self.assertFalse(setup.portal_handoff_api(DNS, setup.FLEET_MAP_TLS_PORT, PREFIX + "/api/fleet-map"))
+            responses[(setup.GRAPH_TLS_PORT, "/api/stats")] = Response(json.dumps({
+                "nodes": 0, "edges": 0, "run": None,
+            }), mime="application/json")
+            self.assertFalse(setup.portal_handoff_api(DNS, setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"))
+            responses[(setup.GRAPH_TLS_PORT, "/api/graph?lens=surface")] = Response(json.dumps({
+                "nodes": [{"id": "local"}], "edges": [],
+            }), mime="application/json")
+            self.assertFalse(setup.portal_handoff_api(DNS, setup.GRAPH_TLS_PORT,
+                                                       PREFIX + "/api/graph?lens=surface"))
+            responses[(setup.GRAPH_TLS_PORT, PREFIX + "/graph")].headers["Set-Cookie"] = "wb_fleetdeck_session=fake; Secure"
+            self.assertFalse(setup.portal_handoff_page(DNS, setup.GRAPH_TLS_PORT, PREFIX + "/graph"))
+            self.assertFalse(setup.portal_handoff_api(DNS, setup.GRAPH_TLS_PORT, PREFIX + "/api/stats"))
+            responses[(setup.CHAT_TLS_PORT, "/healthz")] = Response(json.dumps({
+                "ok": True, "ttyd": False, "sessions": 1,
+            }), mime="application/json")
+            self.assertFalse(setup.portal_handoff_api(DNS, setup.CHAT_TLS_PORT, PREFIX + "/chat"))
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, "/board"))
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, "/p/" + "A" * 64 + "/board"))
 
     def test_handoff_rejects_links_without_exact_phone_capability(self):
-        for path in ("/phone", PREFIX + "/board", PREFIX + "/phone/", "/p/" + "A" * 64 + "/phone"):
+        for path in ("/board", PREFIX + "/phone", PREFIX + "/board/", "/p/" + "A" * 64 + "/board"):
             with self.assertRaisesRegex(RuntimeError, "valid private phone link"):
                 setup._handoff_messages(f"https://{DNS}:{PORT}{path}", "Trace", "Aurora", False)
 

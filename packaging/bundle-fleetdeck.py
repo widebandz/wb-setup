@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Build and verify an allowlisted customer Fleetdeck source bundle.
+"""Build and verify the current Fleetdeck board for a customer Mac.
 
-Only generic, tracked Fleetdeck installer/assets are copied from the reviewed
-working tree. The standalone phone portal replaces the operator's large portal
-module, which contains private topology and notes that must never ship.
+The actual tracked Fleetdeck portal provides the board and live service scan.
+A reviewed transformation removes operator identity and installs a narrow,
+owner-authenticated HTTP adapter before that source is bundled.
 """
 
 from __future__ import annotations
 
 import hashlib
+import ast
 import fcntl
 import json
 import os
@@ -22,7 +23,7 @@ import tempfile
 
 
 MANIFEST = ".wideband-fleetdeck-bundle.json"
-SOURCE_FILES = {
+LEGACY_SOURCE_FILES = {
     "install.sh",
     "bin/fleetdeck",
     "VERSION",
@@ -32,16 +33,201 @@ SOURCE_FILES = {
     "assets/icon-192.png",
     "assets/icon-512.png",
 }
-GENERATED_FILES = {"portal_server.py", "config.example.json", "services.example.json"}
+LEGACY_GENERATED_FILES = {"portal_server.py", "config.example.json", "services.example.json"}
+LEGACY_REQUIRED = LEGACY_SOURCE_FILES | LEGACY_GENERATED_FILES
+SOURCE_FILES = LEGACY_SOURCE_FILES | {
+    "glyphs.json", "make-icons.py", "assets/icon-180.png",
+    "launchagents/fleetdeck-chat.plist.tmpl", "ttyd-index.html",
+}
+GENERATED_FILES = LEGACY_GENERATED_FILES | {"chat_server.py", "customer_access.py"}
 REQUIRED = SOURCE_FILES | GENERATED_FILES
-UPGRADE_FILES = {"portal_server.py"}
-PORTAL_SOURCE = Path(__file__).with_name("customer-portal.py")
+UPGRADE_FILES = GENERATED_FILES | {"glyphs.json", "make-icons.py", "assets/icon-180.png"}
+PORTAL_NAME = "portal_server.py"
+CHAT_NAME = "chat_server.py"
+AUTH_ADAPTER_SOURCE = Path(__file__).with_name("fleetdeck-customer-auth.pyinc")
+ACCESS_SOURCE = Path(__file__).with_name("fleetdeck-customer-access.py")
 PRIVATE_NAMES = {".git", "auth", "config.json", "services.json", ".fleetdeck-notes.json"}
 PRIVATE_DIRS = {"backup", "backups", "notes"}
 STATIC_IDENTITY = re.compile(
     rb"(?i)(?:[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}|[a-z0-9.-]+\.ts\.net)"
 )
-OPERATOR_SOURCE_MARKERS = (b"SEED_NOTES", b"NETMAP_URL", b"TRACE_IMESSAGE_HANDLE")
+PHONE_IDENTITY = re.compile(rb"\+[1-9][0-9]{10,14}\b")
+OPERATOR_SOURCE_MARKERS = (b"Instant iMessage Agent Installer",)
+NOTES_AGE_SOURCE = " function ago(ts){\n   var s = Math.max(0, Math.floor(Date.now()/1000 - ts));"
+NOTES_AGE_PILOT = (" function ago(ts){\n"
+                   "   if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return 'saved';\n"
+                   "   var s = Math.max(0, Math.floor(Date.now()/1000 - ts));")
+
+
+def optional_assets(paths: set[str]) -> set[str]:
+    """Only public glyph and icon PNGs used by the real Fleetdeck UI."""
+    return {name for name in paths if (
+        (name.startswith("icons/") and name.count("/") == 1)
+        or (name.startswith("assets/glyphs/") and name.count("/") == 2)
+    ) and name.endswith(".png")}
+
+
+def replace_assignment(source: str, name: str, expression: str) -> str:
+    """Replace one top-level assignment by AST span, failing on source drift."""
+    tree = ast.parse(source)
+    nodes = [node for node in tree.body if isinstance(node, ast.Assign)
+             and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+             and node.targets[0].id == name]
+    if len(nodes) != 1:
+        raise ValueError(f"Fleetdeck portal assignment changed: {name}")
+    node = nodes[0]
+    lines = source.splitlines(keepends=True)
+    lines[node.lineno - 1:node.end_lineno] = [f"{name} = {expression}\n"]
+    return "".join(lines)
+
+
+def customer_portal(source: str) -> str:
+    """Keep Fleetdeck's board/scan source; remove host data and gate routes."""
+    required = (
+        "class Handler(BaseHTTPRequestHandler):", "def scan():", "PAGE =",
+        "NOTES_PAGE =", "def onboarding_config():", "def main():", "INTERNAL = {",
+        "ThreadingHTTPServer((BIND, PORT), Handler)",
+    )
+    if any(item not in source for item in required):
+        raise ValueError("Fleetdeck portal source changed; review customer transform")
+    chip = ('<a id="cashflow" href="/cashflow"\n'
+            '     title="Cashflow — the accountant\'s cash view">__CASHFLOW_LABEL__</a>')
+    if source.count(chip) != 1 or source.count("#cashflow") != 5:
+        raise ValueError("Fleetdeck board Notes slot changed; review customer transform")
+    changes = {
+        "SEED_NOTES": "[]",
+        "OPERATOR_PHONE": 'os.environ.get("WB_OPERATOR_PHONE", "")',
+        "TRACE_IMESSAGE_HANDLE": 'os.environ.get("WB_AGENT_IMESSAGE_HANDLE", CONF.get("agent_imessage_handle", ""))',
+        "NETMAP_URL": '""',
+        "CASHFLOW_PATH": 'os.environ.get("FLEETDECK_CASHFLOW_PATH", "")',
+        "WHISPER_MODEL": 'os.environ.get("WB_WHISPER_MODEL", "")',
+        "VOICE_URL": 'os.environ.get("WB_VOICE_URL", "")',
+        "NOTES_PATH": 'os.path.expanduser(os.environ.get("FLEETDECK_NOTES_PATH", "~/.wideband/fleetdeck/notes-beta.json"))',
+        "TRACE_SESSION": 'os.environ.get("WB_TRACE_SESSION", "wb-head")',
+    }
+    for name, expression in changes.items():
+        source = replace_assignment(source, name, expression)
+    if source.count(NOTES_AGE_SOURCE) != 1:
+        raise ValueError("Fleetdeck Notes age renderer changed; review legacy notes")
+    source = source.replace(NOTES_AGE_SOURCE, NOTES_AGE_PILOT, 1)
+    # Historical comments also name the operator's own contact and tailnet.
+    # Scrub by shape rather than recording those values in this public repo.
+    source = re.sub(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}",
+                    "the agent Apple Account", source)
+    source = re.sub(r"(?i)[a-z0-9.-]+\.ts\.net", "the configured tailnet host", source)
+    source = re.sub(r"\+[1-9][0-9]{10,14}\b", "", source)
+    marker = "\ndef main():"
+    source = source.replace(marker, "\n" + AUTH_ADAPTER_SOURCE.read_text(encoding="utf-8")
+                            + "\nCUSTOMER_PORTAL_ADAPTER_VERSION = 1\n" + marker, 1)
+    source = source.replace("ThreadingHTTPServer((BIND, PORT), Handler)",
+                            "ThreadingHTTPServer((BIND, PORT), CustomerHandler)", 1)
+    compile(source, PORTAL_NAME, "exec")
+    if STATIC_IDENTITY.search(source.encode()) or PHONE_IDENTITY.search(source.encode()) or any(
+            marker in source.encode() for marker in OPERATOR_SOURCE_MARKERS):
+        raise ValueError("operator identifier remains in customer portal")
+    return source
+
+
+def customer_chat(source: str) -> str:
+    """Preserve the current chat UI for later opt-in, closed under customer mode."""
+    tree = ast.parse(source)
+    handler = next((node for node in tree.body if isinstance(node, ast.ClassDef)
+                    and node.name == "H"), None)
+    if handler is None or "if customer_mode():" not in source:
+        raise ValueError("Fleetdeck chat customer guard changed")
+    names = {"authed", "try_key"}
+    funcs = [node for node in handler.body if isinstance(node, ast.FunctionDef)
+             and node.name in names]
+    if {node.name for node in funcs} != names:
+        raise ValueError("Fleetdeck chat auth methods changed")
+    lines = source.splitlines(keepends=True)
+    # Replace from the bottom so the AST line numbers remain valid.
+    methods = {
+        "authed": ('    def authed(self):\n'
+                   '        capability = customer_access.token()\n'
+                   '        if capability and customer_access.has_session(\n'
+                   '                self.headers.get("Cookie"), capability):\n'
+                   '            return True\n'
+                   '        self.reply(403, {"error": "forbidden"})\n'
+                   '        return False\n'),
+        "try_key": ('    def try_key(self):\n'
+                    '        return False\n'),
+    }
+    for node in sorted(funcs, key=lambda item: item.lineno, reverse=True):
+        lines[node.lineno - 1:node.end_lineno] = [methods[node.name]]
+    source = "".join(lines)
+    query_branch = '        if self.path.startswith("/?key=") and self.try_key():\n            return\n'
+    if source.count(query_branch) != 1:
+        raise ValueError("Fleetdeck chat query-key branch changed")
+    token_branch = (
+        '        match = re.fullmatch(r"/p/([0-9a-f]{64})/chat", self.path.split("?", 1)[0])\n'
+        '        if match:\n'
+        '            capability = customer_access.token()\n'
+        '            if not capability or not hmac.compare_digest(match.group(1), capability):\n'
+        '                return self.reply(403, {"error": "forbidden"})\n'
+        '            self.send_response(303)\n'
+        '            self.send_header("Location", "/")\n'
+        '            self.send_header("Set-Cookie", customer_access.cookie_header(capability))\n'
+        '            self.send_header("Referrer-Policy", "no-referrer")\n'
+        '            self.send_header("Content-Length", "0")\n'
+        '            self.end_headers()\n'
+        '            return\n')
+    source = source.replace(query_branch, token_branch, 1)
+    source = source.replace("import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat",
+                            "import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat\nimport hmac\nimport customer_access", 1)
+    origin_guard = '''def customer_write_origin(headers):
+    """Only this origin may drive a customer tmux terminal."""
+    host = headers.get("Host", "")
+    if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", host):
+        return False
+    origin = headers.get("Origin")
+    expected = ("http" if host.startswith(("127.0.0.1:", "localhost:"))
+                else "https") + "://" + host
+    if origin and origin != expected:
+        return False
+    return headers.get("Sec-Fetch-Site") in (None, "same-origin", "none")
+
+
+'''
+    marker = "class H(BaseHTTPRequestHandler):"
+    if source.count(marker) != 1:
+        raise ValueError("Fleetdeck chat handler changed")
+    source = source.replace(marker, origin_guard + marker, 1)
+    ws_guard = ('        path = self.path.split("?")[0]\n'
+                '        if path == BASE or path.startswith(BASE + "/"):\n'
+                '            return self.proxy()\n')
+    if ws_guard not in source or source.index(ws_guard) > source.index("    def do_POST(self):"):
+        raise ValueError("Fleetdeck chat WebSocket route changed")
+    source = source.replace(ws_guard,
+                            '        path = self.path.split("?")[0]\n'
+                            '        if path == BASE or path.startswith(BASE + "/"):\n'
+                            '            if self.headers.get("Upgrade", "").lower() == "websocket" and not customer_write_origin(self.headers):\n'
+                            '                return self.reply(403, {"error": "forbidden origin"})\n'
+                            '            return self.proxy()\n', 1)
+    post_guard = ('    def do_POST(self):\n'
+                  '        if not self.authed():\n'
+                  '            return\n')
+    if source.count(post_guard) != 1:
+        raise ValueError("Fleetdeck chat POST guard changed")
+    source = source.replace(post_guard,
+                            post_guard +
+                            '        if not customer_write_origin(self.headers):\n'
+                            '            return self.reply(403, {"error": "forbidden origin"})\n', 1)
+    guard = ('    if customer_mode():\n'
+             '        print("refusing writable chat in customer mode; use portal /watch", flush=True)\n'
+             '        raise SystemExit(78)\n')
+    replacement = ('    if os.environ.get("FLEETDECK_CUSTOMER_TERMINALS") != "1" or BIND != "127.0.0.1":\n'
+                   '        print("customer terminals require explicit opt-in and loopback bind", flush=True)\n'
+                   '        raise SystemExit(78)\n')
+    if source.count(guard) != 1:
+        raise ValueError("Fleetdeck chat startup guard changed")
+    source = source.replace(guard, replacement, 1)
+    source = source.replace('        self.send_header("Cache-Control", "no-store")\n',
+                            '        self.send_header("Cache-Control", "no-store")\n'
+                            '        self.send_header("Referrer-Policy", "no-referrer")\n'
+                            '        self.send_header("X-Content-Type-Options", "nosniff")\n', 1)
+    compile(source, CHAT_NAME, "exec")
+    return source
 
 
 def safe_name(value: str) -> bool:
@@ -74,8 +260,8 @@ def regular_file(path: Path) -> bool:
     return stat.S_ISREG(mode)
 
 
-def check_source(root: Path) -> None:
-    for name in SOURCE_FILES:
+def check_source(root: Path, *, legacy: bool = False) -> None:
+    for name in LEGACY_SOURCE_FILES if legacy else SOURCE_FILES:
         if not regular_file(root / name):
             raise ValueError(f"missing tracked Fleetdeck customer file: {name}")
     if "CUSTOMER_MODE" not in (root / "install.sh").read_text(encoding="utf-8"):
@@ -84,24 +270,41 @@ def check_source(root: Path) -> None:
         raise ValueError("Fleetdeck LaunchAgent does not point to the customer portal path")
 
 
-def check_bundle(root: Path) -> None:
-    for name in REQUIRED:
+def check_bundle(root: Path, hashes: dict[str, str]) -> None:
+    legacy = set(hashes) == LEGACY_REQUIRED
+    for name in LEGACY_REQUIRED if legacy else REQUIRED:
         if not regular_file(root / name):
             raise ValueError(f"missing bundled Fleetdeck customer file: {name}")
-    check_source(root)
+    check_source(root, legacy=legacy)
     portal = (root / "portal_server.py").read_text(encoding="utf-8")
     # The first customer portal used `route` for the health request path.
     # Accept that verified release so it can upgrade to the current portal.
-    health_markers = ('route == "/healthz"', 'raw_path == "/healthz"')
+    health_markers = ('route == "/healthz"', 'raw_path == "/healthz"',
+                      'path == "/healthz"')
     if "def onboarding_config" not in portal or not any(marker in portal for marker in health_markers):
-        raise ValueError("standalone customer portal lacks required routes")
+        raise ValueError("Fleetdeck customer portal lacks required routes")
+    if not legacy and ("CUSTOMER_PORTAL_ADAPTER_VERSION = 1" not in portal
+                       or "def scan():" not in portal
+                       or "ThreadingHTTPServer((BIND, PORT), CustomerHandler)" not in portal):
+        raise ValueError("actual Fleetdeck customer board adapter is missing")
+    if not legacy:
+        chat = (root / CHAT_NAME).read_text(encoding="utf-8")
+        access = (root / "customer_access.py").read_text(encoding="utf-8")
+        template = (root / "launchagents/fleetdeck-chat.plist.tmpl").read_text(encoding="utf-8")
+        if ("FLEETDECK_CUSTOMER_TERMINALS" not in chat
+                or "customer_access.has_session" not in chat
+                or 'self.path.startswith("/?key=")' in chat
+                or "Secure; HttpOnly; SameSite=Strict" not in access
+                or "<string>127.0.0.1</string>" not in template):
+            raise ValueError("Fleetdeck customer terminal guard is missing")
 
 
 def scan_private(root: Path, names: set[str]) -> None:
     for name in names:
         path = root / name
         data = path.read_bytes()
-        if STATIC_IDENTITY.search(data) or any(marker in data for marker in OPERATOR_SOURCE_MARKERS):
+        if (STATIC_IDENTITY.search(data) or PHONE_IDENTITY.search(data)
+                or any(marker in data for marker in OPERATOR_SOURCE_MARKERS)):
             raise ValueError(f"operator identifier found in customer bundle: {name}")
 
 
@@ -116,30 +319,53 @@ def build(source: Path, target: Path) -> None:
         ["git", "-C", str(source), "ls-files", "--cached", "-z"]
     ).split(b"\0")
     paths = [os.fsdecode(name) for name in names if name]
-    if not SOURCE_FILES.issubset(paths):
+    tracked = set(paths)
+    if not SOURCE_FILES.issubset(tracked | {PORTAL_NAME, CHAT_NAME}):
         raise ValueError("required Fleetdeck customer files are not tracked")
+    if not {PORTAL_NAME, CHAT_NAME}.issubset(tracked):
+        raise ValueError("actual Fleetdeck portal and chat sources are not tracked")
     for name in paths:
         if not safe_name(name) or not regular_file(source / name):
             raise ValueError(f"unsafe or missing tracked Fleetdeck file: {name!r}")
     check_source(source)
-    if not regular_file(PORTAL_SOURCE):
-        raise ValueError("standalone customer portal source is missing")
+    for item in (source / PORTAL_NAME, source / CHAT_NAME, AUTH_ADAPTER_SOURCE, ACCESS_SOURCE):
+        if not regular_file(item):
+            raise ValueError(f"reviewed Fleetdeck source is missing: {item.name}")
+    selected = SOURCE_FILES | optional_assets(tracked)
     target.mkdir(parents=True, exist_ok=False)
     try:
         hashes: dict[str, str] = {}
-        for name in sorted(SOURCE_FILES):
+        for name in sorted(selected):
             destination = target / name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source / name, destination)
+            if name == "launchagents/fleetdeck-chat.plist.tmpl":
+                template = (source / name).read_text(encoding="utf-8")
+                if template.count("<string>tailscale</string>") != 1:
+                    raise ValueError("Fleetdeck chat bind template changed")
+                destination.write_text(template.replace("<string>tailscale</string>",
+                                                        "<string>127.0.0.1</string>", 1),
+                                       encoding="utf-8")
+            else:
+                shutil.copy2(source / name, destination)
             hashes[name] = digest(destination)
-        shutil.copy2(PORTAL_SOURCE, target / "portal_server.py")
+        (target / PORTAL_NAME).write_text(
+            customer_portal((source / PORTAL_NAME).read_text(encoding="utf-8")),
+            encoding="utf-8")
+        (target / CHAT_NAME).write_text(
+            customer_chat((source / CHAT_NAME).read_text(encoding="utf-8")),
+            encoding="utf-8")
+        shutil.copy2(ACCESS_SOURCE, target / "customer_access.py")
         (target / "config.example.json").write_text(json.dumps({
             "brand": "fleetdeck", "machine": "", "label_prefix": "com.example",
             "ports": {"portal": 8790, "chat": 8783, "ttyd": 8784, "adopt": 8793},
-            "agents": {"show": False, "actions": False, "include": [], "exclude": []},
+            "agents": {"show": True, "actions": False, "include": [], "exclude": []},
         }, indent=2) + "\n", encoding="utf-8")
         (target / "services.example.json").write_text(
-            json.dumps({"groups": [{"id": "apps", "label": "apps"}], "services": []}, indent=2) + "\n",
+            json.dumps({"groups": [{"id": "fleet", "label": "fleet"},
+                                   {"id": "apps", "label": "apps"},
+                                   {"id": "models", "label": "models"},
+                                   {"id": "data", "label": "data"}],
+                        "services": []}, indent=2) + "\n",
             encoding="utf-8")
         for name in GENERATED_FILES:
             hashes[name] = digest(target / name)
@@ -163,7 +389,10 @@ def verify_managed(root: Path) -> dict[str, str]:
     if metadata.get("schema_version") != 1 or metadata.get("source") != "customer-allowlisted-working-tree":
         raise ValueError("unsupported Fleetdeck source bundle")
     hashes = metadata.get("files")
-    if not isinstance(hashes, dict) or set(hashes) != REQUIRED:
+    if (not isinstance(hashes, dict)
+            or (set(hashes) != LEGACY_REQUIRED and
+                (not REQUIRED.issubset(hashes)
+                 or set(hashes) - REQUIRED != optional_assets(set(hashes))))):
         raise ValueError("Fleetdeck source bundle file list is incomplete")
     if any(not isinstance(name, str) or not safe_name(name) or not isinstance(value, str)
            or len(value) != 64 for name, value in hashes.items()):
@@ -176,7 +405,7 @@ def verify_managed(root: Path) -> dict[str, str]:
                 raise ValueError(f"Fleetdeck source bundle path contains a symlink: {name}")
         if not regular_file(root / name) or digest(root / name) != expected:
             raise ValueError(f"Fleetdeck source bundle checksum mismatch: {name}")
-    check_bundle(root)
+    check_bundle(root, hashes)
     scan_private(root, set(hashes))
     return hashes
 
@@ -229,18 +458,46 @@ def stage_copy(source: Path, directory: Path) -> Path:
         raise
 
 
+def upgrade_delta(old: dict[str, str], new: dict[str, str]) -> tuple[set[str], set[str]]:
+    """Allow reviewed code/assets changes, never removal or client-owned files."""
+    changed = {name for name in old.keys() & new.keys() if old[name] != new[name]}
+    added = set(new) - set(old)
+    allowed_changes = UPGRADE_FILES | optional_assets(set(new))
+    if set(old) - set(new) or changed - allowed_changes or added - (REQUIRED | optional_assets(set(new))):
+        raise ValueError("Fleetdeck bundle differs outside reviewed managed files; review upgrade")
+    return changed, added
+
+
+def upgrade_parent(root: Path, name: str) -> Path:
+    """Prepare a managed destination without traversing a client symlink."""
+    parent = root
+    for part in PurePosixPath(name).parts[:-1]:
+        parent = parent / part
+        if parent.is_symlink():
+            raise ValueError(f"Fleetdeck managed parent is a symlink: {name}")
+        if not parent.exists():
+            parent.mkdir(mode=0o700)
+        if not parent.is_dir():
+            raise ValueError(f"Fleetdeck managed parent is not a directory: {name}")
+    return parent
+
+
+def upgrade_lock(installed: Path) -> int:
+    path = installed.parent / f".{installed.name}.wideband-upgrade.lock"
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    info = os.fstat(fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_nlink != 1 or info.st_mode & 0o077):
+        os.close(fd)
+        raise ValueError("Fleetdeck upgrade lock is unsafe")
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
 def upgrade(bundle: Path, installed: Path) -> Path | None:
-    """Replace only the generated portal and manifest of a verified bundle."""
-    # A separate stable lock inode still serializes upgrades after the bundle
-    # manifest inode is replaced. It lives outside client-owned Fleetdeck data.
-    lock_path = installed.parent / f".{installed.name}.wideband-upgrade.lock"
-    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    """Atomically install reviewed board files and preserve all client data."""
+    lock_fd = upgrade_lock(installed)
     try:
-        info = os.fstat(lock_fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1 or info.st_mode & 0o077):
-            raise ValueError("Fleetdeck upgrade lock is unsafe")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
         verify(bundle)
         old_hashes = verify_managed(installed)
         old_manifest = json.loads((installed / MANIFEST).read_text(encoding="utf-8"))
@@ -249,43 +506,47 @@ def upgrade(bundle: Path, installed: Path) -> Path | None:
                 != {key: value for key, value in new_manifest.items() if key != "files"}):
             raise ValueError("Fleetdeck package identity or source differs; review upgrade")
         new_hashes = new_manifest["files"]
-        changed = {name for name in REQUIRED if old_hashes[name] != new_hashes[name]}
-        if not changed:
+        changed, added = upgrade_delta(old_hashes, new_hashes)
+        if not changed and not added:
             return None
-        if changed != UPGRADE_FILES:
-            raise ValueError("Fleetdeck bundle differs outside the generated portal; review upgrade")
+        for name in added:
+            if (installed / name).exists() or (installed / name).is_symlink():
+                raise ValueError(f"client file already uses a new managed path: {name}")
 
         backup = Path(tempfile.mkdtemp(prefix=f".{installed.name}-upgrade-backup-", dir=installed.parent))
         os.chmod(backup, 0o700)
         staged: list[Path] = []
         replaced = False
         try:
-            for name in ("portal_server.py", MANIFEST):
-                staged_backup = stage_copy(installed / name, backup)
-                os.replace(staged_backup, backup / name)
-            if digest(backup / "portal_server.py") != old_hashes["portal_server.py"]:
-                raise ValueError("Fleetdeck portal changed during backup; review upgrade")
+            for name in sorted(changed) + [MANIFEST]:
+                parent = upgrade_parent(backup, name)
+                prior = stage_copy(installed / name, parent)
+                os.replace(prior, backup / name)
+            for name in changed:
+                if digest(backup / name) != old_hashes[name]:
+                    raise ValueError(f"Fleetdeck managed file changed during backup: {name}")
             if (backup / MANIFEST).read_bytes() != (installed / MANIFEST).read_bytes():
-                raise ValueError("Fleetdeck manifest changed during backup; review upgrade")
-            # Recheck after staging, immediately before either destination is
-            # replaced. Other tracked files and private client files stay put.
-            for name in ("portal_server.py", MANIFEST):
-                staged.append(stage_copy(bundle / name, installed))
+                raise ValueError("Fleetdeck manifest changed during backup")
+            to_write = sorted(changed | added)
+            for name in to_write + [MANIFEST]:
+                staged.append(stage_copy(bundle / name, upgrade_parent(installed, name)))
             if verify_managed(installed) != old_hashes:
                 raise ValueError("Fleetdeck source changed during upgrade; review it before retrying")
-            os.replace(staged[0], installed / "portal_server.py")
-            replaced = True
-            os.replace(staged[1], installed / MANIFEST)
+            for name, staged_file in zip(to_write + [MANIFEST], staged):
+                os.replace(staged_file, installed / name)
+                replaced = True
             if verify_managed(installed) != new_hashes:
                 raise ValueError("Fleetdeck upgrade did not verify")
             return backup
         except Exception as error:
             if replaced:
                 try:
-                    for name in ("portal_server.py", MANIFEST):
-                        restore = stage_copy(backup / name, installed)
-                        staged.append(restore)
-                        os.replace(restore, installed / name)
+                    for name in sorted(added):
+                        (installed / name).unlink(missing_ok=True)
+                    for name in sorted(changed) + [MANIFEST]:
+                        prior = stage_copy(backup / name, upgrade_parent(installed, name))
+                        staged.append(prior)
+                        os.replace(prior, installed / name)
                     if verify_managed(installed) != old_hashes:
                         raise ValueError("restored Fleetdeck source did not verify")
                 except Exception as rollback_error:
@@ -301,23 +562,13 @@ def upgrade(bundle: Path, installed: Path) -> Path | None:
 
 
 def restore_previous(bundle: Path, installed: Path, backup: Path) -> None:
-    """Restore a completed portal upgrade after its activation check fails.
-
-    Only the two managed files are restored. Client config, notes, services and
-    project work are not part of the backup or this operation.
-    """
+    """Restore the verified prior bundle if activation of the new board fails."""
     if (backup.parent != installed.parent
             or not backup.name.startswith(f".{installed.name}-upgrade-backup-")
             or backup.is_symlink() or not backup.is_dir()):
         raise ValueError("Fleetdeck portal backup path is unsafe")
-    lock_path = installed.parent / f".{installed.name}.wideband-upgrade.lock"
-    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    lock_fd = upgrade_lock(installed)
     try:
-        info = os.fstat(lock_fd)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1 or info.st_mode & 0o077):
-            raise ValueError("Fleetdeck upgrade lock is unsafe")
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
         verify(bundle)
         current_hashes = verify_managed(installed)
         packaged = json.loads((bundle / MANIFEST).read_text(encoding="utf-8"))
@@ -327,37 +578,40 @@ def restore_previous(bundle: Path, installed: Path, backup: Path) -> None:
         if backup_info.st_uid != os.getuid() or backup_info.st_mode & 0o077:
             raise ValueError("Fleetdeck portal backup permissions are unsafe")
         old_manifest_path = backup / MANIFEST
-        old_portal_path = backup / "portal_server.py"
-        if not regular_file(old_manifest_path) or not regular_file(old_portal_path):
+        if not regular_file(old_manifest_path):
             raise ValueError("Fleetdeck portal backup is incomplete")
-        for path in (old_manifest_path, old_portal_path):
-            item = path.stat()
-            if item.st_uid != os.getuid() or item.st_nlink != 1:
-                raise ValueError("Fleetdeck portal backup is unsafe")
         old_manifest = json.loads(old_manifest_path.read_text(encoding="utf-8"))
         old_hashes = old_manifest.get("files")
-        if (not isinstance(old_hashes, dict) or set(old_hashes) != REQUIRED
+        if (not isinstance(old_hashes, dict)
                 or {key: value for key, value in old_manifest.items() if key != "files"}
-                != {key: value for key, value in packaged.items() if key != "files"}
-                or {name for name in REQUIRED if old_hashes[name] != current_hashes[name]}
-                != UPGRADE_FILES or digest(old_portal_path) != old_hashes["portal_server.py"]):
+                != {key: value for key, value in packaged.items() if key != "files"}):
             raise ValueError("Fleetdeck portal backup does not match this upgrade")
-
+        changed, added = upgrade_delta(old_hashes, current_hashes)
+        if not changed and not added:
+            raise ValueError("Fleetdeck portal backup has no upgrade to restore")
+        for name in changed:
+            item = backup / name
+            if (not regular_file(item) or item.stat().st_uid != os.getuid()
+                    or item.stat().st_nlink != 1 or digest(item) != old_hashes[name]):
+                raise ValueError(f"Fleetdeck portal backup is unsafe: {name}")
         staged: list[Path] = []
         replaced = False
         try:
-            for path in (old_portal_path, old_manifest_path):
-                staged.append(stage_copy(path, installed))
-            os.replace(staged[0], installed / "portal_server.py")
-            replaced = True
-            os.replace(staged[1], installed / MANIFEST)
+            for name in sorted(changed) + [MANIFEST]:
+                staged.append(stage_copy(backup / name, upgrade_parent(installed, name)))
+            for name in sorted(added):
+                (installed / name).unlink()
+                replaced = True
+            for name, staged_file in zip(sorted(changed) + [MANIFEST], staged):
+                os.replace(staged_file, installed / name)
+                replaced = True
             if verify_managed(installed) != old_hashes:
                 raise ValueError("restored Fleetdeck portal did not verify")
         except Exception as error:
             if replaced:
                 try:
-                    for name in ("portal_server.py", MANIFEST):
-                        latest = stage_copy(bundle / name, installed)
+                    for name in sorted(changed | added) + [MANIFEST]:
+                        latest = stage_copy(bundle / name, upgrade_parent(installed, name))
                         staged.append(latest)
                         os.replace(latest, installed / name)
                     if verify_managed(installed) != current_hashes:

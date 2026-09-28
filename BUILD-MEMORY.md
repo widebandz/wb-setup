@@ -26,9 +26,10 @@ build without reconstructing decisions from chat history.
   `os.wideband.ai`. The exact branded hostname still needs the Cloudflare
   DNS-only CNAME `os` → `widebandz.github.io` before it can resolve and receive
   its HTTPS certificate.
-- Last full Apple Silicon VM run: 2026-09-23. It covered installation, the real
-  macOS permission prompt, repair, port fallback, disconnect recovery, support
-  export, reboot, and resume from the installed app.
+- Last published-release Apple Silicon VM checkpoint: 2026-09-23. It covered
+  installation, the real macOS permission prompt, repair, port fallback,
+  disconnect recovery, support export, reboot, and resume from the installed
+  app. The newer private real-stack UTM pilot is recorded below.
 
 Generated build IDs and hashes belong to artifacts, not source. Read
 `dist/Wideband Setup.app/Contents/Resources/build-id.txt` and
@@ -264,37 +265,81 @@ for review rather than retried, to avoid duplicate texts. Raw owner messages
 and replies stay inside mode-`0700` runtime directories; installer-owned state
 files use mode `0600`.
 
-### First job and customer phone portal (post-0.6.0 working tree)
+### First job and real customer phone stack (post-0.6.0 working tree)
 
 The first-goal runner stages **one** chosen recipe: research, a starter
-website, or a proposal. It does not install every possible tool up front. The
-portal comes after the owner has observed the first real iMessage reply and
-the selected recipe has been staged. `install.sh --phone-only` uses a customer
-Fleetdeck checkout and runs `./install.sh portal`; it verifies the portal on
-loopback and refuses a Fleetdeck source tree without the customer-mode guard.
-That guard installs only the portal and disables older writable chat/adopt/skin
-jobs if they exist. An existing Fleetdeck config remains operator-owned.
+website, or a proposal. It creates `~/wideband/first-project` for every recipe;
+the selected result becomes the first project tile. It does not install every
+possible tool up front. The phone stack follows a confirmed owner iMessage
+reply and the staged first project.
 
-Tailscale sign-in, an HTTPS Serve mapping, and adding the portal to the iPhone
-Home Screen are later client gates. A loopback health response is local
-machine proof, not proof that a phone can open the link. Before distributing a
-blank-Mac artifact, publish or bundle the matching Fleetdeck customer-mode
-source; cloning an older public revision must fail closed rather than install
-a writable portal.
+`~/srv/fleetdeck` (version 1.2.0, source commit `092d6be`) is the **main
+Fleetdeck source repository** for this product.
+The current private pilot bundles its tracked `portal_server.py`, registry
+scanner, assets, and the reviewed deployed terminal server into the DMG. The
+bundle removes operator identity and adds a narrow customer access adapter.
+`install.sh --phone-only` stages that reviewed bundle on the client Mac and
+installs the board, the interactive tmux terminal, the local Live Terminal
+Network collector, and Glitch Cat's real Knowledge Graph. It registers the
+client's own services and project in that client's Fleetdeck registry. The
+operator Mac's runtime database, sessions, notes, tokens, and identities are
+never transferred. Public release of the private Glitch Cat source requires a
+separate distribution/license review.
 
-The customer portal serves the Fleetdeck-style board, knowledge graph, a
-read-only capture of the live `wb-head` Claude pane, the first-project link,
-and a separate Notes beta store. It is not the operator portal and does not
-install chat, ttyd, adopt, or skin services. Except for `/healthz`, each route
-requires the same 256-bit capability in a `/p/<token>/...` path. The token is
-created once in the owner-only `~/.wideband/fleetdeck/phone-access-token` file
-and survives managed portal upgrades; links and the PWA manifest retain it.
-The Setup app validates the protected HTTPS board page before offering its
-phone link. Owner-only setup texts are queued through the guarded iMessage
-outbox only after a real phone reply and a confirmed phone board.
-Setup checks the current Tailscale Serve map before showing the first
-project's saved phone link. A Funnel route or changed proxy hides that
-shortcut; the first-goal runner does not create a public Funnel link.
+Five per-user LaunchAgents persist the board, map, graph engine, owner-gated
+graph proxy, and terminal server. The board is private HTTPS Serve `:8790`,
+the terminal `:8783`, the graph proxy `:8792` (local `:4181`), and the map
+`:18970` (local `:18790`). The graph engine `:4180` and terminal's `ttyd`
+child `:8784` bind loopback only and are hidden as internal plumbing on the
+board. The map reads the client's actual tmux and service state; the graph
+builds a private SQLite index of client-local files and shows its build
+timestamp. Rebuild the graph after meaningful project or service changes; it
+is a knowledge index, not a live tmux feed. The full Fleetdeck board and
+clock-and-key phone home retain the host layout and real service scan rather
+than serving the earlier fixed five-card customer page. Notes beta is visible
+from the real board and opens its existing private route.
+
+The phone board opens through a persistent 256-bit owner capability at
+`/p/<token>/board`; it establishes a secure, HttpOnly, same-site session
+cookie. Bare board/status routes, the graph's page/API, and the terminal's
+HTTP/WebSocket endpoints require that owner session. The terminal additionally
+checks request origin. Direct graph links start at `/p/<token>/graph`, which
+establishes the same cookie before loading the real graph viewer.
+The owner capability lives only in the mode-`0600`
+`~/.wideband/fleetdeck/phone-access-token`; links and the PWA manifest retain
+it across managed upgrades. Notes beta stores the client's notes at
+`~/.wideband/fleetdeck/notes-beta.json`; it is distinct from the operator Mac's
+legacy `~/.fleetdeck-notes.json`. Existing client notes and Fleetdeck config
+are preserved.
+
+Setup checks the exact Tailscale Serve mappings, protected board and map,
+real graph nodes/edges, actual `wb-head` tmux session, terminal service, and
+first project before offering the phone link. A loopback check is machine
+proof; the owner must still open the new board on an iPhone and launch its Home
+Screen icon. Owner-only setup texts are queued through the guarded iMessage
+outbox only after the real phone reply and this phone-board confirmation.
+The first-goal runner does not create a public Funnel link.
+
+### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
+
+The operator Mac's actual running apps are separate services. The Tailscale
+Serve routes and local listeners were checked together; paths below identify
+the deployed code, not a similarly named checkout:
+
+| Phone origin | Local listener | Live deployment and role |
+|---|---|---|
+| `<operator-tailnet-host>:8790` | `127.0.0.1:8790` | `~/srv/fleetdeck/portal_server.py` under `com.wideband.fleetdeck-portal`; full registry-driven board from `~/srv/fleetdeck/services.json`. |
+| `<operator-tailnet-host>:8783` | `127.0.0.1:8783` | `~/.config/wb-tunnel/chat_server.py` under `com.wideband.tunnel-chat`; real tmux session list and writable terminal through its loopback ttyd child on 8784. This deployed copy differs from `~/srv/fleetdeck/chat_server.py`; the private pilot reviews and bundles the deployed behavior with an owner access guard. |
+| `<operator-tailnet-host>:18970/fleet-map` | `127.0.0.1:18790` | `~/srv/fleetdeck-authoring/portal_server.py` under `com.wideband.fleet-map-local`; read-only Live Terminal Network from local fleet snapshot, registry, runtime, and infrastructure readers. |
+| `<operator-tailnet-host>:8792` | `*:4180` on the host | `~/glitch-cat/engine/serve.mjs` under `com.wideband.graph`; the real, cited corpus Knowledge Graph with lenses and a derived SQLite index. Its API reports index build time; it is not a continuously refreshed tmux map. Bind the client VM copy to loopback. |
+
+`~/bin/wb-portal` and `~/.config/wb-portal` are older launcher/code paths,
+not the live 8790 board. `~/srv/fleetdeck-map-ui` is an earlier fleet-map
+preview; the running 18970 source is `~/srv/fleetdeck-authoring`. The previous
+VM's matching colors and clickable eight-node diagram were insufficient; the
+current private pilot runs reviewed copies of the four actual surfaces against
+**that VM's own** sessions, services, project files, and graph pack. Verify
+the backing data and phone interaction, not just an HTTP 200 or matching CSS.
 
 ## Client experience
 
@@ -655,15 +700,19 @@ proof is the custom Cloudflare DNS/HTTPS handoff described in the baseline.
 
 ### 0.6.0 onboarding pilot in UTM, September 28, 2026
 
-The latest local unsigned pilot build `0.6.0-20260928062127` has DMG SHA-256
-`c17c335845819e911b52c66821806daefb38f151426ac32a45488d2ab33b0f1d`.
-The source and embedded self-tests each pass 81/81, the isolated browser E2E
-passes, and the DMG and app signature verify. This build is installed in the
-`Wideband E2E Clean 2` macOS VM. It is not the public 0.6.0 release: the live
-`os.wideband.ai/version` feed and GitHub release still advertise the September
-24 build. Publish a later version only after its changelog, Developer ID
-signature, notarization, and exact-artifact feed are ready; the update client
-does not offer another build with the same numeric version to 0.6.0 users.
+The latest local unsigned real-stack pilot build is
+`0.6.0-20260928161906`, DMG SHA-256
+`a999f594974a7209eb1b070f23270ee4630290e0c355f0923083a6d659f3874b`.
+The source and embedded self-tests each pass 83/83; the DMG and recursive app
+signature verify.
+That exact artifact was installed in the `Wideband E2E Clean 2` macOS VM and
+its phone-install action completed. It is a private, unpublished pilot, not the
+public 0.6.0 release: on September 28, the live `os.wideband.ai/version` feed
+still advertises build `0.6.0-20260924002330` and the latest GitHub Release is
+`v0.6.0` from September 24. Publish a later version only after its changelog,
+Developer ID signature, notarization, and exact-artifact feed are ready; the
+update client does not offer another build with the same numeric version to
+0.6.0 users.
 
 The VM uses a dedicated agent Apple Account, an exact one-to-one owner binding,
 and a signed-in Claude head session. During an isolated window, the host Trace
@@ -684,16 +733,42 @@ matching, new Claude transcript user record; uncertain delivery remains for
 review instead of silently advancing. Its focused tests pass 18/18.
 
 The setup ledger records the owner's real reply confirmation and completed
-first-website apply/check and Fleetdeck phone-install actions. Both sites run
-under LaunchAgents and private Tailscale Serve routes. Fleetdeck Notes beta
-passed HTTPS create/read, stores its customer data separately from the
-operator notes store with mode `0600`, and retained the test note after reboot.
-After the final guest login, Tailscale came online without a manual `up`, and
-the website and phone portal again returned HTTPS 200. A host UTM app crash
-during this reboot briefly stopped the VM; restarting the clone and unlocking
-the guest recovered the saved state. Phone Safari/Home Screen proof and the
-two guarded setup handoff texts remain pending; the latter must not be queued
-until the owner confirms the phone board.
+first-website apply/check and Fleetdeck phone-install actions. The final pilot
+runs five real stack jobs under LaunchAgents: full board `:8790`, interactive
+tmux chat `:8783`, Live Terminal Network `:18970`, Glitch Cat engine on local
+`:4180`, and its owner-gated front at public `:8792` / local `:4181`. Four
+exact Tailscale Serve mappings expose the board, chat, map, and gated graph.
+The board retained the client's first-project registry entry. Mobile Chrome
+opened the full board and first-project site, the visible Notes beta link,
+the map with observed `session:wb-head`, and the real graph with a full-width
+canvas and lens menu. The graph had 360 indexed nodes and 59 edges; its
+connected Surface lens drew 18 nodes and 29 edges. The live terminal listed
+`wb-head` and its ttyd WebSocket upgraded to HTTP 101 and streamed frames.
+Direct unauthenticated graph, board, map, and terminal requests were denied.
+The map honestly marked its snapshot partial while the VM's duplicate
+iMessage route and host-specific identity sources were absent.
+
+Fleetdeck Notes beta passed HTTPS create/read and preserved its one test note
+after reboot, separately from the operator notes store at mode `0600`. The
+earlier starter note lacked a creation timestamp; the current page shows
+"saved" for that unknown age instead of `NaNd ago`, without rewriting it.
+The graph and Claude splash can truncate long labels at a 390-pixel phone
+viewport; the graph canvas pans, and the terminal uses a real 48-column tmux
+window. A phone live attachment leaves that size after detach if no other
+client is attached. An automatic size-restoration hook is deferred because it
+could resize a different client or linked window; a scoped WebSocket lease
+needs its own integration test.
+
+After a guest restart on the final DMG, all five jobs, `wb-head`, Notes,
+Tailscale Serve, and the Setup phone-link readiness check recovered after GUI
+login. The UTM host process remained up. Two earlier UTM host crashes were
+recovered; both reports point to UTM 4.7.5's macOS screenshot/rendering path
+(`NSView.cacheDisplay` → vImage), with no evidence of a guest service fault.
+UTM Preferences → Display → Disable VM screenshot was enabled before the final
+restart. That successful run is evidence for the workaround, not proof of the
+exact graphics fault. Phone Safari/Home Screen proof and the two guarded
+setup handoff texts remain pending; the latter must not be queued until the
+owner confirms the new phone board.
 
 The latest Setup-only DMG upgrade kept the VM's approved Wideband Agent CDHash
 `05ddf55e70a5c5e75bb9ebe7a43e73a600dffa72` unchanged. A fresh Agent

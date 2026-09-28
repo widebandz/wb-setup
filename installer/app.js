@@ -479,7 +479,7 @@ function renderFirstGoal() {
     try {
       const url = new URL(recentProof.url);
       if (url.protocol === "https:" && url.hostname.endsWith(".ts.net")
-          && /^\/p\/[0-9a-f]{64}\/phone$/.test(url.pathname)
+          && /^\/p\/[0-9a-f]{64}\/board$/.test(url.pathname)
           && !url.username && !url.password && !url.search && !url.hash) {
         portalLink.href = url.href;
         portalLink.title = url.href;
