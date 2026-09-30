@@ -91,8 +91,8 @@ client-facing support ZIP excludes credentials, two-factor codes, operator
 profile answers, `.sop-vars` values, and raw logs.
 
 Deactivation is intentionally narrower than deleting the machine build. It
-stops the three Wideband LaunchAgents and moves their plists plus Wideband
-Agent into `~/.wideband/setup/deactivations/`; it leaves client work, account
+stops the exact Wideband-managed LaunchAgents and moves their plists plus
+Wideband Agent into `~/.wideband/setup/deactivations/`; it leaves client work, account
 sign-ins, and curated configuration intact. It also leaves Remote Login,
 Screen Sharing, and macOS privacy choices visible for the owner to review
 rather than silently changing system security settings. Reopen the packaged
@@ -101,7 +101,10 @@ app and select Repair Wideband to restore the managed runtime.
 For a handoff, build a client-specific DMG with an approved profile:
 
 ```bash
-./packaging/build-app.sh --profile /secure/path/client-profile.json
+./packaging/build-app.sh \
+  --profile /secure/path/client-profile.json \
+  --fleetdeck-source /path/to/reviewed/fleetdeck \
+  --graph-source /path/to/reviewed/glitch-cat
 ```
 
 The profile pre-seeds identity only; it must never contain passwords, tokens,

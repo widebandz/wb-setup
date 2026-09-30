@@ -140,14 +140,18 @@ try {
     agent: document.querySelector("#saved-agent-name").textContent,
     provider: document.querySelector("#saved-agent-provider").textContent,
     goal: document.querySelector("#saved-first-goal").textContent,
-    appleGuide: document.querySelector("#guide-title").textContent,
+    firstGuide: document.querySelector("#guide-title").textContent,
     accountCheck: !document.querySelector("#guide-acknowledgment").hidden,
   })`);
   console.log(`ONBOARDING=${JSON.stringify(onboarding)}`);
   if (onboarding.os !== "Aurora" || onboarding.agent !== "Trace" || onboarding.provider !== "Claude Code" || onboarding.goal !== "Research"
-      || onboarding.appleGuide !== "Create a separate agent Apple Account" || !onboarding.accountCheck) {
-    throw new Error("user-based onboarding or separate Apple Account gate failed");
+      || onboarding.firstGuide !== "Complete macOS Setup Assistant" || onboarding.accountCheck) {
+    throw new Error("local-first onboarding order failed");
   }
+  await evaluate(`document.querySelector("#guide-later").click(); openGuide("prepare.create-accounts")`);
+  await waitFor(`document.querySelector("#guide-dialog").open && document.querySelector("#guide-title").textContent === "Create a separate agent Apple Account"`);
+  const accountGate = await evaluate(`!document.querySelector("#guide-acknowledgment").hidden`);
+  if (!accountGate) throw new Error("separate agent Apple Account acknowledgment is missing");
   await evaluate(`document.querySelector("#guide-confirm").click()`);
   await waitFor(`document.querySelector("#guide-message").textContent.includes("separate from")`);
   await evaluate(`document.querySelector("#guide-later").click()`);
@@ -254,7 +258,7 @@ try {
       if (path === "/api/phone-link") {
         calls.push({ path, method: options?.method || "GET" });
         return new Response(JSON.stringify({
-          status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/board",
+          status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/phone",
           detail: "Private phone link verified.",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -292,9 +296,31 @@ try {
         snapshot.verification_rollup[id] = "pass";
       }
       phonePortalProof = {
-        status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/board",
+        status: "ready", url: "https://aurora.example-tailnet.ts.net:8790/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/phone",
         run: "handoff-browser-proof", checkedAt: Date.now(),
       };
+      renderFirstGoal();
+      const phoneLink = document.querySelector("#phone-portal-link");
+      const phoneLinkShown = !phoneLink.hidden && !document.querySelector("#phone-portal-copy").hidden
+        && phoneLink.href === phonePortalProof.url;
+      const verifiedProof = phonePortalProof;
+      phonePortalProof = { ...verifiedProof, url: verifiedProof.url.slice(0, -6) + "/board" };
+      renderFirstGoal();
+      const boardRouteHidden = phoneLink.hidden;
+      phonePortalProof = { ...verifiedProof, url: verifiedProof.url.replace(":8790/", ":9999/") };
+      renderFirstGoal();
+      const wrongPortHidden = phoneLink.hidden;
+      phonePortalProof = { ...verifiedProof, status: "waiting" };
+      renderFirstGoal();
+      const unverifiedHidden = phoneLink.hidden;
+      phonePortalProof = { ...verifiedProof, run: "stale-run" };
+      renderFirstGoal();
+      const staleHidden = phoneLink.hidden;
+      phonePortalProof = verifiedProof;
+      snapshot.facts.deactivated = true;
+      renderFirstGoal();
+      const deactivatedHidden = phoneLink.hidden;
+      snapshot.facts.deactivated = false;
       renderFirstGoal();
       await checkPhonePortalLink();
       const resumePosts = calls.filter((call) => call.path.startsWith("/api/handoff")).length;
@@ -351,7 +377,8 @@ try {
       await sendSetupHandoff();
       const heldAfterClick = snapshot.state.handoff?.status === "held"
         && document.querySelector("#phone-handoff-status").textContent.includes("No automatic retry");
-      return { resumePosts, consentVisibleOnResume, manualSendEnabled, quickCompleteDisabled, freshConfirmation, afterProof, approved, pending,
+      return { phoneLinkShown, boardRouteHidden, wrongPortHidden, unverifiedHidden, staleHidden, deactivatedHidden,
+        resumePosts, consentVisibleOnResume, manualSendEnabled, quickCompleteDisabled, freshConfirmation, afterProof, approved, pending,
         priorReceiptMessage, afterRepeat, sent, heldBeforeClick, afterHeldPoll, rejected, missing, stalled, heldAfterClick,
         handoffMethods: calls.filter((call) => call.path.startsWith("/api/handoff")).map((call) => call.method),
         confirmTrue: calls.find((call) => call.path === "/api/handoff/confirm")?.confirm };
@@ -360,7 +387,9 @@ try {
     }
   })()`);
   console.log(`HANDOFF=${JSON.stringify(handoff)}`);
-  if (handoff.resumePosts !== 0 || !handoff.consentVisibleOnResume || !handoff.manualSendEnabled || !handoff.quickCompleteDisabled
+  if (!handoff.phoneLinkShown || !handoff.boardRouteHidden || !handoff.wrongPortHidden || !handoff.unverifiedHidden
+      || !handoff.staleHidden || !handoff.deactivatedHidden
+      || handoff.resumePosts !== 0 || !handoff.consentVisibleOnResume || !handoff.manualSendEnabled || !handoff.quickCompleteDisabled
       || !handoff.freshConfirmation || handoff.afterProof !== 2 || !handoff.approved || !handoff.pending || !handoff.priorReceiptMessage
       || handoff.afterRepeat !== 2 || !handoff.sent || !handoff.heldBeforeClick || handoff.afterHeldPoll !== 1
       || !handoff.rejected || !handoff.missing || !handoff.stalled || !handoff.heldAfterClick

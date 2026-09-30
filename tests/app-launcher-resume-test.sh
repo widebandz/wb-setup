@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-sed -n '/^# An established Mac can host the private guide/,$p' \
+sed -n '/^if connection_is_live; then/,$p' \
   "$ROOT/packaging/app-launcher" > "$TMP/decision"
 [ -s "$TMP/decision" ] || { echo 'launcher decision missing' >&2; exit 1; }
 

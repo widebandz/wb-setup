@@ -1,4 +1,4 @@
-"""Owner-gated, read-only phone front for the VM-local Knowledge Graph.
+"""Owner-gated, read-only front for the Mac-local Knowledge Graph.
 
 The reviewed Glitch Cat engine keeps its own loopback listener on 4180. This
 small front serves it on 4181, where Tailscale Serve can expose only an owner
@@ -71,6 +71,10 @@ class GraphProxyHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/healthz":
             return self.reply(200, b"ok\n")
+        if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                and not customer_access.local_http_request(
+                    self.headers.get("Host"), self.server.server_port)):
+            return self.reply(403, b"forbidden\n")
         capability = customer_access.token()
         if not capability:
             return self.reply(403, b"forbidden\n")
@@ -81,7 +85,9 @@ class GraphProxyHandler(BaseHTTPRequestHandler):
                 return self.reply(403, b"forbidden\n")
             return self.reply(303, headers={
                 "Location": "/",
-                "Set-Cookie": customer_access.cookie_header(capability),
+                "Set-Cookie": customer_access.cookie_header(
+                    capability, secure=not customer_access.local_http_request(
+                        self.headers.get("Host"), self.server.server_port)),
             })
         if not customer_access.has_session(self.headers.get("Cookie"), capability):
             return self.reply(403, b"forbidden\n")
@@ -107,6 +113,10 @@ class GraphProxyHandler(BaseHTTPRequestHandler):
         # The graph engine is read-only. Close the connection without reusing a
         # request body, so a reverse proxy cannot misparse the next request.
         self.close_connection = True
+        if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                and not customer_access.local_http_request(
+                    self.headers.get("Host"), self.server.server_port)):
+            return self.reply(403, b"forbidden\n")
         return self.reply(405, b"read-only graph\n")
 
     do_PUT = do_PATCH = do_DELETE = do_POST

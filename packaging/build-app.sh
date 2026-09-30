@@ -41,12 +41,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --graph-source=*) GRAPH_SOURCE="${1#*=}"; shift ;;
     --help|-h)
-      echo "usage: ./packaging/build-app.sh [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile] [--fleetdeck-source /path/to/fleetdeck] [--graph-source /path/to/glitch-cat]"
+      echo "usage: ./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck --graph-source /path/to/glitch-cat [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile]"
       exit 0
       ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
+[ -n "$FLEETDECK_SOURCE" ] && [ -n "$GRAPH_SOURCE" ] \
+  || { echo "the client app requires both --fleetdeck-source and --graph-source from reviewed checkouts" >&2; exit 2; }
 [ -z "$NOTARY_PROFILE" ] || [ "$SIGN_IDENTITY" != "-" ] \
   || { echo "notarization requires a Developer ID signing identity" >&2; exit 2; }
 DIST="$ROOT/dist"
@@ -116,22 +118,24 @@ fi
   --exclude '.DS_Store' \
   --exclude '/.wideband-setup-engine' \
   --exclude '/.wideband-setup.command' \
+  --exclude '/DECISION-LAYER-TESTING-PROPOSAL.md' \
+  --exclude '/INSTALLER-PREFLIGHT-AND-TOOLCHAIN-PLAN.md' \
   --exclude '/vendor/fleetdeck/' \
   --exclude '/vendor/glitch-cat-pilot-bundle/' \
+  --exclude '/vendor/toolchain/' \
   "$ROOT/" "$PAYLOAD/"
 
-# A customer release can carry the exact reviewed Fleetdeck working tree. The
-# opt-in builder copies only files in Git's tracked list, then verifies every
-# byte; private notes, local config, backups, and .git never enter the app.
-# Without the option, phone-only install retains the public-clone fallback.
-if [ -n "$FLEETDECK_SOURCE" ]; then
-  /usr/bin/python3 "$ROOT/packaging/bundle-fleetdeck.py" \
-    build "$FLEETDECK_SOURCE" "$PAYLOAD/vendor/fleetdeck"
-fi
-if [ -n "$GRAPH_SOURCE" ]; then
-  /usr/bin/python3 "$ROOT/packaging/glitch-cat-pilot.py" \
-    bundle "$GRAPH_SOURCE" "$PAYLOAD/vendor/glitch-cat-pilot-bundle"
-fi
+# Copy only reviewed, tracked Fleetdeck and Glitch Cat files. Client phone
+# installation requires both bundles and must never depend on a public clone.
+/usr/bin/python3 "$ROOT/packaging/bundle-fleetdeck.py" \
+  build "$FLEETDECK_SOURCE" "$PAYLOAD/vendor/fleetdeck"
+/usr/bin/python3 "$ROOT/packaging/glitch-cat-pilot.py" \
+  bundle "$GRAPH_SOURCE" "$PAYLOAD/vendor/glitch-cat-pilot-bundle"
+
+# Every new client receives the same reviewed tools irrespective of an older
+# profile's Homebrew. Build them from pinned source/releases into the signed
+# app payload; the launcher installs an independently verified private copy.
+/usr/bin/python3 "$ROOT/packaging/build-toolchain.py" "$PAYLOAD/vendor/toolchain"
 
 # Bundle the localhost engine so the branded checklist can open immediately on
 # a genuinely bare Mac, before Homebrew or Command Line Tools supplies Python.

@@ -1,18 +1,16 @@
 #!/bin/bash
-# Open the resumable Wideband guided installer. bootstrap.sh installs Python;
-# this wrapper keeps the entry point memorable and reports the one useful fix
-# when it is launched too early.
+# Open the resumable Wideband guided installer with its verified Python.
 set -uo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PY=""
-command -v python3 >/dev/null 2>&1 && PY="$(command -v python3)"
-[ -z "$PY" ] && [ -x /opt/homebrew/bin/python3 ] && PY=/opt/homebrew/bin/python3
+PY="$(/bin/bash "$HERE/lib/toolchain-path" python3 2>/dev/null)" || PY=""
 
 if [ -z "$PY" ]; then
-  echo "Wideband Setup needs the Python runtime from the Brewfile."
-  echo "Let bootstrap.sh finish, then run this command again."
+  echo "Wideband Setup needs a verified private or approved legacy Python runtime."
+  echo "Reopen the current installer package, then run this command again."
   exit 1
 fi
 
+export PATH="${PY%/python3}:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
 exec "$PY" "$HERE/setup.py" "$@"

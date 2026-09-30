@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "0.7.1",
+  "release": "0.8.0",
   "product": "Wideband Setup",
   "description": "A guided, verified build for a custom Wideband operator machine.",
   "stages": [
@@ -20,15 +20,15 @@
         {
           "id": "prepare.create-accounts",
           "title": "Create a separate agent Apple Account",
-          "description": "Give the agent Mac its own Apple Account so it can text your personal phone as a separate sender.",
+          "description": "Create a separate agent Apple Account when you are ready to activate iMessage. Local core and Fleetdeck can be prepared first.",
           "actor": "client",
           "type": "guided",
           "note": "The agent Apple Account must differ from the Apple Account used on your personal iPhone.",
           "client_priority": 1,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Agent identity",
-            "intro": "Your agent needs a separate Apple Account so its iMessages arrive as messages from the agent, not from you.",
+            "intro": "A separate Apple Account is required for agent texting. You can do this later while Wideband prepares the local tools, first job, and Fleetdeck.",
             "purpose": "A separate sender makes the first text and every reply unambiguous on your phone.",
             "success": "You can sign into the agent Apple Account yourself and receive its verification codes. The account is different from your personal phone's account.",
             "instructions": [
@@ -63,7 +63,7 @@
         {
           "id": "prepare.complete-setup-assistant",
           "title": "Complete macOS Setup Assistant",
-          "description": "Connect power and Wi-Fi, create the admin account, and sign into the dedicated agent Apple Account.",
+          "description": "Connect power and Wi-Fi, create the administrator account, and finish macOS updates. Agent Apple Account sign-in can follow local setup.",
           "actor": "client",
           "type": "guided",
           "action": "open_apple_id",
@@ -72,11 +72,11 @@
           "client_guide": {
             "eyebrow": "Mac basics",
             "intro": "Confirm this Mac is ready to become your always-on Wideband operator machine.",
-            "purpose": "The agent Mac needs a stable administrator session and its dedicated Apple Account before Messages can receive your texts.",
-            "success": "The Mac is powered, online, signed into the dedicated agent account, and the current macOS user is an administrator.",
+            "purpose": "The local tools need a stable administrator session. The dedicated agent Apple Account is required later for Messages.",
+            "success": "The Mac is powered, online, updated, and the current macOS user is an administrator. Agent Apple Account sign-in may still be pending.",
             "instructions": [
               "Keep the Mac connected to power and a reliable network.",
-              "Sign into the dedicated agent Apple Account you just prepared, not your personal iPhone account or a temporary technician account. If Setup Assistant reports an error, finish setup and sign in here from the desktop instead; that is not a Wideband install failure.",
+              "If the dedicated agent Apple Account is ready, sign into it. Do not use your personal iPhone account for the agent. If it is not ready, finish macOS setup and return to agent account sign-in later.",
               "After a delayed or partially completed Apple Account sign-in, open Messages separately and confirm its iMessage account. Apple Account and Messages sign-in are two distinct checks.",
               "Confirm your current macOS user is an administrator.",
               "Finish any pending Migration Assistant or macOS update before continuing."
@@ -147,7 +147,7 @@
           "type": "guided",
           "client_priority": 5,
           "note": "The provider choice is saved locally; a live head-agent reply still requires runtime and account proof.",
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Your AI account",
             "intro": "Connect the AI provider you selected. Wideband checks the local tool and runtime before it can answer a text.",
@@ -264,7 +264,7 @@
           "checks": ["P0-FDA"],
           "action": "request_full_disk_access",
           "client_priority": 4,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "macOS permission",
             "intro": "Full Disk Access lets the Wideband Agent work with protected files and Messages data you explicitly authorize on this Mac.",
@@ -405,7 +405,7 @@
           "action": "open_login_items",
           "checks": ["P6-IMSGSERVICES"],
           "client_priority": 8,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Always-on services",
             "intro": "After binding your text, Wideband checks that all four background messaging services loaded.",
@@ -428,7 +428,7 @@
           "type": "guided",
           "action": "open_messages",
           "client_priority": 3,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Messaging channel",
             "intro": "Sign Messages into the agent account so your phone can text the agent as a separate person.",
@@ -453,7 +453,7 @@
           "action": "run_imessage_bind",
           "checks": ["P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"],
           "client_priority": 7,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "Connect your text",
             "intro": "Send one new iMessage from your personal phone. Wideband will bind only that exact one-to-one chat to your agent.",
@@ -532,10 +532,10 @@
         {
           "id": "connect.tailscale-app",
           "title": "Install standalone Tailscale",
-          "description": "Install the standalone download, approve its macOS network extension, and sign in. Then confirm it reconnects after restart in the client guide.",
+          "description": "For private phone access, install the standalone download, approve its macOS network extension, and sign in. Local Fleetdeck does not require Tailscale.",
           "actor": "operator",
           "type": "guided",
-          "command": "printf '#!/bin/sh\\nexec /usr/bin/env TAILSCALE_BE_CLI=1 \"/Applications/Tailscale.app/Contents/MacOS/Tailscale\" \"$@\"\\n' | sudo tee /opt/homebrew/bin/tailscale >/dev/null && sudo chmod +x /opt/homebrew/bin/tailscale",
+          "command": "/usr/bin/env TAILSCALE_BE_CLI=1 /Applications/Tailscale.app/Contents/MacOS/Tailscale version",
           "requires_confirmation": true,
           "checks": ["P4-TSCLI"],
           "action": "open_tailscale_download"
@@ -710,7 +710,7 @@
         {
           "id": "project.first-goal",
           "title": "Prepare the chosen first job",
-          "description": "After a real agent reply, prepare the selected research, website, or proposal starting point and register the website preview in Fleetdeck when selected.",
+          "description": "Prepare the selected research, website, or proposal starting point locally, and register the website preview in Fleetdeck when selected. Messaging can remain pending.",
           "actor": "machine",
           "type": "automatic",
           "action": "run_first_goal_apply"
@@ -718,7 +718,7 @@
         {
           "id": "project.phone-surface",
           "title": "Install the local Fleetdeck phone view",
-          "description": "Install the customer portal after the first job is prepared; Tailscale sign-in, HTTPS, and Add to Home Screen remain owner proofs.",
+          "description": "Install the local customer Fleetdeck board after the first job is prepared. Tailscale sign-in, HTTPS, and Add to Home Screen remain separate owner proofs.",
           "actor": "machine",
           "type": "automatic",
           "action": "run_phone_install"
@@ -846,7 +846,7 @@
           "checks": ["P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"],
           "requires_confirmation": true,
           "client_priority": 9,
-          "client_phase": "now",
+          "client_phase": "later",
           "client_guide": {
             "eyebrow": "First working moment",
             "intro": "Text the agent from your phone and wait for its answer in the same iMessage chat.",

@@ -25,16 +25,17 @@ localhost link or technical setup guide.
    Then use the Wideband guide to name your OS and agent and choose their
    first job. A build prepared specifically for you skips the phone dialog.
 7. The guide stays inside the Wideband app and shows live machine progress.
-   On a genuinely new Mac, Terminal opens behind it for Homebrew's one visible
-   administrator-password prompt. The cursor does not move while you type;
-   that is normal. Leave Terminal open until the guide says it is no longer
-   hosting the first installation.
+   The client release includes its own verified Python, Node, tmux, terminal,
+   and Messages tools. It will not take over a Homebrew installation owned by
+   another Mac profile. Terminal may open behind the guide during first-run
+   bootstrap or recovery; leave it open until the guide says it is finished.
 8. Follow the Wideband guide; do not type a localhost address yourself. Each
    step opens the right provider, app, or System Settings page and tells you
    what to select. Permission checks refresh automatically while each guide is
    open.
-   The access and permission steps appear first so Wideband can help with the
-   rest of setup if needed.
+   The local first job and Fleetdeck board can be prepared before you create
+   the separate agent Apple Account. Texting and iPhone access remain later
+   checks requiring your approval and a real phone test.
 9. When macOS asks about Accessibility, Screen Recording, Full Disk Access, or
    Messages Automation, approve the exact app named “Wideband Agent.” The guide
    requests each permission and verifies it before marking the step complete.
@@ -68,12 +69,9 @@ localhost link or technical setup guide.
 16. If the app is closed or the Mac restarts, open “Wideband Setup” from your
     user Applications folder. Do not reuse an old localhost tab; the app safely
     supplies the current private connection and resumes the saved step.
-17. If this Mac was upgraded from an older macOS release and Terminal reports
-    that /opt/homebrew is not writable or Git is unavailable, do not run a
-    broad chown command from the error. Leave the app open and contact
-    Wideband; release 0.6.0 verifies the intended user, runs the selected Apple
-    developer Git, and checks the exact Homebrew prefix before it prints any
-    repair for you to approve.
+17. If another macOS profile owns Homebrew at /opt/homebrew, Wideband leaves it
+    untouched and uses its private client tools. If preflight blocks, export a
+    support ZIP and contact Wideband. Do not run a broad chown command.
 18. When an update is available, Wideband Setup shows the version, checksum,
     and Gatekeeper state, then opens the public Wideband GitHub Release for
     review. It never installs or runs an update without you. Use Wideband Setup
@@ -95,7 +93,7 @@ If the disk image filename contains “unsigned,” the one-time Privacy & Secur
 signed, notarized, and stapled so macOS can verify Wideband as the publisher.
 
 Wideband release-builder note (not a client step): a self-contained phone
-portal build needs `./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck`
+portal build needs `./packaging/build-app.sh --fleetdeck-source /path/to/reviewed/fleetdeck --graph-source /path/to/reviewed/glitch-cat`
 from a reviewed checkout. The packaged customer portal
 excludes local Fleetdeck config, notes, backups, and operator source. Without
 that flag, phone setup keeps a public-clone fallback, but the current public

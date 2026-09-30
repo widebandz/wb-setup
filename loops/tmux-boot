@@ -18,16 +18,19 @@
 # which is what makes this safe to run at every login and safe to re-run by
 # hand.
 #
-# Portable on purpose: HOME comes from launchd, and the tools are looked up on
-# PATH rather than pinned to one machine's Homebrew prefix.
+# HOME comes from launchd; the private resolver pins tmux to the active
+# Wideband payload or an explicitly approved current-owner legacy prefix.
 set -uo pipefail
 
-export PATH="$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+TMUX_BIN="$(/bin/bash "$HERE/lib/toolchain-path" tmux 2>/dev/null)" || TMUX_BIN=""
+TM_STANDARD="$HOME/bin/tm-standard"
+TM_MEMORY="$HOME/bin/tm-memory"
 
-TMUX_BIN="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
-TM_STANDARD="$(command -v tm-standard || echo "$HOME/bin/tm-standard")"
-
-[ -x "$TMUX_BIN" ] || { echo "tmux-boot: no tmux on PATH" >&2; exit 1; }
+[ -n "$TMUX_BIN" ] && [ -x "$TMUX_BIN" ] \
+  || { echo "tmux-boot: verified tmux is unavailable" >&2; exit 1; }
+export PATH="${TMUX_BIN%/tmux}:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
 
 "$TMUX_BIN" start-server
 sleep 1
@@ -53,7 +56,6 @@ fi
 # login nobody is watching: an agent is a running cost, and keystrokes sent to
 # a fleet no one is looking at are how a wrong instruction lands unobserved.
 # Recovery into a live pane stays a human-initiated act (`tm-memory resume`).
-TM_MEMORY="$(command -v tm-memory || echo "$HOME/bin/tm-memory")"
 [ -x "$TM_MEMORY" ] && "$TM_MEMORY" prime --quiet 2>/dev/null
 
 "$TMUX_BIN" ls 2>/dev/null

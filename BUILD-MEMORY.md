@@ -8,9 +8,10 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Release: **0.7.1**. This is an unsigned phone UI pilot. The owner selected
-  the phone home with a full-board key for client Home Screen installs.
-  Developer ID signing and notarization remain future production work.
+- Source target: **0.8.0** unsigned pilot, pending exact DMG and VM validation.
+  The last public release is 0.7.1. The owner selected the phone home with a
+  full-board key for client Home Screen installs. Developer ID signing and
+  notarization remain future production work.
 - Real-stack functional checkpoint: `434970f` (`feat: pilot real Fleetdeck phone
   stack in setup`).
 - Platform: Apple silicon; macOS 14 or newer for the iMessage client path (the general operator path can run on macOS 13).
@@ -55,8 +56,8 @@ The client-facing contract is:
 1. Open the DMG and launch Wideband Setup.
 2. For an unsigned pilot, approve the one-time Gatekeeper exception.
 3. Follow one action at a time in the branded native window.
-4. Enter the administrator password only into macOS or Homebrew's visible
-   Terminal prompt on a genuinely bare Mac.
+4. Enter the administrator password only into a visible macOS prompt. The
+   packaged 0.8.0 client toolchain requires no Homebrew installation.
 5. Approve privacy access only for the exact app named **Wideband Agent**.
 6. Complete provider sign-ins and two-factor prompts personally.
 7. Close and reopen `~/Applications/Wideband Setup.app` at any time to resume.
@@ -68,7 +69,7 @@ DMG contains `READ ME FIRST.txt` and an **Open Privacy & Security** shortcut.
 
 | Owner | Work |
 |---|---|
-| **Wideband installs** | Homebrew foundation, core CLIs, shell integration, Claude layer, tmux standard, LaunchAgents, fleetdeck, app payload, verification, repair, and private state. |
+| **Wideband installs** | A private, verified client toolchain, local first-job and Fleetdeck surfaces, guarded Messages runtime after account proof, app payload, verification, repair, and private state. The separate legacy operator bootstrap can still use a healthy, owned Homebrew. |
 | **Client approves** | Administrator-password prompts, Gatekeeper exception for an unsigned pilot, Apple Remote Login and Screen Sharing, Full Disk Access, Accessibility, Screen Recording, Messages Automation, provider logins, and two-factor challenges. |
 | **Together** | Build identity, operator interview, approved deviations, client-specific workflows, phone/Tailscale proof, test message, first scheduled brief, and final handoff. |
 
@@ -129,10 +130,10 @@ existing client identity, and installs the exact launched app into
 `~/Applications/Wideband Setup.app` so the DMG can be ejected.
 
 On a bare Mac, the native window opens immediately from the bundled arm64
-engine. Terminal appears behind it only because Homebrew requires one visible
-administrator-password prompt. After the core foundation exists, later app
-launches start the engine quietly in the background and require no browser or
-Terminal knowledge.
+engine. The 0.8.0 client app checks its complete tool payload, installs a
+private copy in the intended user's home, and does not need Homebrew or Apple
+Command Line Tools to start the local core. Terminal may still host bootstrap
+or recovery; later app launches start the guide quietly in the background.
 
 If bootstrap exits after a canceled owner-phone prompt while the guide remains
 live, reopening the app relaunches Terminal when bootstrap reports
@@ -375,6 +376,46 @@ The exact 0.7.1 DMG passed source and embedded self-tests, signature and disk
 image checks, the packaged installer browser E2E, and isolated WebKit phone
 checks. A physical iPhone check and a VM install of this new UI were not run.
 
+### 0.8.0 private client toolchain and local-first setup (release validation pending)
+
+The packaged client no longer treats `/opt/homebrew` as a prerequisite. The
+release builder fetches checksum-pinned upstream sources/releases and bundles
+arm64 Python 3.11, Node/npm, tmux, ttyd, and `imsg`, including needed runtime
+resources. It audits Mach-O deployment targets, dependency closure, signatures,
+and command startup, then writes a SHA-256 manifest for every payload file.
+The app's read-only native preflight checks macOS 14+, arm64, login/home
+identity, app signature, complete bundled manifest, install-path ownership,
+and free space before it changes the user's files. The launcher stages the
+payload under `~/.wideband/toolchain/versions/<build-id>` with private
+permissions, verifies the complete copy, and atomically switches the mode-0600
+`active` build pointer. Previous versions remain available for rollback.
+An invalid active private toolchain fails closed; it never silently selects
+another profile's Homebrew. Only an explicitly marked 0.7.0/0.7.1 install may
+use its own independently verified healthy Homebrew during migration. No
+installer path changes ownership of a foreign `/opt/homebrew` prefix.
+
+The client guide records the selected OS and head-agent names, provider, and
+first job, then may prepare the local first project and real Fleetdeck portal,
+terminal, Live Terminal Network, and Knowledge Graph before the agent Apple
+Account exists. A `wideband.localhost` capability URL is for same-Mac preview
+only; it is not an iPhone link. Private iPhone access requires the exact
+Tailscale Serve mappings and owner-gated HTTPS probes. Messages activation
+still needs a separate agent Apple Account, incoming owner text, exact binding,
+the stable Wideband Agent permission principal, persistent head session,
+guarded outbox, and a real phone send-and-reply observation. Account-free local
+setup must never mark that path complete. The legacy full workstation
+reconciler is not a client core prerequisite and must not be invoked from the
+client guide because it writes operator-owned `~/.claude/CLAUDE.md`.
+Packaged-client bootstrap also leaves `.zshrc` and operator Claude files alone.
+Selecting Claude and opening its explicit sign-in action downloads the official
+installer to a private file, requires a successful fetch and shell syntax check,
+then runs authentication. Preview provider choices install no provider runtime.
+
+Source self-tests, isolated private-payload startup, complete-manifest
+tampering, and rollback tests are local development evidence. Record the exact
+DMG build ID, source/embedded test counts, UTM state, browser results, and
+physical phone results below only after running them against that artifact.
+
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
 The operator Mac's actual running apps are separate services. The Tailscale
@@ -407,8 +448,9 @@ The embedded interface has two surfaces:
   metadata, and build-record controls.
 
 The welcome dialog says whether this is a new or resumed build. Client view
-frontloads the separate agent Apple Account and first text, keeps the next
-action visible, and distinguishes **Machine verified** from **You confirmed**.
+starts with names, first job, and the local core, then guides the separate
+agent Apple Account and first text. It keeps the next action visible and
+distinguishes **Machine verified** from **You confirmed**.
 Support access follows the working text path.
 
 While a permission guide is open, the UI polls focused checks automatically.
@@ -573,24 +615,33 @@ approval, operator interview, and real-world phone/message proofs.
 
 ## Packaging and trust
 
+Every client package requires explicit, reviewed Fleetdeck and Knowledge Graph
+source checkouts. The builder refuses to substitute an unreviewed public clone.
 Build a generic unsigned pilot:
 
 ```bash
-./packaging/build-app.sh
+./packaging/build-app.sh \
+  --fleetdeck-source /path/to/reviewed/fleetdeck \
+  --graph-source /path/to/reviewed/glitch-cat
 ```
 
 Build a client-specific pilot using an identity-only profile kept outside the
 repository:
 
 ```bash
-./packaging/build-app.sh --profile /secure/path/client-profile.json
+./packaging/build-app.sh \
+  --profile /secure/path/client-profile.json \
+  --fleetdeck-source /path/to/reviewed/fleetdeck \
+  --graph-source /path/to/reviewed/glitch-cat
 ```
 
 Build with Developer ID signing:
 
 ```bash
 ./packaging/build-app.sh \
-  --sign-identity "Developer ID Application: Wideband AI (…)"
+  --sign-identity "Developer ID Application: Wideband AI (…)" \
+  --fleetdeck-source /path/to/reviewed/fleetdeck \
+  --graph-source /path/to/reviewed/glitch-cat
 ```
 
 Build, notarize, staple, and validate for production:
@@ -598,7 +649,9 @@ Build, notarize, staple, and validate for production:
 ```bash
 ./packaging/build-app.sh \
   --sign-identity "Developer ID Application: Wideband AI (…)" \
-  --notary-profile wideband-notary
+  --notary-profile wideband-notary \
+  --fleetdeck-source /path/to/reviewed/fleetdeck \
+  --graph-source /path/to/reviewed/glitch-cat
 ```
 
 Artifact names communicate trust state:

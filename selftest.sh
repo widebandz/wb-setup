@@ -100,6 +100,8 @@ WB_HB_ARCH=arm64
 WB_HB_PREFIX=/opt/homebrew
 WB_HB_PREFIX_MARKER=1
 WB_HB_PREFIX_STATE=wrong_owner
+WB_HB_UID="$(id -u)"
+WB_HB_PREFIX_UID=502
 WB_HB_MISMATCH_COUNT=1
 WB_HB_IDENTITY_SAFE=1
 WB_HB_ADMIN=1
@@ -110,6 +112,13 @@ WB_HB_FLAGGED=""
 WB_HB_ACL_ENTRY_COUNT=0
 WB_HB_FLAGGED=/opt/homebrew:uchg
 ! wb_hb_repair_available
+WB_HB_FLAGGED=""
+! wb_hb_repair_available  # A foreign owner is never a repair candidate.
+WB_HB_PREFIX_OWNER=clientuser
+WB_HB_PREFIX_UID="$WB_HB_UID"
+WB_HB_MISMATCH_COUNT=0
+WB_HB_PREFIX_STATE=not_writable
+wb_hb_repair_available
 SH
 then
   ok "Homebrew guard distinguishes CLT and post-upgrade prefix states"
@@ -155,15 +164,25 @@ if grep -q -- '--diagnose-homebrew' "$HERE/bootstrap.sh" \
    && grep -q 'needs_developer_tools_selection' "$HERE/bootstrap.sh" \
    && grep -q 'needs_developer_tools_update' "$HERE/bootstrap.sh" \
    && grep -q 'needs_homebrew_ownership' "$HERE/bootstrap.sh" \
-   && grep -q '/usr/bin/find /opt/homebrew -xdev ! -uid' "$HERE/lib/bootstrap-homebrew.sh" \
-   && grep -q '/usr/sbin/chown -h' "$HERE/lib/bootstrap-homebrew.sh" \
+   && grep -q 'needs_independent_toolchain' "$HERE/bootstrap.sh" \
    && grep -q '/usr/bin/find /opt/homebrew -xdev -type d -uid' "$HERE/lib/bootstrap-homebrew.sh" \
    && grep -q 'WB_HB_ACL_ENTRY_COUNT' "$HERE/lib/bootstrap-homebrew.sh" \
    && grep -q 'WB_HB_FLAGGED' "$HERE/lib/bootstrap-homebrew.sh" \
-   && ! grep -qE 'chown[[:space:]]+-R.*(/opt/homebrew|\$WB_HB_PREFIX)' "$HERE/bootstrap.sh" "$HERE/lib/bootstrap-homebrew.sh"; then
-  ok "Homebrew recovery is diagnostic-first and never runs a broad recursive chown"
+   && ! grep -qE '/usr/sbin/chown|chown[[:space:]]+-R' "$HERE/bootstrap.sh" "$HERE/lib/bootstrap-homebrew.sh"; then
+  ok "Homebrew recovery is diagnostic-first and never transfers a foreign prefix"
 else
-  no "Homebrew recovery can mutate an unverified or overly broad target"
+  no "Homebrew recovery can transfer another user's prefix"
+fi
+
+if bash "$HERE/tests/toolchain-path-test.sh" >/dev/null 2>&1; then
+  ok "private toolchain resolver rejects tampering and foreign Homebrew"
+else
+  no "private toolchain resolver accepted an unsafe path"
+fi
+if bash "$HERE/tests/toolchain-install-test.sh" >/dev/null 2>&1; then
+  ok "packaged toolchain activation preserves rollback and rejects changed input"
+else
+  no "packaged toolchain activation or rollback failed"
 fi
 
 # ── 2. status line fidelity ──────────────────────────────────────────────────
@@ -188,14 +207,19 @@ fi
 # ── 3. nothing identity-shaped in a public repo ──────────────────────────────
 head_ "3 · public-repo hygiene"
 LEAK='\+1[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4}|sk-[A-Za-z0-9]{20}|ghp_[A-Za-z0-9]{20}|-----BEGIN [A-Z ]*PRIVATE KEY'
+# The pinned upstream npm runtime includes documentation examples containing
+# dummy "PRIVATE KEY" strings. Its complete bytes are audited by the payload
+# manifest; scan our product source and reviewed adapters for client secrets.
 found="$(grep -rInE "$LEAK" "$HERE" \
-          --exclude-dir=.git --exclude='selftest.sh' --exclude='*.example' 2>/dev/null \
+          --exclude-dir=.git --exclude-dir=toolchain \
+          --exclude='selftest.sh' --exclude='*.example' 2>/dev/null \
         | grep -viE '\+15551234567|555-|example')"
 [ -z "$found" ] && ok "no phone numbers, keys or tokens" \
                 || { no "possible secret or identity:"; printf '      %s\n' "$found"; }
 
 found="$(grep -rIlniE 'brainwave|tailacfa70' "$HERE" \
-          --exclude-dir=.git --exclude='selftest.sh' 2>/dev/null)"
+          --exclude-dir=.git --exclude-dir=toolchain \
+          --exclude='selftest.sh' 2>/dev/null)"
 [ -z "$found" ] && ok "no operator hostnames" \
                 || { no "machine-specific identity leaked into:"; printf '      %s\n' "$found"; }
 
@@ -331,6 +355,9 @@ assert all(step.get("client_phase") in {"now", "handoff", "later"} for step in c
 assert all(step.get("client_guide", {}).get("intro") for step in clients)
 assert all(step.get("client_guide", {}).get("instructions") for step in clients)
 assert all(isinstance(step.get("client_priority", 1000), int) for step in clients)
+tailnet_step = next(step for step in steps if step["id"] == "connect.tailscale-app")
+assert "/opt/homebrew" not in tailnet_step.get("command", "")
+assert "sudo" not in tailnet_step.get("command", "")
 frontloaded = sorted(enumerate(clients), key=lambda pair: (pair[1].get("client_priority", 1000), pair[0]))
 assert [step["id"] for _, step in frontloaded[:6]] == [
     "identify.name-your-system",
@@ -340,12 +367,14 @@ assert [step["id"] for _, step in frontloaded[:6]] == [
     "connect.full-disk-access",
     "identify.authenticate-agent",
 ]
-now = [step for _, step in frontloaded if step.get("client_phase") == "now"]
-order = [step["id"] for step in now]
-assert order.index("connect.imessage-bind") < order.index("connect.background-items") < order.index("prove.messaging")
-background = next(step for step in now if step["id"] == "connect.background-items")
+now = [step["id"] for _, step in frontloaded if step.get("client_phase") == "now"]
+assert now == ["identify.name-your-system", "prepare.complete-setup-assistant"]
+later = [step["id"] for _, step in frontloaded if step.get("client_phase") == "later"]
+assert later.index("prepare.create-accounts") < later.index("connect.messages")
+assert later.index("connect.imessage-bind") < later.index("connect.background-items") < later.index("prove.messaging")
+background = next(step for step in clients if step["id"] == "connect.background-items")
 assert "P6-IMSGSERVICES" in background["checks"]
-bind = next(step for step in now if step["id"] == "connect.imessage-bind")
+bind = next(step for step in clients if step["id"] == "connect.imessage-bind")
 assert "open_login_items" in [item["action"] for item in bind["client_guide"]["actions"]]
 PY
   then
@@ -363,12 +392,14 @@ memory = (root / "BUILD-MEMORY.md").read_text(encoding="utf-8")
 changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
 readme = (root / "README.md").read_text(encoding="utf-8")
 agents = (root / "AGENTS.md").read_text(encoding="utf-8")
-assert f"- Release: **{release}**." in memory
+assert (f"- Release: **{release}**." in memory or
+        f"- Source target: **{release}**" in memory)
 assert "## Runtime architecture" in memory
 assert "## Security and privacy invariants" in memory
 assert "## Release and test procedure" in memory
 assert f"## {release} —" in changelog
-assert f"**Current release:** {release}." in readme
+assert (f"**Current release:** {release}." in readme or
+        f"**Next release:** {release}." in readme)
 assert "BUILD-MEMORY.md" in agents
 PY
   then
@@ -403,6 +434,8 @@ with tempfile.TemporaryDirectory() as directory:
     assert module.bootstrap_status(store.directory) == "needs_developer_tools_update"
     module.write_private(store.directory / "bootstrap-status", "needs_homebrew_ownership\n")
     assert module.bootstrap_status(store.directory) == "needs_homebrew_ownership"
+    module.write_private(store.directory / "bootstrap-status", "needs_independent_toolchain\n")
+    assert module.bootstrap_status(store.directory) == "needs_independent_toolchain"
     module.bootstrap_is_ready = original
 PY
   then
@@ -444,6 +477,12 @@ with tempfile.TemporaryDirectory() as directory:
             raise AssertionError("phone link endpoint accepted a missing token")
         except urllib.error.HTTPError as error:
             assert error.code == 401
+        for private_path in ("/api/preflight", "/api/local-board-link"):
+            try:
+                urllib.request.urlopen(base + private_path, timeout=1)
+                raise AssertionError(private_path + " accepted a missing token")
+            except urllib.error.HTTPError as error:
+                assert error.code == 401
         phone_link = json.load(urllib.request.urlopen(
             urllib.request.Request(base + "/api/phone-link", headers=headers), timeout=1
         ))
@@ -573,21 +612,27 @@ spec = importlib.util.spec_from_file_location("wb_setup_frozen_commands", pathli
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 commands = module.JobRunner.COMMANDS
-python = "/opt/homebrew/bin/python3"
-assert commands["run_imessage_init"][0] == python
+python = "/private/wideband/bin/python3"
+assert commands["run_imessage_init"][0] == module.TOOLCHAIN_PYTHON
 assert commands["run_imessage_bind"][:3] == ["/usr/bin/open", "-W", "-n"]
 assert commands["run_imessage_bind"][3].endswith("/Applications/Wideband Agent.app")
-assert commands["run_imessage_bind"][4:7] == ["--args", "run-background-task", python]
-assert commands["run_first_goal_apply"][0] == python
-assert commands["run_first_goal_check"][0] == python
+assert commands["run_imessage_bind"][4:7] == ["--args", "run-background-task", module.TOOLCHAIN_PYTHON]
+assert commands["run_first_goal_apply"][0] == module.TOOLCHAIN_PYTHON
+assert commands["run_first_goal_check"][0] == module.TOOLCHAIN_PYTHON
+module.resolved_tool_path = lambda name, fresh=True: pathlib.Path(python)
+runner = module.JobRunner(type("Store", (), {"directory": pathlib.Path("/tmp/wb-selftest-unused")})())
+assert runner.command_for("run_imessage_init")[0] == python
+assert runner.command_for("run_imessage_bind")[6] == python
+assert runner.command_for("run_first_goal_apply")[0] == python
+assert runner.command_for("run_first_goal_check")[0] == python
 assert all(sys.executable not in commands[action] for action in (
     "run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check"
 ))
 PY
   then
-    ok "packaged actions use proven Homebrew Python, not the frozen setup engine"
+    ok "packaged actions resolve validated toolchain Python, not the frozen setup engine"
   else
-    no "a packaged action may invoke the frozen setup engine as Python"
+    no "a packaged action may invoke the frozen setup engine or shared Homebrew Python"
   fi
 
   if python3 - "$HERE/bootstrap.sh" <<'PY' >/dev/null 2>&1
@@ -600,15 +645,15 @@ assert 'collect_client_identity' in text.split('if [ "$CLIENT_MODE" = "1" ] && [
 assert 'BREWFILE="$ROOT/Brewfile.quick"' in text
 handoff = text.split('# ── handoff', 1)[1]
 client_ready = handoff.split('elif [ "$CLIENT_MODE" = "1" ]', 1)[1].split('bootstrap_status ready', 1)[0]
-assert all(f'/opt/homebrew/bin/{tool}' in client_ready for tool in ('brew', 'python3', 'tmux', 'imsg'))
-assert '/opt/homebrew/bin/git' not in client_ready and '/opt/homebrew/bin/jq' not in client_ready
+assert 'wb_tc_resolve' in client_ready
+assert '/opt/homebrew/bin/python3' not in client_ready
 preflight = text.split('# ── preflight', 1)[1].split('case "$ROOT"', 1)[0]
 assert 'bootstrap_status unsupported_macos' in preflight
 PY
   then
-    ok "client bootstrap asks only owner phone and selects Brewfile.quick"
+    ok "client bootstrap selects validated toolchain without default-prefix fallback"
   else
-    no "client bootstrap regressed to optional identity prompts or full Brewfile"
+    no "client bootstrap regressed to default-prefix tool fallback"
   fi
 
   if python3 "$HERE/tests/bootstrap-handoff-test.py" >/dev/null 2>&1; then
@@ -851,7 +896,14 @@ spec.loader.exec_module(module)
 feed = json.loads((root / "updates" / "version.json").read_text(encoding="utf-8"))
 module.validate_feed(feed)
 manifest = json.loads((root / "installer" / "manifest.json").read_text(encoding="utf-8"))
-assert feed["latest"]["version"] == manifest["release"]
+published = tuple(map(int, feed["latest"]["version"].split(".")))
+source = tuple(map(int, manifest["release"].split(".")))
+assert published <= source
+if published < source:
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"**Next release:** {manifest['release']}." in readme
+    print("unpublished-pilot")
+    raise SystemExit(0)
 artifact = root / "dist" / feed["latest"]["artifact_name"]
 app = root / "dist" / "Wideband Setup.app"
 if app.is_dir():
@@ -1017,6 +1069,8 @@ with tempfile.TemporaryDirectory() as directory:
     assert "run_phone_install" not in store.read()["action_runs"]
     runner = module.JobRunner(store)
     runner.COMMANDS = {"run_imessage_install": ["/usr/bin/true"], "run_verify_imessage": ["/usr/bin/true"]}
+    module.require_core_tools = lambda _state_dir: None  # isolated dummy-command fixture
+    module.resolved_tool_path = lambda name, fresh=True: pathlib.Path("/usr/bin/true")
     job = runner.start("run_imessage_install")
     for _ in range(100):
         if (
@@ -1061,6 +1115,13 @@ PY
     no "Fleetdeck phone link can expose an unverified route"
   fi
 
+  if python3 "$HERE/tests/customer-portal-toolchain-test.py" >/dev/null 2>&1 \
+     && python3 "$HERE/tests/local-phone-stack-test.py" >/dev/null 2>&1; then
+    ok "customer Fleetdeck closes foreign tool paths before and after portal launch"
+  else
+    no "customer Fleetdeck can inherit another profile's tool paths"
+  fi
+
   if python3 "$HERE/tests/customer-graph-proxy-test.py" >/dev/null 2>&1; then
     ok "Knowledge Graph phone route requires owner access and forwards real local data"
   else
@@ -1083,6 +1144,17 @@ PY
     ok "provider choice is explicit, persisted, and gated before text activation"
   else
     no "provider choice can silently activate an unverified text runtime"
+  fi
+  if python3 "$HERE/tests/client-bootstrap-provider-test.py" >/dev/null 2>&1; then
+    ok "client bootstrap defers provider installation and operator Claude files"
+  else
+    no "client bootstrap changed unselected provider or operator files"
+  fi
+
+  if python3 "$HERE/tests/preflight-gates-test.py" >/dev/null 2>&1; then
+    ok "preflight blocks missing tools while local first job and Fleetdeck can proceed without messaging"
+  else
+    no "preflight or account-free local setup gate failed"
   fi
 
   if python3 "$HERE/tests/bind-handoff-test.py" >/dev/null 2>&1; then
@@ -1112,7 +1184,9 @@ fi
 head_ "10 · syntax"
 for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh setup.sh \
          packaging/app-launcher packaging/build-app.sh packaging/run-setup.command \
-         lib/bootstrap-homebrew.sh \
+         packaging/claude-sign-in.sh \
+         lib/bootstrap-homebrew.sh lib/toolchain-path lib/install-toolchain.sh \
+         lib/native-preflight.sh tests/toolchain-path-test.sh tests/toolchain-install-test.sh \
          skills/agent-session-memory/scripts/selfcheck.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"

@@ -78,6 +78,7 @@ HANDOFF_PAGE_MARKERS = {
     "/notes": (" // notes</title>", "Notes β"),
 }
 BOARD_TLS_PORT = 8790
+LOCAL_BOARD_HOST = "wideband.localhost"
 FLEET_MAP_TLS_PORT = 18970
 FLEET_MAP_LOCAL_PORT = 18790
 GRAPH_TLS_PORT = 8792
@@ -93,6 +94,8 @@ BIND_SUCCESS_OUTPUT = {
     "owner chat bound and first message queued; run installer to activate services",
     "existing owner chat binding verified",
 }
+TOOLCHAIN_PYTHON = "@wideband-toolchain/python3"
+_UI_TOOLCHAIN_CACHE: dict[str, Any] = {}
 
 
 def clean_onboarding(body: dict[str, Any]) -> dict[str, str]:
@@ -186,9 +189,47 @@ def bootstrap_is_ready(client_mode: bool = False) -> bool:
     """Report the actual bare-Mac tool boundary, not merely an identity file."""
     if not (Path.home() / ".sop-vars").is_file():
         return False
-    brew_bin = Path("/opt/homebrew/bin")
-    tools = ("brew", "python3", "tmux", "imsg") if client_mode else ("git", "jq", "tmux")
-    return all((brew_bin / name).is_file() for name in tools)
+    try:
+        python = resolved_tool_path("python3", fresh=False)
+        selected_bin = python.parent
+        tools = ("python3", "tmux", "imsg") if client_mode else ("git", "jq", "tmux")
+        return all((selected_bin / name).is_file() and os.access(selected_bin / name, os.X_OK)
+                   for name in tools)
+    except RuntimeError:
+        return False
+
+
+def resolved_tool_path(name: str, *, fresh: bool = True) -> Path:
+    """Ask the reviewed resolver for one exact executable; never search PATH."""
+    if name not in {"python3", "tmux", "imsg", "node", "npm", "ttyd", "git", "jq"}:
+        raise RuntimeError("unsupported Wideband tool")
+    helper = ROOT / "lib" / "toolchain-path"
+    if not helper.is_file():
+        raise RuntimeError("needs_independent_toolchain: Wideband tool resolver is missing")
+    active = Path.home() / ".wideband" / "toolchain" / "active"
+    try:
+        active_mtime = active.stat().st_mtime_ns
+    except OSError:
+        active_mtime = None
+    key = (str(Path.home()), str(ROOT), active_mtime, name)
+    cached = _UI_TOOLCHAIN_CACHE.get(key)
+    if not fresh and cached and time.monotonic() - cached["at"] < 30:
+        return cached["path"]
+    try:
+        result = subprocess.run(
+            ["/bin/bash", str(helper), name],
+            check=False, capture_output=True, text=True, timeout=30,
+            stdin=subprocess.DEVNULL,
+        )
+        value = result.stdout.strip()
+        path = Path(value)
+        if (result.returncode != 0 or not value or "\n" in value
+                or not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK)):
+            raise ValueError("unavailable")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("needs_independent_toolchain: A verified Wideband toolchain is unavailable for this login") from exc
+    _UI_TOOLCHAIN_CACHE[key] = {"path": path, "at": time.monotonic()}
+    return path
 
 
 def bootstrap_status(state_directory: Path, client_mode: bool = False) -> str:
@@ -205,6 +246,7 @@ def bootstrap_status(state_directory: Path, client_mode: bool = False) -> str:
         "needs_developer_tools_selection",
         "needs_developer_tools_update",
         "needs_homebrew_ownership",
+        "needs_independent_toolchain",
         "installing_tools",
         "collecting_identity",
         "needs_attention",
@@ -215,6 +257,68 @@ def bootstrap_status(state_directory: Path, client_mode: bool = False) -> str:
     if value in allowed:
         return value
     return "ready" if bootstrap_is_ready(client_mode) else "starting"
+
+
+def default_homebrew_class(prefix: Path = Path("/opt/homebrew")) -> str:
+    """Inventory the shared prefix without traversing or modifying it."""
+    try:
+        info = prefix.lstat()
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unreadable"
+    if stat.S_ISLNK(info.st_mode):
+        return "symlink"
+    if not stat.S_ISDIR(info.st_mode):
+        return "not_directory"
+    return "foreign_owner" if info.st_uid != os.getuid() else "current_owner_unverified"
+
+
+BOOTSTRAP_REASON = {
+    "unsupported_macos": "This macOS version is not supported by the iMessage runtime.",
+    "needs_admin_password": "Approve the Mac administrator prompt in the installer window.",
+    "needs_developer_tools": "Finish Apple's Command Line Tools installation, then retry.",
+    "needs_developer_tools_selection": "Select the installed Apple developer tools, then retry.",
+    "needs_developer_tools_update": "Update Apple's Command Line Tools, then retry.",
+    "needs_homebrew_ownership": "The existing Homebrew is unavailable to this login. Wideband will not change its ownership.",
+    "needs_independent_toolchain": "This login needs a verified Wideband toolchain. The existing Homebrew will not be changed.",
+    "needs_attention": "The core tool installation needs review before this action can run.",
+    "installing_agent": "Wideband Agent is still being installed.",
+    "installing_tools": "The core tools are still installing.",
+    "collecting_identity": "Finish the local setup identity prompt first.",
+    "starting": "The core tool preflight has not finished yet.",
+}
+
+
+def core_preflight(state_directory: Path, client_mode: bool = True) -> dict[str, str]:
+    """Small read-only, redacted phase result for the UI and support bundle."""
+    status = bootstrap_status(state_directory, client_mode)
+    return {
+        "phase": "core_toolchain",
+        "status": "ready" if status == "ready" else (
+            "blocked" if status in {"unsupported_macos", "needs_homebrew_ownership",
+                                    "needs_independent_toolchain", "needs_attention",
+                                    "needs_developer_tools_selection", "needs_developer_tools_update"}
+            else "pending_human" if status in {"needs_admin_password", "needs_developer_tools",
+                                                "collecting_identity"} else "pending"
+        ),
+        "reason_code": status,
+        "message": BOOTSTRAP_REASON.get(status, "Core tools are ready."),
+        "default_homebrew": default_homebrew_class(),
+        "checked_at": now(),
+    }
+
+
+def require_core_tools(state_directory: Path) -> None:
+    report = core_preflight(state_directory)
+    if report["status"] != "ready":
+        raise RuntimeError(f"{report['reason_code']}: {report['message']}")
+    for tool in ("python3", "tmux", "imsg"):
+        resolved_tool_path(tool)
+
+
+def client_package_mode(state_directory: Path) -> bool:
+    return os.environ.get("WB_SETUP_CLIENT_MODE") == "1" or (state_directory / "client-package").is_file()
 
 
 def _stop_stale_connection(pid: int, port: int, token: str) -> None:
@@ -360,6 +464,7 @@ class StateStore:
             "deviations": [],
             "action_runs": {},
             "last_verification": None,
+            "last_full_verification": None,
             "live_checks": {"generated_at": None, "checks": []},
             "handoff": {},
             "lifecycle": {
@@ -374,8 +479,10 @@ class StateStore:
         if not isinstance(data, dict):
             return StateStore._new_state()
         defaults = StateStore._new_state()
-        for key in ("started_at", "updated_at", "last_verification"):
+        for key in ("started_at", "updated_at", "last_verification", "last_full_verification"):
             data.setdefault(key, defaults[key])
+        if not isinstance(data["last_full_verification"], (dict, type(None))):
+            data["last_full_verification"] = None
         for key in ("completed", "metadata", "interview", "action_runs", "live_checks", "handoff"):
             if not isinstance(data.get(key), dict):
                 data[key] = defaults[key]
@@ -442,28 +549,45 @@ class JobRunner:
         "run_verify_full": ["bash", str(ROOT / "verify.sh"), "--json"],
         "run_selftest": ["bash", str(ROOT / "selftest.sh")],
         "run_doctor": ["bash", str(ROOT / "doctor.sh")],
-        "run_imessage_init": ["/opt/homebrew/bin/python3", str(ROOT / "imessage" / "runtime.py"), "init"],
+        "run_imessage_init": [TOOLCHAIN_PYTHON, str(ROOT / "imessage" / "runtime.py"), "init"],
         "run_imessage_bind": [
             "/usr/bin/open", "-W", "-n", str(Path.home() / "Applications" / "Wideband Agent.app"),
-            "--args", "run-background-task", "/opt/homebrew/bin/python3", str(ROOT / "imessage" / "runtime.py"),
+            "--args", "run-background-task", TOOLCHAIN_PYTHON, str(ROOT / "imessage" / "runtime.py"),
             "bind", "--confirm-separate-account",
         ],
-        "run_first_goal_apply": ["/opt/homebrew/bin/python3", str(ROOT / "first_goal" / "runner.py"), "apply"],
-        "run_first_goal_check": ["/opt/homebrew/bin/python3", str(ROOT / "first_goal" / "runner.py"), "check"],
+        "run_first_goal_apply": [TOOLCHAIN_PYTHON, str(ROOT / "first_goal" / "runner.py"), "apply"],
+        "run_first_goal_check": [TOOLCHAIN_PYTHON, str(ROOT / "first_goal" / "runner.py"), "check"],
         "run_phone_install": ["bash", str(ROOT / "install.sh"), "--phone-only", "--no-verify"],
     }
 
     def __init__(self, store: StateStore):
         self.store = store
+        self.client_mode = client_package_mode(store.directory)
         self.jobs: dict[str, dict[str, Any]] = {}
+        self.job_commands: dict[str, list[str]] = {}
         self.lock = threading.RLock()
+
+    def command_for(self, action: str) -> list[str]:
+        command = list(self.COMMANDS[action])
+        if TOOLCHAIN_PYTHON in command:
+            python = str(resolved_tool_path("python3"))
+            command = [python if item == TOOLCHAIN_PYTHON else item for item in command]
+        return command
 
     def start(self, action: str) -> dict[str, Any]:
         if action not in self.COMMANDS:
             raise KeyError(action)
+        if action == "run_install" and (self.client_mode or client_package_mode(self.store.directory)):
+            raise RuntimeError(
+                "legacy_full_install_disabled: This client package uses scoped setup actions. "
+                "The legacy full install can replace existing agent instructions."
+            )
+        if action in {"run_install", "run_imessage_install"}:
+            require_core_tools(self.store.directory)
         if action in {"run_imessage_init", "run_imessage_bind"}:
             state = self.store.read()
             require_active_provider(state["metadata"])
+            require_core_tools(self.store.directory)
             if "prepare.create-accounts" not in state["completed"]:
                 raise RuntimeError("confirm the separate agent Apple Account first")
             if action == "run_imessage_init":
@@ -475,18 +599,20 @@ class JobRunner:
                 raise RuntimeError("Wideband Agent is not installed; finish the machine installation first")
             if not (ROOT / "imessage" / "runtime.py").is_file():
                 raise RuntimeError("the iMessage runtime is not installed")
+            if action == "run_imessage_bind" and not (Path.home() / ".wideband" / "imessage" / "config.json").is_file():
+                raise RuntimeError("head_agent_not_staged: Stage the private head-agent workspace before binding a text")
         if action in {"run_first_goal_apply", "run_first_goal_check"}:
             state = self.store.read()
             clean_onboarding(state["metadata"])
-            verification = effective_verification(state)
-            if not step_is_complete(STEPS["prove.messaging"], state, verification_rollup(verification)):
-                raise RuntimeError("confirm a real head-agent reply on your phone before preparing the first job")
+            require_core_tools(self.store.directory)
             if not (ROOT / "first_goal" / "runner.py").is_file():
                 raise RuntimeError("the first-job runner is not installed")
         if action == "run_phone_install":
             state = self.store.read()
+            require_core_tools(self.store.directory)
             if state["action_runs"].get("run_first_goal_apply", {}).get("status") != "complete":
                 raise RuntimeError("prepare the first job before installing the Fleetdeck phone view")
+        command = self.command_for(action)
         with self.lock:
             running = next((job for job in self.jobs.values() if job["status"] == "running"), None)
             if running:
@@ -502,6 +628,7 @@ class JobRunner:
                 "output": "",
             }
             self.jobs[job_id] = job
+            self.job_commands[job_id] = command
             self.store.update(
                 lambda data: data["action_runs"].update(
                     {
@@ -549,12 +676,13 @@ class JobRunner:
         except (OSError, UnicodeError):
             return None
 
-    def _bind_via_agent_app(self, env: dict[str, str]) -> bool:
+    def _bind_via_agent_app(self, env: dict[str, str], base_command: list[str] | None = None) -> bool:
         """Launch through the app identity that owns Messages Full Disk Access."""
         # Running Contents/MacOS/Wideband Agent directly from the Terminal-hosted
         # engine inherits Terminal's TCC context. LaunchServices gives the app
         # its own grant. `open` can exit 0 even when the app's task fails, so
         # only the exact private runtime success line establishes completion.
+        base_command = base_command or self.command_for("run_imessage_bind")
         with tempfile.TemporaryDirectory(prefix="bind-handoff-", dir=self.store.directory) as temporary:
             paths = []
             for label in ("stdout", "stderr"):
@@ -563,9 +691,9 @@ class JobRunner:
                 paths.append(Path(name))
             stdout_path, stderr_path = paths
             command = [
-                *self.COMMANDS["run_imessage_bind"][:4],
+                *base_command[:4],
                 "--stdout", str(stdout_path), "--stderr", str(stderr_path),
-                *self.COMMANDS["run_imessage_bind"][4:],
+                *base_command[4:],
             ]
             try:
                 launched = subprocess.run(
@@ -585,16 +713,15 @@ class JobRunner:
         with self.lock:
             action = self.jobs[job_id]["action"]
         env = os.environ.copy()
-        env["PATH"] = ":".join(
-            [
-                str(Path.home() / ".local/bin"),
-                str(Path.home() / "bin"),
-                "/opt/homebrew/bin",
-                "/opt/homebrew/sbin",
-                env.get("PATH", ""),
-            ]
-        )
+        env["PATH"] = ":".join((str(Path.home() / ".local/bin"), str(Path.home() / "bin"),
+                                "/usr/bin", "/bin", "/usr/sbin", "/sbin"))
         try:
+            command = self.job_commands.get(job_id) or self.command_for(action)
+            if action in {"run_install", "run_imessage_install", "run_imessage_init",
+                          "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check",
+                          "run_phone_install"}:
+                python = resolved_tool_path("python3")
+                env["PATH"] = f"{python.parent}:{env['PATH']}"
             input_data = None
             if action == "run_imessage_init":
                 metadata = self.store.read()["metadata"]
@@ -607,7 +734,7 @@ class JobRunner:
                     "agent_command": require_active_provider(names),
                 }) + "\n"
             if action == "run_imessage_bind":
-                verified = self._bind_via_agent_app(env)
+                verified = self._bind_via_agent_app(env, command)
                 self._append(job_id, (
                     "Owner-only iMessage chat verified by Wideband Agent.\n" if verified else
                     "Wideband Agent could not verify the owner chat. Check Messages, Full Disk Access, "
@@ -616,7 +743,7 @@ class JobRunner:
                 code = 0 if verified else 1
             else:
                 process = subprocess.Popen(
-                    self.COMMANDS[action],
+                    command,
                     cwd=ROOT,
                     env=env,
                     stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
@@ -637,7 +764,7 @@ class JobRunner:
             if action == "run_imessage_bind" and code == 0:
                 self._append(job_id, "\nLoading the bound head-agent services…\n")
                 activation = subprocess.Popen(
-                    self.COMMANDS["run_imessage_install"], cwd=ROOT, env=env,
+                    self.command_for("run_imessage_install"), cwd=ROOT, env=env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1,
                 )
@@ -711,6 +838,8 @@ class JobRunner:
             }
             if verification is not None:
                 data["last_verification"] = verification
+                if action == "run_verify_full":
+                    data["last_full_verification"] = verification
             if action in {"run_install", "run_imessage_install", "run_imessage_bind"} \
                     and snapshot["status"] == "complete" and deactivation_cleared:
                 data["lifecycle"]["deactivated_at"] = None
@@ -875,28 +1004,53 @@ def redact_support_text(value: str) -> str:
     return result[:SUPPORT_TEXT_LIMIT]
 
 
+def support_checks(report: dict[str, Any], *, prefix: str | None = None) -> list[dict[str, str]]:
+    """Keep only check IDs, statuses, and redacted short explanations."""
+    result = []
+    for item in report.get("checks", []):
+        if not isinstance(item, dict):
+            continue
+        check_id = str(item.get("id", ""))[:80]
+        if not re.fullmatch(r"[A-Z0-9-]{1,80}", check_id):
+            continue
+        if prefix and not check_id.startswith(prefix):
+            continue
+        status = str(item.get("status", "skip"))
+        result.append({
+            "id": check_id,
+            "status": status if status in {"pass", "fail", "skip"} else "skip",
+            "message": redact_support_text(str(item.get("message", ""))),
+        })
+    return result
+
+
+def support_timestamp(value: Any) -> str | None:
+    parsed = _parsed_timestamp(value)
+    return parsed.isoformat(timespec="seconds") if parsed else None
+
+
 def support_summary(store: StateStore) -> dict[str, Any]:
     """Return a deliberately narrow, secret-free setup snapshot."""
     state = store.read()
     verification = effective_verification(state) or {}
-    checks = []
-    for item in verification.get("checks", []):
-        checks.append(
-            {
-                "id": str(item.get("id", ""))[:80],
-                "status": str(item.get("status", "skip"))[:20],
-                "message": redact_support_text(str(item.get("message", ""))),
-            }
-        )
+    checks = support_checks(verification)
+    full = state.get("last_full_verification")
+    if not isinstance(full, dict):
+        full = {}
     actions = {}
     for action, item in state.get("action_runs", {}).items():
         if action not in JobRunner.COMMANDS and action != "deactivate_wideband":
             continue
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status", "unknown"))
         actions[action] = {
-            "status": item.get("status"),
-            "exit_code": item.get("exit_code"),
-            "started_at": item.get("started_at"),
-            "finished_at": item.get("finished_at"),
+            "status": status if status in {
+                "running", "complete", "interrupted", "needs_attention"
+            } else "unknown",
+            "exit_code": item.get("exit_code") if type(item.get("exit_code")) is int else None,
+            "started_at": support_timestamp(item.get("started_at")),
+            "finished_at": support_timestamp(item.get("finished_at")),
         }
     try:
         macos = subprocess.run(
@@ -930,22 +1084,28 @@ def support_summary(store: StateStore) -> dict[str, Any]:
             "python": platform.python_version(),
         },
         "setup": {
-            "started_at": state.get("started_at"),
-            "updated_at": state.get("updated_at"),
+            "started_at": support_timestamp(state.get("started_at")),
+            "updated_at": support_timestamp(state.get("updated_at")),
             "completed_required": len(completed_ids),
             "required_total": len(required),
             "completed_step_ids": completed_ids,
             "lifecycle": {
-                "deactivated_at": lifecycle.get("deactivated_at"),
-                "last_reconciled_at": lifecycle.get("last_reconciled_at"),
+                "deactivated_at": support_timestamp(lifecycle.get("deactivated_at")),
+                "last_reconciled_at": support_timestamp(lifecycle.get("last_reconciled_at")),
                 "support_bundle_created": bool(lifecycle.get("last_support_bundle")),
             },
         },
         "actions": actions,
+        "preflight": core_preflight(store.directory),
         "verification": {
-            "generated_at": verification.get("generated_at"),
+            "generated_at": support_timestamp(verification.get("generated_at")),
             "summary": verification.get("summary") or {"passed": 0, "failed": 0, "skipped": 0},
             "checks": checks,
+        },
+        "last_full_permission_checks": {
+            "evidence_label": "last_known",
+            "generated_at": support_timestamp(full.get("generated_at")),
+            "checks": support_checks(full, prefix="P0-"),
         },
         "privacy": {
             "excluded": [
@@ -968,6 +1128,7 @@ def support_summary_text(summary: dict[str, Any]) -> str:
         f"Release: {summary['release']}",
         f"macOS: {summary['system']['macos']} ({summary['system']['architecture']})",
         f"Setup progress: {setup['completed_required']}/{setup['required_total']} required steps",
+        f"Core preflight: {summary['preflight']['status']} ({summary['preflight']['reason_code']})",
         (
             "Verification: "
             f"{verification.get('passed', 0)} passed · "
@@ -985,6 +1146,16 @@ def support_summary_text(summary: dict[str, Any]) -> str:
     )
     if not attention:
         lines.append("- None in the latest verification.")
+    last_full = summary["last_full_permission_checks"]
+    if last_full["checks"]:
+        lines += [
+            "",
+            f"Last-known full-run macOS permission checks ({last_full['generated_at'] or 'time unavailable'}):",
+        ]
+        lines.extend(
+            f"- [{item['id']}] {item['status']}: {item['message']}"
+            for item in last_full["checks"]
+        )
     lines += [
         "",
         "Excluded: credentials, 2FA codes, profile answers, .sop-vars values, raw logs.",
@@ -1072,7 +1243,6 @@ def private_project_phone_link(home: Path, value: Any, project_port: Any) -> boo
     candidates = (
         Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
         home / "Applications" / "Tailscale.app" / "Contents" / "MacOS" / "Tailscale",
-        Path("/opt/homebrew/bin/tailscale"),
     )
     binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
     if binary is None:
@@ -1349,6 +1519,75 @@ def phone_access_token(home: Path) -> str | None:
     return token if PHONE_TOKEN_PATTERN.fullmatch(token) else None
 
 
+def local_portal_health(port: int) -> bool:
+    """Probe the local board without relying on localhost DNS resolution."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+    try:
+        connection.request("GET", "/healthz", headers={"Host": f"{LOCAL_BOARD_HOST}:{port}"})
+        response = connection.getresponse()
+        return response.status == 200 and response.read(64).strip() == b"ok"
+    except (OSError, http.client.HTTPException):
+        return False
+    finally:
+        connection.close()
+
+
+def local_portal_page(port: int, token: str) -> bool:
+    """Prove that the loopback capability opens the actual phone page."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+    try:
+        host_header = {"Host": f"{LOCAL_BOARD_HOST}:{port}"}
+        connection.request("GET", f"/p/{token}/phone", headers=host_header)
+        response = connection.getresponse()
+        cookie = response.getheader("Set-Cookie", "").split(";", 1)[0]
+        if response.status != 303 or response.getheader("Location") != "/phone" or not cookie:
+            return False
+        response.read(1024)
+        connection.request("GET", "/phone", headers={**host_header, "Cookie": cookie})
+        response = connection.getresponse()
+        if response.status != 200 or response.getheader("Content-Type", "").split(";", 1)[0] != "text/html":
+            return False
+        body = response.read(512 * 1024 + 1)
+        if len(body) > 512 * 1024:
+            return False
+        page = body.decode("utf-8")
+        return all(marker in page for marker in HANDOFF_PAGE_MARKERS["/phone"])
+    except (OSError, UnicodeError, http.client.HTTPException):
+        return False
+    finally:
+        connection.close()
+
+
+def local_board_preview(
+    home: Path,
+    state: dict[str, Any],
+    *,
+    health_probe: Any = local_portal_health,
+    page_probe: Any = local_portal_page,
+) -> dict[str, str]:
+    """Return a Mac-only preview after local health and owner access pass."""
+    waiting = lambda detail: {"status": "waiting", "detail": detail}
+    if state.get("lifecycle", {}).get("deactivated_at"):
+        return waiting("Wideband services are paused.")
+    if state.get("action_runs", {}).get("run_phone_install", {}).get("status") != "complete":
+        return waiting("Install the local Fleetdeck board after the first job.")
+    try:
+        config = json.loads((home / "srv" / "fleetdeck" / "config.json").read_text(encoding="utf-8"))
+        port = config["ports"]["portal"]
+        if type(port) is not int or port != BOARD_TLS_PORT:
+            raise ValueError("wrong portal port")
+    except (OSError, ValueError, KeyError, TypeError):
+        return waiting("Fleetdeck local configuration needs review.")
+    token = phone_access_token(home)
+    if token is None or not health_probe(port) or not page_probe(port, token):
+        return waiting("Fleetdeck local board has not passed its owner-access check.")
+    return {
+        "status": "local_ready",
+        "detail": "Mac-only preview is ready. Private HTTPS and a physical phone check are still pending.",
+        "local_url": f"http://{LOCAL_BOARD_HOST}:{port}/p/{token}/phone",
+    }
+
+
 def phone_portal_link(
     home: Path,
     state: dict[str, Any],
@@ -1364,7 +1603,7 @@ def phone_portal_link(
     if state.get("lifecycle", {}).get("deactivated_at"):
         return waiting("Wideband services are paused. Repair them before checking the phone link.")
     if state.get("action_runs", {}).get("run_phone_install", {}).get("status") != "complete":
-        return waiting("Install the local Fleetdeck phone view after your first agent reply.")
+        return waiting("Install the local Fleetdeck phone view after preparing the first job.")
     config_path = home / "srv" / "fleetdeck" / "config.json"
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -1382,7 +1621,6 @@ def phone_portal_link(
     candidates = (
         Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
         home / "Applications" / "Tailscale.app" / "Contents" / "MacOS" / "Tailscale",
-        Path("/opt/homebrew/bin/tailscale"),
     )
     binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
     if binary is None:
@@ -1515,7 +1753,6 @@ def _private_handoff_serve_routes(home: Path, runner: Any, host: str) -> bool:
     candidates = (
         Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
         home / "Applications" / "Tailscale.app" / "Contents" / "MacOS" / "Tailscale",
-        Path("/opt/homebrew/bin/tailscale"),
     )
     binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
     if binary is None:
@@ -2084,10 +2321,7 @@ class SetupApp:
         self.live_check_lock = threading.Lock()
         self.embedded_mode = os.environ.get("WB_SETUP_EMBEDDED") == "1"
         self.terminal_hosted = os.environ.get("WB_SETUP_TERMINAL_HOSTED") == "1"
-        self.client_mode = (
-            os.environ.get("WB_SETUP_CLIENT_MODE") == "1"
-            or (store.directory / "client-package").is_file()
-        )
+        self.client_mode = client_package_mode(store.directory)
 
     @staticmethod
     def _check(check_id: str, status: str, message: str) -> dict[str, str]:
@@ -2192,18 +2426,21 @@ class SetupApp:
 
     @staticmethod
     def _claude_executable() -> str | None:
-        """Find Claude in the engine's PATH or its usual macOS install paths."""
-        cli = shutil.which("claude")
-        if cli:
-            return str(Path(cli).resolve())
+        """Use only Claude installed inside this login's own home directory."""
+        home = Path.home().resolve()
         for candidate in (
-            Path.home() / ".local" / "bin" / "claude",
-            Path.home() / "bin" / "claude",
-            Path("/opt/homebrew/bin/claude"),
-            Path("/usr/local/bin/claude"),
+            home / ".local" / "bin" / "claude",
+            home / "bin" / "claude",
         ):
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return str(candidate)
+            try:
+                resolved = candidate.resolve(strict=True)
+                info = resolved.stat()
+                if (resolved.is_relative_to(home) and stat.S_ISREG(info.st_mode)
+                        and info.st_uid == os.getuid() and not info.st_mode & 0o022
+                        and os.access(resolved, os.X_OK)):
+                    return str(resolved)
+            except OSError:
+                continue
         return None
 
     def require_claude_authentication(self) -> None:
@@ -2234,21 +2471,15 @@ class SetupApp:
         """Open one fixed Terminal helper; never accept shell text from HTTP."""
         if platform.system() != "Darwin":
             raise RuntimeError("Claude sign-in guidance is available only on macOS")
+        installer = ROOT / "packaging" / "claude-sign-in.sh"
+        if not installer.is_file() or installer.is_symlink():
+            raise RuntimeError("Claude sign-in helper is missing from this Wideband package")
+        python = resolved_tool_path("python3")
         helper = self.store.directory / "claude-sign-in.command"
         write_private(
             helper,
-            """#!/bin/bash
-export PATH="$HOME/.local/bin:$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
-clear
-printf '\\n  WIDEBAND · CLAUDE SIGN-IN\\n\\n'
-printf '  Claude will open a secure browser sign-in. Wideband never sees your password.\\n\\n'
-if command -v claude >/dev/null 2>&1; then
-  claude auth login
-else
-  printf '  Claude Code is still installing. Return to Wideband Setup and try again shortly.\\n'
-fi
-printf '\\n  You may close this window after sign-in.\\n'
-""",
+            "#!/bin/bash\n"
+            f"exec /bin/bash {shlex.quote(str(installer))} {shlex.quote(str(python))}\n",
         )
         os.chmod(helper, 0o700)
         subprocess.run(["open", "-a", "Terminal", str(helper)], check=True, timeout=10)
@@ -2377,6 +2608,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/manifest":
                 self._json(HTTPStatus.OK, MANIFEST)
+            elif path == "/api/preflight":
+                self._json(HTTPStatus.OK, core_preflight(self.app.store.directory, self.app.client_mode))
             elif path == "/api/health":
                 self._json(
                     HTTPStatus.OK,
@@ -2394,6 +2627,7 @@ class Handler(BaseHTTPRequestHandler):
                 state["last_verification"] = effective
                 state.setdefault("handoff", {})["delivery"] = handoff_delivery_status(Path.home(), state)
                 current_bootstrap_status = bootstrap_status(self.app.store.directory, self.app.client_mode)
+                preflight = core_preflight(self.app.store.directory, self.app.client_mode)
                 self._json(
                     HTTPStatus.OK,
                     {
@@ -2402,6 +2636,7 @@ class Handler(BaseHTTPRequestHandler):
                         "facts": {
                             "bootstrap_ready": current_bootstrap_status == "ready",
                             "bootstrap_status": current_bootstrap_status,
+                            "preflight": preflight,
                             "client_mode": self.app.client_mode,
                             "embedded_mode": self.app.embedded_mode,
                             "terminal_hosted": self.app.terminal_hosted,
@@ -2430,6 +2665,8 @@ class Handler(BaseHTTPRequestHandler):
                 )
             elif path == "/api/phone-link":
                 self._json(HTTPStatus.OK, phone_portal_link(Path.home(), self.app.store.read()))
+            elif path == "/api/local-board-link":
+                self._json(HTTPStatus.OK, local_board_preview(Path.home(), self.app.store.read()))
             elif path.startswith("/api/jobs/"):
                 job = self.app.runner.get(path.rsplit("/", 1)[-1])
                 self._json(HTTPStatus.OK if job else HTTPStatus.NOT_FOUND, job or {"error": "job not found"})

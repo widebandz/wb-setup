@@ -73,10 +73,12 @@ class GraphProxyTest(unittest.TestCase):
         front_thread.start()
         self.port = front.server_port
 
-    def request(self, path, *, method="GET", cookie=""):
+    def request(self, path, *, method="GET", cookie="", host=""):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
         try:
             headers = {"Cookie": cookie} if cookie else {}
+            if host:
+                headers["Host"] = host
             connection.request(method, path, headers=headers)
             response = connection.getresponse()
             return response.status, dict(response.getheaders()), response.read()
@@ -105,6 +107,18 @@ class GraphProxyTest(unittest.TestCase):
         self.assertEqual(self.request("/", cookie=cookie)[0], 200)
         self.assertEqual(self.request("/api/stats", method="POST", cookie=cookie)[0], 405)
         self.assertEqual(Engine.calls, ["/api/stats", "/api/graph?lens=surface", "/"])
+
+    def test_local_preview_cookie_stays_loopback_only(self):
+        with mock.patch.dict(os.environ, {"FLEETDECK_LOCAL_ONLY": "1"}):
+            host = f"wideband.localhost:{self.port}"
+            self.assertEqual(self.request(f"/p/{TOKEN}/graph")[0], 403)
+            status, headers, _ = self.request(f"/p/{TOKEN}/graph", host=host)
+            self.assertEqual(status, 303)
+            self.assertIn("HttpOnly; SameSite=Strict", headers["Set-Cookie"])
+            self.assertNotIn("Secure", headers["Set-Cookie"])
+            cookie = headers["Set-Cookie"].split(";", 1)[0]
+            self.assertEqual(self.request("/api/stats", cookie=cookie, host=host)[0], 200)
+            self.assertEqual(self.request("/api/stats", cookie=cookie)[0], 403)
 
     def test_serve_migrates_only_the_prior_graph_engine_mapping(self):
         host = "customer.example.ts.net"

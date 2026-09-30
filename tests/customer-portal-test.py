@@ -170,14 +170,15 @@ class CustomerPortalTest(unittest.TestCase):
             calls.append(command)
             if command[:2] == ["tmux", "list-panes"]:
                 return subprocess.CompletedProcess(command, 0, pane_line, "")
-            if command[:2] == ["ps", "-p"]:
+            if command[:2] == ["/bin/ps", "-p"]:
                 return subprocess.CompletedProcess(
                     command, 0, "/Users/test/.local/bin/claude\n", "")
             if command[:2] == ["tmux", "capture-pane"]:
                 return subprocess.CompletedProcess(command, 0, "agent output\n", "")
             raise AssertionError(command)
 
-        with mock.patch.object(self.module.subprocess, "run", side_effect=running):
+        with mock.patch.object(self.module, "verified_tmux", return_value="tmux"), \
+             mock.patch.object(self.module.subprocess, "run", side_effect=running):
             self.assertEqual(json.loads(self.request("/api/watch")[1]),
                              {"running": True, "text": "agent output\n"})
         self.assertEqual(len([call for call in calls if call[:2] == ["tmux", "capture-pane"]]), 1)
@@ -189,7 +190,8 @@ class CustomerPortalTest(unittest.TestCase):
                     command, 0, "wb-head|1|1|%1|zsh|/bin/zsh|1360|0\n", "")
             raise AssertionError("shell output must never be captured")
 
-        with mock.patch.object(self.module.subprocess, "run", side_effect=shell):
+        with mock.patch.object(self.module, "verified_tmux", return_value="tmux"), \
+             mock.patch.object(self.module.subprocess, "run", side_effect=shell):
             self.assertEqual(json.loads(self.request("/api/watch")[1]),
                              {"running": False, "text": ""})
             self.assertFalse(self.module.head_session_present("wb-head"))
@@ -200,9 +202,25 @@ class CustomerPortalTest(unittest.TestCase):
                     command, 0, pane_line.replace("wb-head|", "wb-head-other|"), "")
             raise AssertionError("another session must never be captured")
 
-        with mock.patch.object(self.module.subprocess, "run", side_effect=wrong_session):
+        with mock.patch.object(self.module, "verified_tmux", return_value="tmux"), \
+             mock.patch.object(self.module.subprocess, "run", side_effect=wrong_session):
             self.assertEqual(json.loads(self.request("/api/watch")[1]),
                              {"running": False, "text": ""})
+
+    def test_watch_resolves_tmux_without_ambient_fallback(self) -> None:
+        private_bin = self.root / "private" / "bin"
+        private_bin.mkdir(parents=True)
+        tmux = private_bin / "tmux"
+        tmux.write_text("tmux")
+        answer = subprocess.CompletedProcess([], 0, str(tmux) + "\n", "")
+        with mock.patch.object(self.module.subprocess, "run", return_value=answer) as resolve:
+            self.assertEqual(self.module.verified_tmux(), str(tmux))
+        resolve.assert_called_once_with([str(self.module.TOOLCHAIN_RESOLVER), "tmux"],
+                                        capture_output=True, text=True, timeout=15)
+        with mock.patch.object(self.module.subprocess, "run", return_value=
+                               subprocess.CompletedProcess([], 1, "", "unavailable")):
+            self.assertIsNone(self.module.verified_tmux())
+            self.assertIsNone(self.module.active_head_pane("wb-head"))
 
     def test_board_status_uses_only_verified_local_facts(self) -> None:
         with mock.patch.object(self.module, "head_session_present", return_value=True), \

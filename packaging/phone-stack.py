@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Install the VM-local services behind the real Fleetdeck phone board.
+"""Install Fleetdeck's local services, with optional private phone access.
 
-This is run only after the owner chat and first project have been established.
-The customer board is installed by Fleetdeck itself; this reconciles its three
-real companion surfaces without copying the operator Mac's private data.
+The customer board is installed by Fleetdeck itself. These companion services
+always bind loopback; Tailscale Serve is added only when this Mac is connected.
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ LA = HOME / "Library" / "LaunchAgents"
 LOG_DIR = HOME / ".wideband" / "setup"
 TS_APP = Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale")
 TOKEN_PATH = HOME / ".wideband" / "fleetdeck" / "phone-access-token"
-PATH_ENV = f"{HOME}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH_ENV = ""
 
 
 def wait_port_free(port: int) -> None:
@@ -57,6 +56,25 @@ def wait_port_free(port: int) -> None:
 def call(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, text=True, capture_output=True, check=check,
                           timeout=45)
+
+
+def toolchain_bin() -> Path:
+    """Use only the activated private payload or verified legacy toolchain."""
+    resolver = ROOT / "lib" / "toolchain-path"
+    selected = None
+    for tool in ("python3", "tmux", "node", "npm", "ttyd"):
+        result = call(str(resolver), tool, check=False)
+        if result.returncode != 0:
+            raise ValueError(f"verified phone tool {tool} is unavailable")
+        path = Path(result.stdout.strip())
+        if not path.is_absolute() or path.name != tool or not path.is_file():
+            raise ValueError(f"verified phone tool {tool} has an invalid path")
+        if selected is None:
+            selected = path.parent
+        elif path.parent != selected:
+            raise ValueError("phone tools are from different installations")
+    assert selected is not None
+    return selected
 
 
 def graph_helper():
@@ -103,7 +121,7 @@ def prepare_graph(label: str) -> str:
         helper.build(GRAPH)
     helper.preflight(GRAPH)
     if not (GRAPH / ".data" / "kg.db").is_file():
-        raise ValueError("the VM-local graph index is missing")
+        raise ValueError("the Mac-local graph index is missing")
     return node
 
 
@@ -119,12 +137,16 @@ def read_token() -> str:
     return value
 
 
-def tailscale_name() -> str:
+def tailscale_name() -> str | None:
     if not TS_APP.is_file():
-        raise ValueError("Tailscale.app is required for the real phone stack")
-    status = json.loads(call(str(TS_APP), "status", "--json").stdout)
+        return None
+    try:
+        result = call(str(TS_APP), "status", "--json", check=False)
+        status = json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
     if status.get("BackendState") != "Running":
-        raise ValueError("Tailscale is not connected")
+        return None
     reported = status.get("Self", {}).get("DNSName", "")
     if not isinstance(reported, str):
         raise ValueError("Tailscale did not report this Mac's MagicDNS name")
@@ -202,8 +224,11 @@ def ensure_job(label: str, content: bytes) -> None:
         raise ValueError(f"LaunchAgent {label} is not loaded")
 
 
-def get_json(url: str) -> dict:
-    request = urllib.request.Request(url, headers={"User-Agent": "Wideband-Setup/phone-stack"})
+def get_json(url: str, *, host: str | None = None) -> dict:
+    headers = {"User-Agent": "Wideband-Setup/phone-stack"}
+    if host:
+        headers["Host"] = host
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request, timeout=3) as response:
         if response.status != 200:
             raise ValueError("service did not answer")
@@ -215,7 +240,7 @@ def wait_ready(label: str, predicate) -> None:
     for _ in range(40):
         try:
             if predicate():
-                print(f"  ✓ {label} is serving VM-local data")
+                print(f"  ✓ {label} is serving Mac-local data")
                 return
         except (OSError, ValueError, urllib.error.URLError, KeyError, TypeError):
             pass
@@ -300,13 +325,36 @@ def refresh_graph_index(label: str, content: bytes) -> None:
 
 
 def run() -> None:
+    global PATH_ENV
     config = json.loads((FD / "config.json").read_text(encoding="utf-8"))
     prefix = config.get("label_prefix")
     if not isinstance(prefix, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9.-]{1,99}", prefix):
         raise ValueError("Fleetdeck LaunchAgent prefix is invalid")
+    ports = config.get("ports", {})
+    if (not isinstance(ports, dict)
+            or any(ports.get(key, expected) != expected for key, expected in
+                   (("portal", 8790), ("chat", 8783), ("ttyd", 8784)))):
+        raise ValueError("Fleetdeck portal and terminal ports differ from the reviewed phone stack")
     if not (FD / ".wideband-fleetdeck-bundle.json").is_file():
         raise ValueError("the real Fleetdeck bundle is required for the full phone stack")
+    selected_bin = toolchain_bin()
+    PATH_ENV = f"{selected_bin}:/usr/bin:/bin:/usr/sbin:/sbin"
+    os.environ["PATH"] = PATH_ENV
     name = tailscale_name()
+    local_only = name is None
+    host = "wideband.localhost" if local_only else name
+    board_origin = "http://wideband.localhost:8790" if local_only else f"https://{name}:8790"
+    configured_host = config.get("machine") or ""
+    if configured_host and configured_host.lower().rstrip(".") != host:
+        raise ValueError("Fleetdeck config names a different phone host")
+    portal_label = prefix + ".fleetdeck-portal"
+    portal_plist = LA / f"{portal_label}.plist"
+    if portal_plist.is_symlink() or not portal_plist.is_file():
+        raise ValueError("Fleetdeck portal LaunchAgent is missing")
+    portal_spec = plistlib.loads(portal_plist.read_bytes())
+    if (portal_spec.get("Label") != portal_label
+            or str(FD / "portal_server.py") not in portal_spec.get("ProgramArguments", [])):
+        raise ValueError("Fleetdeck portal LaunchAgent has an unexpected program")
     capability = read_token()
     graph_label = prefix + ".glitch-cat"
     graph_proxy_label = prefix + ".fleetdeck-graph"
@@ -317,8 +365,8 @@ def run() -> None:
     ensure_job(map_label, plist(map_label, [python, "-m", "customer_fleet_map.server"],
                                 ROOT / "packaging", {
         "FLEETDECK_FLEET_MAP_BIND": "127.0.0.1", "FLEETDECK_FLEET_MAP_PORT": "18790",
-        "FLEETDECK_FLEET_HOST_ID": name.split(".", 1)[0],
-        "FLEETDECK_BOARD_ORIGIN": f"https://{name}:8790",
+        "FLEETDECK_FLEET_HOST_ID": "local" if local_only else name.split(".", 1)[0],
+        "FLEETDECK_BOARD_ORIGIN": board_origin,
     }))
     graph_plist = plist(graph_label, [node, "engine/serve.mjs", "--port", "4180"], GRAPH, {
         "GLITCHCAT_PACK": "wideband-pilot", "GLITCHCAT_DB": str(GRAPH / ".data" / "kg.db"),
@@ -326,12 +374,16 @@ def run() -> None:
     ensure_job(graph_label, graph_plist)
     ensure_job(graph_proxy_label, plist(
         graph_proxy_label, [python, str(ROOT / "packaging" / "customer_graph_proxy.py")],
-        ROOT / "packaging", {}))
+        ROOT / "packaging", {"FLEETDECK_LOCAL_ONLY": "1" if local_only else "0"}))
     def map_ready() -> bool:
-        data = get_json(f"http://127.0.0.1:18790/p/{capability}/api/fleet-map")
+        data = get_json(f"http://127.0.0.1:18790/p/{capability}/api/fleet-map",
+                        host="wideband.localhost:18790" if local_only else None)
+        # An empty session list is a truthful fresh install, not a map failure.
         return (data.get("schema_version") == "agent-fleet.snapshot.v1"
-                and any(isinstance(item, dict) and item.get("type") == "session"
-                        and item.get("observed") is True for item in data.get("nodes", [])))
+                and isinstance(data.get("nodes"), list)
+                and isinstance(data.get("summary"), dict)
+                and type(data["summary"].get("live_sessions")) is int
+                and data["summary"]["live_sessions"] >= 0)
     def graph_ready() -> bool:
         stats = get_json("http://127.0.0.1:4180/api/stats")
         surface = get_json("http://127.0.0.1:4180/api/graph?lens=surface")
@@ -349,14 +401,17 @@ def run() -> None:
             return False
         connection = http.client.HTTPConnection("127.0.0.1", 4181, timeout=3)
         try:
-            connection.request("GET", f"/p/{capability}/graph")
+            connection.request("GET", f"/p/{capability}/graph", headers={
+                "Host": "wideband.localhost:4181" if local_only else "127.0.0.1:4181"})
             response = connection.getresponse()
             cookie = response.getheader("Set-Cookie", "").split(";", 1)[0]
             if response.status != 303 or response.getheader("Location") != "/" \
                     or not cookie.startswith("wb_fleetdeck_session="):
                 return False
             response.read()
-            connection.request("GET", "/api/stats", headers={"Cookie": cookie})
+            connection.request("GET", "/api/stats", headers={
+                "Cookie": cookie,
+                "Host": "wideband.localhost:4181" if local_only else "127.0.0.1:4181"})
             response = connection.getresponse()
             stats = json.loads(response.read()) if response.status == 200 else {}
         finally:
@@ -365,37 +420,35 @@ def run() -> None:
     wait_ready("Live Terminal Network", map_ready)
     wait_ready("Knowledge Graph", graph_ready)
     wait_ready("owner-gated Knowledge Graph", graph_proxy_ready)
-    ensure_serve(name, 18970, 18790)
-    # The first real-stack pilot routed :8792 straight to the graph engine.
-    # Move only that exact managed mapping behind the new owner gate.
-    ensure_serve(name, 8792, 4181, previous_local_port=4180)
+    if name:
+        ensure_serve(name, 18970, 18790)
+        # The first real-stack pilot routed :8792 straight to the graph engine.
+        # Move only that exact managed mapping behind the new owner gate.
+        ensure_serve(name, 8792, 4181, previous_local_port=4180)
 
     # Fleetdeck renders its network button from this safe origin and reads the
     # owner capability itself. No raw capability goes into config or launchd.
-    portal_label = prefix + ".fleetdeck-portal"
-    portal_plist = LA / f"{portal_label}.plist"
-    if portal_plist.is_symlink() or not portal_plist.is_file():
-        raise ValueError("Fleetdeck portal LaunchAgent is missing")
-    portal_spec = plistlib.loads(portal_plist.read_bytes())
-    if portal_spec.get("Label") != portal_label or str(FD / "portal_server.py") not in portal_spec.get("ProgramArguments", []):
-        raise ValueError("Fleetdeck portal LaunchAgent has an unexpected program")
-    configured_host = config.get("machine") or ""
-    if configured_host and configured_host.lower().rstrip(".") != name:
-        raise ValueError("Fleetdeck config names a different phone host")
-    portal_spec.setdefault("EnvironmentVariables", {})["FLEETDECK_HOST"] = name
-    portal_spec.setdefault("EnvironmentVariables", {})["FLEETDECK_MAP_ORIGIN"] = f"https://{name}:18970"
+    portal_env = portal_spec.setdefault("EnvironmentVariables", {})
+    # The upstream portal template includes Homebrew paths. Replace its PATH
+    # before the managed job is written or restarted, even on an upgrade from
+    # an older customer bundle.
+    portal_env["PATH"] = PATH_ENV
+    portal_env["FLEETDECK_HOST"] = host
+    portal_env["FLEETDECK_MAP_ORIGIN"] = (
+        "http://wideband.localhost:18790" if local_only else f"https://{name}:18970")
+    portal_env["FLEETDECK_LOCAL_ONLY"] = "1" if local_only else "0"
     ensure_job(portal_label, plistlib.dumps(portal_spec, sort_keys=True))
 
     # The real chat server is a separate, cookie-gated writable ttyd proxy.
-    # It is activated only after the first owner-to-agent reply, which is the
-    # point at which this scoped phone install becomes available.
+    # It may start before an agent exists; the terminal list then stays empty.
     chat = FD / "chat_server.py"
     if not chat.is_file() or "FLEETDECK_CUSTOMER_TERMINALS" not in chat.read_text(encoding="utf-8"):
         raise ValueError("reviewed customer tmux chat server is missing")
     ensure_job(chat_label, plist(chat_label, [python, str(chat)], FD, {
         "PORT": "8783", "TTYD_PORT": "8784", "BIND": "127.0.0.1",
         "FLEETDECK_CUSTOMER_TERMINALS": "1",
-        "FLEETDECK_HOST": name,
+        "FLEETDECK_HOST": host,
+        "FLEETDECK_LOCAL_ONLY": "1" if local_only else "0",
     }))
     def chat_ready() -> bool:
         try:
@@ -407,31 +460,39 @@ def run() -> None:
             return False
         connection = http.client.HTTPConnection("127.0.0.1", 8783, timeout=3)
         try:
-            connection.request("GET", f"/p/{capability}/chat")
+            connection.request("GET", f"/p/{capability}/chat", headers={
+                "Host": "wideband.localhost:8783" if local_only else "127.0.0.1:8783"})
             response = connection.getresponse()
             cookie = response.getheader("Set-Cookie", "").split(";", 1)[0]
             if response.status != 303 or not cookie.startswith("wb_fleetdeck_session="):
                 return False
             response.read()
-            connection.request("GET", "/healthz", headers={"Cookie": cookie})
+            connection.request("GET", "/healthz", headers={
+                "Cookie": cookie,
+                "Host": "wideband.localhost:8783" if local_only else "127.0.0.1:8783"})
             response = connection.getresponse()
             status = json.loads(response.read()) if response.status == 200 else {}
         finally:
             connection.close()
         return status.get("ok") is True and status.get("ttyd") is True
     wait_ready("tmux fleet terminals", chat_ready)
-    ensure_serve(name, 8783, 8783)
+    if name:
+        ensure_serve(name, 8783, 8783)
 
     register_service({"id": "chat", "group": "fleet", "port": 8783,
                       "icon": "chat", "name": "Live terminals",
-                      "blurb": "Real tmux sessions on this Mac"})
+                      "blurb": "Terminal access to this Mac's current tmux sessions"})
     register_service({"id": "graph", "group": "fleet", "port": 4181,
                       "icon": "nodes", "name": "Knowledge Graph",
                       "blurb": "Indexed graph of this Mac's projects and operator plane"})
     refresh_graph_index(graph_label, graph_plist)
     wait_ready("refreshed Knowledge Graph", graph_ready)
     wait_ready("refreshed owner-gated Knowledge Graph", graph_proxy_ready)
-    print("  ✓ real Fleetdeck companion services have private Tailscale Serve routes")
+    if name:
+        print("  ✓ Fleetdeck companion services have private Tailscale Serve routes")
+    else:
+        print("  ✓ Fleetdeck companion services are local-only on 127.0.0.1")
+        print("  ~ phone access awaits Tailscale; rerun phone install after it connects")
 
 
 if __name__ == "__main__":

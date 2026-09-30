@@ -709,6 +709,191 @@ class FleetdeckBundleTest(unittest.TestCase):
             if portal.stderr:
                 portal.stderr.close()
 
+        local_env = {**env, "FLEETDECK_HOST": "wideband.localhost",
+                     "FLEETDECK_MAP_ORIGIN": "http://wideband.localhost:18790",
+                     "FLEETDECK_LOCAL_ONLY": "1"}
+        goal_status = self.base / "first-goal-status.json"
+        local_env["FLEETDECK_FIRST_GOAL_STATUS_PATH"] = str(goal_status)
+        local_host = f"wideband.localhost:{port}"
+        local_portal = subprocess.Popen([sys.executable, str(bundle / "portal_server.py")],
+                                        env=local_env, stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.PIPE)
+        try:
+            for _ in range(50):
+                try:
+                    if request(port, "/healthz")[0] == 200:
+                        break
+                except OSError:
+                    time.sleep(0.1)
+            else:
+                self.fail("local Fleetdeck portal did not start")
+            self.assertEqual(request(port, "/board")[0], 403)
+            self.assertEqual(request(port, "/p/" + "a" * 64 + "/phone")[0], 403)
+            status, headers, _ = request(port, "/p/" + "a" * 64 + "/phone",
+                                         extra={"Host": local_host})
+            self.assertEqual(status, 303)
+            self.assertIn("HttpOnly; SameSite=Strict", headers["Set-Cookie"])
+            self.assertNotIn("Secure", headers["Set-Cookie"])
+            local_cookie = headers["Set-Cookie"].split(";", 1)[0]
+            self.assertEqual(request(port, "/phone", cookie=local_cookie,
+                                     extra={"Host": local_host})[0], 200)
+            self.assertEqual(request(port, "/board", cookie=local_cookie,
+                                     extra={"Host": local_host})[0], 200)
+            self.assertEqual(request(port, "/api/notes", cookie=local_cookie,
+                                     method="POST", body=b'{"text":"Local idea"}',
+                                     extra={"Host": local_host,
+                                            "Origin": f"http://{local_host}",
+                                            "Sec-Fetch-Site": "same-origin"})[0], 200)
+            self.assertEqual(request(port, "/api/notes", cookie=local_cookie,
+                                     method="POST", body=b'{"text":"Blocked"}',
+                                     extra={"Host": local_host,
+                                            "Origin": "http://other.invalid:8790"})[0], 403)
+
+            # The PROJECT key opens a proven local first site on this Mac;
+            # the same loopback URL never becomes a phone HTTPS link.
+            project_port = None
+            for candidate in range(4173, 4200):
+                if candidate in (4180, 4181):
+                    continue
+                with socket.socket() as probe:
+                    try:
+                        probe.bind(("127.0.0.1", candidate))
+                    except OSError:
+                        continue
+                project_port = candidate
+                break
+            self.assertIsNotNone(project_port)
+            public = self.base / "first-project" / "public"
+            public.mkdir(parents=True)
+            (public / "index.html").write_text("<title>Actual first project</title>")
+            project = subprocess.Popen([
+                sys.executable, str(ROOT / "first_goal" / "site_server.py"),
+                "--directory", str(public), "--port", str(project_port),
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(50):
+                    try:
+                        if request(project_port, "/health")[0] == 200:
+                            break
+                    except OSError:
+                        time.sleep(0.1)
+                else:
+                    self.fail("first project preview did not start")
+                registry = json.loads((bundle / "services.json").read_text())
+                registry["services"].append({"id": "first-project", "port": project_port,
+                                             "source": "wideband-first-goal"})
+                (bundle / "services.json").write_text(json.dumps(registry))
+                local_url = f"http://127.0.0.1:{project_port}/"
+                goal = {"goal": "website", "os_name": "Test OS",
+                        "agent_name": "Test Agent", "status": "ready",
+                        "local_url": local_url}
+                goal_status.write_text(json.dumps(goal))
+                goal_status.chmod(0o600)
+                status, _, project_page = request(port, "/project", cookie=local_cookie,
+                                                   extra={"Host": local_host})
+                self.assertEqual(status, 200)
+                self.assertIn(local_url.encode(), project_page)
+                self.assertIn(b"Open on this Mac", project_page)
+                self.assertIn(b"Phone access needs a private HTTPS link", project_page)
+                self.assertEqual(request(port, "/project", cookie=local_cookie)[0], 403)
+
+                goal["agent_name"] = "Different agent"
+                goal_status.write_text(json.dumps(goal))
+                self.assertNotIn(local_url.encode(), request(
+                    port, "/project", cookie=local_cookie,
+                    extra={"Host": local_host})[2])
+                goal["agent_name"] = "Test Agent"
+                goal["local_url"] = "http://127.0.0.1:4180/"
+                goal_status.write_text(json.dumps(goal))
+                self.assertNotIn(b"http://127.0.0.1:4180/", request(
+                    port, "/project", cookie=local_cookie,
+                    extra={"Host": local_host})[2])
+                goal["local_url"] = local_url
+                goal_status.write_text(json.dumps(goal))
+                remote_probe = subprocess.run([sys.executable, "-c", "\n".join((
+                    "import sys", "sys.path.insert(0, sys.argv[1])",
+                    "import portal_server as portal",
+                    "assert portal.customer_local_project_url(portal.onboarding_config()) == ''",
+                )), str(bundle)], env={**env, "FLEETDECK_FIRST_GOAL_STATUS_PATH": str(goal_status)},
+                    capture_output=True, text=True, timeout=10)
+                self.assertEqual(remote_probe.returncode, 0, remote_probe.stderr)
+            finally:
+                project.terminate()
+                project.wait(timeout=5)
+            self.assertNotIn(local_url.encode(), request(
+                port, "/project", cookie=local_cookie,
+                extra={"Host": local_host})[2])
+        finally:
+            local_portal.terminate()
+            local_portal.wait(timeout=5)
+            if local_portal.stderr:
+                local_portal.stderr.close()
+
+        registry = json.loads((bundle / "services.json").read_text())
+        registry["services"].extend([
+            {"id": "chat", "port": 8783, "source": "wideband-phone-stack"},
+            {"id": "graph", "port": 4181, "source": "wideband-phone-stack"},
+        ])
+        (bundle / "services.json").write_text(json.dumps(registry))
+        local_scan_code = "\n".join((
+            "import json, sys",
+            "sys.path.insert(0, sys.argv[1])",
+            "import portal_server as portal",
+            "portal._upstream_cached_scan = lambda: {'services': json.loads(sys.argv[2])}",
+            "print(json.dumps(portal.cached_scan()['services']))",
+        ))
+        local_scan = subprocess.run([sys.executable, "-c", local_scan_code,
+                                     str(bundle), json.dumps([
+            {"id": "chat", "port": 8783, "up": True, "linkable": False,
+             "url": None, "reach": "host"},
+            {"id": "graph", "port": 4181, "up": True, "linkable": False,
+             "url": None, "reach": "host"},
+            {"id": "other", "port": 4182, "up": True, "linkable": False,
+             "url": None, "reach": "host"},
+        ])], env={**local_env, "HOME": str(self.base)}, capture_output=True,
+                                    text=True, timeout=10)
+        self.assertEqual(local_scan.returncode, 0, local_scan.stderr)
+        local_tiles = {item["id"]: item for item in json.loads(local_scan.stdout)}
+        self.assertEqual(local_tiles["chat"]["url"], "/app/chat")
+        self.assertEqual(local_tiles["graph"]["url"], "/app/graph")
+        self.assertTrue(local_tiles["chat"]["linkable"])
+        self.assertFalse(local_tiles["other"]["linkable"])
+        remote_scan = subprocess.run([sys.executable, "-c", local_scan_code,
+                                      str(bundle), json.dumps([
+            {"id": "chat", "port": 8783, "up": True, "linkable": False,
+             "url": None, "reach": "host"},
+        ])], env={**env, "HOME": str(self.base)}, capture_output=True,
+                                     text=True, timeout=10)
+        self.assertEqual(remote_scan.returncode, 0, remote_scan.stderr)
+        self.assertFalse(json.loads(remote_scan.stdout)[0]["linkable"])
+        local_ready = subprocess.run([
+            sys.executable, "-c", ready_code, str(bundle), json.dumps([
+                {"id": "chat", "up": True, "port": 8783, "linkable": False},
+                {"id": "graph", "up": True, "port": 4181, "linkable": False},
+            ]), "ready"], env={**local_env, "HOME": str(self.base)},
+            capture_output=True, timeout=10)
+        self.assertEqual(local_ready.returncode, 0, local_ready.stderr.decode())
+        self.assertEqual(local_ready.stdout.count(b'<a class="key"'), 6)
+        self.assertIn(b'href="/app/netmap"', local_ready.stdout)
+        map_host_probe = subprocess.run([sys.executable, "-c", "\n".join((
+            "import json, sys",
+            "sys.path.insert(0, sys.argv[1])",
+            "import portal_server as portal",
+            "class Response:",
+            "    status = 200",
+            "    def getheader(self, _name, _default=''): return 'application/json'",
+            "    def read(self, _max_bytes): return json.dumps({'schema_version': 'agent-fleet.snapshot.v1', 'nodes': [], 'summary': {'live_sessions': 0}}).encode()",
+            "class Connection:",
+            "    def __init__(self, host, port, timeout): assert (host, port) == ('127.0.0.1', 18790)",
+            "    def request(self, method, path, headers): assert headers == {'Host': 'wideband.localhost:18790'}",
+            "    def getresponse(self): return Response()",
+            "    def close(self): pass",
+            "portal.http.client.HTTPConnection = Connection",
+            "assert portal.customer_map_ready()",
+        )), str(bundle)], env={**local_env, "HOME": str(self.base)},
+                                    capture_output=True, text=True, timeout=10)
+        self.assertEqual(map_host_probe.returncode, 0, map_host_probe.stderr)
+
         disabled = subprocess.run([sys.executable, str(bundle / "chat_server.py")],
                                   env={**env, "BIND": "127.0.0.1"},
                                   capture_output=True, timeout=5)
@@ -836,6 +1021,52 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertEqual(request(chat_port, "/t/ws", cookie=chat_cookie,
                                      extra={"Upgrade": "websocket",
                                             "Origin": "https://other.tail000.ts.net:8783"})[0], 403)
+
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                local_chat_port = listener.getsockname()[1]
+            local_chat = subprocess.Popen(
+                [sys.executable, "-c", code, str(bundle), str(local_chat_port)],
+                env={**local_env, "BIND": "127.0.0.1",
+                     "PORT": str(local_chat_port), "TTYD_PORT": str(ttyd.server_port),
+                     "FLEETDECK_CUSTOMER_TERMINALS": "1"},
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            try:
+                for _ in range(50):
+                    try:
+                        if request(local_chat_port, "/")[0] == 403:
+                            break
+                    except OSError:
+                        time.sleep(0.1)
+                else:
+                    self.fail("local Fleetdeck terminal did not start")
+                chat_host = f"wideband.localhost:{local_chat_port}"
+                self.assertEqual(request(local_chat_port, "/p/" + "a" * 64 + "/chat")[0], 403)
+                status, headers, _ = request(local_chat_port, "/p/" + "a" * 64 + "/chat",
+                                             extra={"Host": chat_host})
+                self.assertEqual(status, 303)
+                self.assertIn("HttpOnly; SameSite=Strict", headers["Set-Cookie"])
+                self.assertNotIn("Secure", headers["Set-Cookie"])
+                cookie = headers["Set-Cookie"].split(";", 1)[0]
+                status, headers, _ = request(local_chat_port, "/", cookie=cookie,
+                                             extra={"Host": chat_host})
+                self.assertEqual(status, 200)
+                self.assertEqual(headers["Content-Security-Policy"],
+                                 "frame-ancestors 'self' http://wideband.localhost:8790")
+                self.assertEqual(request(local_chat_port, "/api/unknown", cookie=cookie,
+                                         method="POST", body=b"{}",
+                                         extra={"Host": chat_host,
+                                                "Origin": f"http://{chat_host}",
+                                                "Sec-Fetch-Site": "same-origin"})[0], 404)
+                self.assertEqual(request(local_chat_port, "/api/send", cookie=cookie,
+                                         method="POST", body=b"{}",
+                                         extra={"Host": chat_host,
+                                                "Origin": "http://other.invalid:8783"})[0], 403)
+            finally:
+                local_chat.terminate()
+                local_chat.wait(timeout=5)
+                if local_chat.stderr:
+                    local_chat.stderr.close()
         finally:
             chat.terminate()
             chat.wait(timeout=5)

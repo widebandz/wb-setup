@@ -10,16 +10,21 @@ import http.client
 
 
 def customer_map_url():
-    """Derive the VM-local map capability; never store it in config or source."""
+    """Derive the local map capability; never store it in config or source."""
     origin = os.environ.get("FLEETDECK_MAP_ORIGIN", "")
     capability = customer_access.token()
     if not origin or not capability:
         return ""
     try:
         address = urlsplit(origin)
-        if (address.scheme != "https" or address.hostname != HOST
-                or address.port != 18970 or address.path or address.query
-                or address.fragment or address.username or address.password):
+        local = os.environ.get("FLEETDECK_LOCAL_ONLY") == "1" and HOST == "wideband.localhost"
+        if local:
+            valid = origin == "http://wideband.localhost:18790"
+        else:
+            valid = (address.scheme == "https" and address.hostname == HOST
+                     and address.port == 18970)
+        if (not valid or address.path or address.query or address.fragment
+                or address.username or address.password):
             return ""
     except ValueError:
         return ""
@@ -73,13 +78,58 @@ PAGE = (PAGE.replace("__SIMPLE_CLASS__", "")
         .replace("__SIMPLE_TITLE__", "Switch to the simple screen"))
 
 
+_upstream_cached_scan = cached_scan
+
+
+def cached_scan():
+    """Make only our live local fronts tappable on the Mac-only board."""
+    snapshot = _upstream_cached_scan()
+    if os.environ.get("FLEETDECK_LOCAL_ONLY") != "1" or HOST != "wideband.localhost":
+        return snapshot
+    managed = {(item.get("id"), item.get("port"))
+               for item in load_registry().get("services", [])
+               if (isinstance(item, dict) and item.get("source") == "wideband-phone-stack"
+                   and isinstance(item.get("id"), str)
+                   and type(item.get("port")) is int)}
+    approved = {("chat", 8783), ("graph", 4181)}
+    services = []
+    for service in snapshot.get("services", []):
+        if not isinstance(service, dict):
+            continue
+        key = (service.get("id"), service.get("port"))
+        if not isinstance(key[0], str) or type(key[1]) is not int:
+            services.append(service)
+            continue
+        if (key in approved and key in managed and service.get("up") is True
+                and service.get("kind", "app") != "api"
+                and customer_access.token()):
+            service = {**service, "url": "/app/" + key[0],
+                       "linkable": True, "reach": "link"}
+        services.append(service)
+    return {**snapshot, "services": services}
+
+
 def customer_service_url(app_id, services):
-    """Accept only the installed terminal or graph HTTPS destination."""
+    """Accept only the installed terminal or graph at its exact local/HTTPS origin."""
+    if app_id not in ("chat", "graph"):
+        return ""
     service = services.get(app_id, {})
+    port = 8783 if app_id == "chat" else 8792
+    if os.environ.get("FLEETDECK_LOCAL_ONLY") == "1" and HOST == "wideband.localhost":
+        local_port = 8783 if app_id == "chat" else 4181
+        registered = load_registry().get("services", [])
+        owned = any(isinstance(item, dict) and item.get("id") == app_id
+                    and item.get("source") == "wideband-phone-stack"
+                    and item.get("port") == local_port for item in registered)
+        capability = customer_access.token()
+        if (not owned or not capability or service.get("up") is not True
+                or service.get("port") != local_port):
+            return ""
+        entry = "chat" if app_id == "chat" else "graph"
+        return f"http://wideband.localhost:{local_port}/p/{capability}/{entry}"
     url = service.get("url", "") if service.get("linkable") else ""
     if not isinstance(url, str) or not url:
         return ""
-    port = 8783 if app_id == "chat" else 8792
     try:
         address = urlsplit(url)
         if (address.scheme != "https" or address.netloc != f"{HOST}:{port}"
@@ -91,14 +141,17 @@ def customer_service_url(app_id, services):
 
 
 def customer_map_ready():
-    """Keep the map key inactive unless its private live data answers locally."""
+    """Enable the map when valid local data answers, even with zero sessions."""
     capability = customer_access.token()
     if not NETMAP_URL or not capability:
         return False
     try:
         connection = http.client.HTTPConnection("127.0.0.1", 18790, timeout=1)
         try:
-            connection.request("GET", f"/p/{capability}/api/fleet-map")
+            headers = ({"Host": "wideband.localhost:18790"}
+                       if os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                       and HOST == "wideband.localhost" else {})
+            connection.request("GET", f"/p/{capability}/api/fleet-map", headers=headers)
             response = connection.getresponse()
             if (response.status != 200
                     or response.getheader("Content-Type", "").split(";", 1)[0] != "application/json"):
@@ -111,11 +164,61 @@ def customer_map_ready():
         data = json.loads(body)
         return (isinstance(data, dict)
                 and data.get("schema_version") == "agent-fleet.snapshot.v1"
-                and any(isinstance(node, dict) and node.get("type") == "session"
-                        and node.get("observed") is True
-                        for node in data.get("nodes", [])))
+                and isinstance(data.get("nodes"), list)
+                and isinstance(data.get("summary"), dict)
+                and type(data["summary"].get("live_sessions")) is int
+                and data["summary"]["live_sessions"] >= 0)
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         return False
+
+
+def customer_local_project_url(info):
+    """Link the installed first site only from this Mac's local board."""
+    if (os.environ.get("FLEETDECK_LOCAL_ONLY") != "1"
+            or HOST != "wideband.localhost" or info.get("first_goal") != "website"):
+        return ""
+    data = _private_json(FIRST_GOAL_STATUS_PATH) or {}
+    if (data.get("status") != "ready" or data.get("goal") != "website"
+            or data.get("os_name") != info.get("os_name")
+            or data.get("agent_name") != info.get("agent_name")):
+        return ""
+    local_url = data.get("local_url")
+    if not isinstance(local_url, str) or any(ord(char) < 32 for char in local_url):
+        return ""
+    try:
+        address = urlsplit(local_url)
+        port = address.port
+        if (address.scheme != "http" or address.netloc != f"127.0.0.1:{port}"
+                or address.path != "/" or address.query or address.fragment
+                or port not in range(4173, 4200) or port in (4180, 4181)):
+            return ""
+        owned = [item for item in load_registry().get("services", [])
+                 if isinstance(item, dict) and item.get("id") == "first-project"]
+        if (len(owned) != 1 or owned[0].get("source") != "wideband-first-goal"
+                or owned[0].get("port") != port):
+            return ""
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+        try:
+            connection.request("GET", "/health")
+            response = connection.getresponse()
+            if (response.status != 200 or response.getheader("Content-Type", "").split(";", 1)[0]
+                    != "application/json"):
+                return ""
+            health = json.loads(response.read(4096))
+            if (not isinstance(health, dict)
+                    or health.get("service") != "wideband-first-project"):
+                return ""
+            connection.request("GET", "/")
+            response = connection.getresponse()
+            if (response.status != 200 or response.getheader("Content-Type", "").split(";", 1)[0]
+                    != "text/html" or not response.read(1)):
+                return ""
+        finally:
+            connection.close()
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
+            http.client.HTTPException):
+        return ""
+    return local_url
 
 
 class CustomerHandler(Handler):
@@ -196,6 +299,10 @@ class CustomerHandler(Handler):
         path = self._customer_path()
         if path == "/healthz":
             return self._send(200, "ok\n", "text/plain")
+        if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                and not customer_access.local_http_request(
+                    self.headers.get("Host"), PORT)):
+            return self._send(403, "forbidden\n", "text/plain")
         token = customer_access.token()
         if not token or not allowed(self.client_address[0]):
             return self._send(403, "forbidden\n", "text/plain")
@@ -207,7 +314,9 @@ class CustomerHandler(Handler):
                 return self._send(403, "forbidden\n", "text/plain")
             destination = "/phone" if route == "/" else route
             return self._send(303, "", "text/plain", {
-                "Set-Cookie": customer_access.cookie_header(token),
+                "Set-Cookie": customer_access.cookie_header(
+                    token, secure=not customer_access.local_http_request(
+                        self.headers.get("Host"), PORT)),
                 "Location": destination,
             })
         if not customer_access.has_session(self.headers.get("Cookie"), token):
@@ -241,7 +350,10 @@ class CustomerHandler(Handler):
         if path == "/project":
             info = onboarding_config() or {}
             project = first_goal_status(info) if info else {}
-            link = project.get("phone_url") or info.get("first_project_url") or ""
+            local_only = (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                          and HOST == "wideband.localhost")
+            link = (customer_local_project_url(info) if local_only else
+                    project.get("phone_url") or info.get("first_project_url") or "")
             body = ('<!doctype html><html><head><meta name="viewport" '
                     'content="width=device-width,initial-scale=1">'
                     '<title>First project // Fleetdeck</title></head>'
@@ -251,7 +363,10 @@ class CustomerHandler(Handler):
                     '<h1>First project</h1>')
             if link:
                 body += (f'<p><a style="color:#4fe3c1" href="{esc_html(link)}">'
-                         'Open first project</a></p>')
+                         + ('Open on this Mac' if local_only else 'Open first project')
+                         + '</a></p>')
+                if local_only:
+                    body += '<p>Mac-only preview. Phone access needs a private HTTPS link.</p>'
             else:
                 body += '<p>Your first project link will appear when ready.</p>'
             return self._send(200, body + '</body></html>', "text/html; charset=utf-8")
@@ -259,6 +374,11 @@ class CustomerHandler(Handler):
 
     def do_POST(self):
         path = self._customer_path()
+        if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                and not customer_access.local_http_request(
+                    self.headers.get("Host"), PORT)):
+            self._discard_body()
+            return self._send(403, "forbidden\n", "text/plain")
         token = customer_access.token()
         if (not token or not allowed(self.client_address[0])
                 or not customer_access.has_session(self.headers.get("Cookie"), token)):
@@ -268,7 +388,10 @@ class CustomerHandler(Handler):
             self._discard_body()
             return self._send(404, "not here\n", "text/plain")
         origin = self.headers.get("Origin")
-        if origin and origin != f"https://{HOST}:{PORT}":
+        expected_origin = (f"http://wideband.localhost:{PORT}"
+                           if os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                           and HOST == "wideband.localhost" else f"https://{HOST}:{PORT}")
+        if origin and origin != expected_origin:
             self._discard_body()
             return self._send(403, "forbidden\n", "text/plain")
         if self.headers.get("Sec-Fetch-Site") not in (None, "same-origin"):

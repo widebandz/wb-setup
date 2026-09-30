@@ -144,6 +144,28 @@ class Runtime:
         self.config_path = self.state / "config.json"
         self.run = runner or subprocess.run
         self._pane_seen: tuple[str, float] | None = None
+        self._resolved_tools: dict[str, str] = {}
+
+    def tool_path(self, name: str) -> str:
+        """Use the currently verified payload, never another login's PATH."""
+        if name in self._resolved_tools:
+            return self._resolved_tools[name]
+        resolver = self.home / "srv" / "wb-setup" / "lib" / "toolchain-path"
+        if resolver.is_file():
+            result = subprocess.run(["/bin/bash", str(resolver), name],
+                                    capture_output=True, text=True, timeout=30, check=False)
+            path = result.stdout.strip()
+            if result.returncode or not path.startswith("/") or not Path(path).is_file():
+                raise ValueError(f"verified {name} tool is unavailable")
+        else:
+            # Older standalone operator checkouts retain their prior behavior.
+            path = "tmux" if name == "tmux" else (shutil.which(name) or "")
+            if not path:
+                if name == "imsg":
+                    raise ValueError("imsg is not installed; install the messaging tools first")
+                raise ValueError(f"{name} tool is unavailable")
+        self._resolved_tools[name] = path
+        return path
 
     def config(self) -> dict[str, Any]:
         value = json.loads(self.config_path.read_text(encoding="utf-8"))
@@ -160,12 +182,12 @@ class Runtime:
 
     def imsg(self, cfg: dict[str, Any], *args: str, timeout: int = 20) -> subprocess.CompletedProcess[str]:
         return self.run(
-            [cfg["imsg_path"], *args], capture_output=True, text=True,
+            [self.tool_path("imsg"), *args], capture_output=True, text=True,
             timeout=timeout, check=False,
         )
 
     def tmux(self, *args: str) -> subprocess.CompletedProcess[str]:
-        binary = "/opt/homebrew/bin/tmux" if Path("/opt/homebrew/bin/tmux").is_file() else "tmux"
+        binary = self.tool_path("tmux")
         return self.run([binary, *args], capture_output=True, text=True, timeout=10, check=False)
 
     @staticmethod
@@ -284,9 +306,7 @@ class Runtime:
         else:
             first_goal = self.setup_first_goal()
         workspace = (self.home / "wideband" / "head").resolve()
-        imsg_path = shutil.which("imsg")
-        if not imsg_path:
-            raise ValueError("imsg is not installed; install steipete/tap/imsg first")
+        imsg_path = self.tool_path("imsg")
         if self.config_path.exists():
             existing = self.config()
             if existing["owner_phone"] != phone:
@@ -337,8 +357,9 @@ class Runtime:
             "agent_command": agent,
             "session": SESSION,
             "workspace": str(workspace),
-            # Keep Homebrew's stable symlink. Resolving into a Cellar version
-            # would break the transport as soon as that formula upgrades.
+            # Last-known evidence only. Runtime launches resolve the active
+            # verified toolchain so an atomic package upgrade does not keep
+            # calling the previous version.
             "imsg_path": str(Path(imsg_path).absolute()),
             "binding": None,
             "names_pending_restart": False,
@@ -660,7 +681,7 @@ class Runtime:
             last = int(json.loads(checkpoint.read_text())["rowid"])
         except (OSError, ValueError, KeyError, TypeError):
             last = 0
-        command = [cfg["imsg_path"], "watch", "--json", "--chat-id", str(binding["chat_id"]), "--debounce", "500ms"]
+        command = [self.tool_path("imsg"), "watch", "--json", "--chat-id", str(binding["chat_id"]), "--debounce", "500ms"]
         if last:
             command += ["--since-rowid", str(last)]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=sys.stderr, text=True, bufsize=1)
@@ -790,7 +811,10 @@ class Runtime:
         result["configured"] = True
         result["bound"] = bool(cfg.get("binding"))
         result["names_pending_restart"] = bool(cfg.get("names_pending_restart"))
-        result["imsg_installed"] = os.access(cfg["imsg_path"], os.X_OK)
+        try:
+            result["imsg_installed"] = os.access(self.tool_path("imsg"), os.X_OK)
+        except ValueError:
+            result["imsg_installed"] = False
         if supported and result["bound"] and result["imsg_installed"]:
             result["target_verified"] = self.bound_target(cfg)
         result["head_session"] = bool(self.active_agent_pane(cfg))

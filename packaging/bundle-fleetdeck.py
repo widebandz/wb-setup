@@ -59,6 +59,8 @@ NOTES_AGE_SOURCE = " function ago(ts){\n   var s = Math.max(0, Math.floor(Date.n
 NOTES_AGE_PILOT = (" function ago(ts){\n"
                    "   if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return 'saved';\n"
                    "   var s = Math.max(0, Math.floor(Date.now()/1000 - ts));")
+UPSTREAM_PORTAL_PATH = "__HOME__/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+INITIAL_PORTAL_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 
 def optional_assets(paths: set[str]) -> set[str]:
@@ -120,6 +122,11 @@ def customer_portal(source: str) -> str:
     }
     for name, expression in changes.items():
         source = replace_assignment(source, name, expression)
+    # Customer mode has no direct outbound iMessage path. The private outbox
+    # worker owns sends; retaining the operator's binary literal is unsafe on
+    # a Mac where /opt/homebrew belongs to another profile.
+    if "def send_text(" in source:
+        source = replace_assignment(source, "IMSG", '""')
     if source.count(NOTES_AGE_SOURCE) != 1:
         raise ValueError("Fleetdeck Notes age renderer changed; review legacy notes")
     source = source.replace(NOTES_AGE_SOURCE, NOTES_AGE_PILOT, 1)
@@ -141,8 +148,27 @@ def customer_portal(source: str) -> str:
     return source
 
 
+def customer_portal_template(source: str) -> str:
+    """Keep the first portal launch on system PATH until the verified bin is set."""
+    if not source.lstrip().startswith("<?xml"):
+        return source  # Minimal source fixtures do not carry a real plist.
+    if source.count(UPSTREAM_PORTAL_PATH) != 1:
+        raise ValueError("Fleetdeck portal PATH changed; review customer transform")
+    return source.replace(UPSTREAM_PORTAL_PATH, INITIAL_PORTAL_PATH, 1)
+
+
+def customer_chat_tools(source: str) -> str:
+    """Keep tmux and ttyd resolution inside the managed LaunchAgent PATH."""
+    if "def _bin(" not in source:
+        return source  # Minimal source fixtures omit the upstream resolver.
+    source = replace_assignment(source, "TMUX", '_bin("tmux")')
+    source = replace_assignment(source, "TTYD", '_bin("ttyd")')
+    return source
+
+
 def customer_chat(source: str) -> str:
     """Preserve the current chat UI for later opt-in, closed under customer mode."""
+    source = customer_chat_tools(source)
     tree = ast.parse(source)
     handler = next((node for node in tree.body if isinstance(node, ast.ClassDef)
                     and node.name == "H"), None)
@@ -158,6 +184,11 @@ def customer_chat(source: str) -> str:
     methods = {
         "authed": ('    def authed(self):\n'
                    '        capability = customer_access.token()\n'
+                   '        if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"\n'
+                   '                and not customer_access.local_http_request(\n'
+                   '                    self.headers.get("Host"), PORT)):\n'
+                   '            self.reply(403, {"error": "forbidden host"})\n'
+                   '            return False\n'
                    '        if capability and customer_access.has_session(\n'
                    '                self.headers.get("Cookie"), capability):\n'
                    '            return True\n'
@@ -175,12 +206,18 @@ def customer_chat(source: str) -> str:
     token_branch = (
         '        match = re.fullmatch(r"/p/([0-9a-f]{64})/chat", self.path.split("?", 1)[0])\n'
         '        if match:\n'
+        '            if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"\n'
+        '                    and not customer_access.local_http_request(\n'
+        '                        self.headers.get("Host"), PORT)):\n'
+        '                return self.reply(403, {"error": "forbidden host"})\n'
         '            capability = customer_access.token()\n'
         '            if not capability or not hmac.compare_digest(match.group(1), capability):\n'
         '                return self.reply(403, {"error": "forbidden"})\n'
         '            self.send_response(303)\n'
         '            self.send_header("Location", "/")\n'
-        '            self.send_header("Set-Cookie", customer_access.cookie_header(capability))\n'
+        '            self.send_header("Set-Cookie", customer_access.cookie_header(\n'
+        '                capability, secure=not customer_access.local_http_request(\n'
+        '                    self.headers.get("Host"), PORT)))\n'
         '            self.send_header("Referrer-Policy", "no-referrer")\n'
         '            self.send_header("Content-Length", "0")\n'
         '            self.end_headers()\n'
@@ -189,8 +226,10 @@ def customer_chat(source: str) -> str:
     source = source.replace("import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat",
                             "import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat\nimport hmac\nimport customer_access", 1)
     origin_guard = '''def customer_board_origin():
-    """Trust only the installed tailnet host, never an incoming Host header."""
+    """Trust the configured tailnet host or dedicated loopback preview."""
     host = os.environ.get("FLEETDECK_HOST", "")
+    if os.environ.get("FLEETDECK_LOCAL_ONLY") == "1":
+        return "http://wideband.localhost:8790" if host == "wideband.localhost" else ""
     if len(host) > 253 or not re.fullmatch(
             r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.){2,}ts\\.net", host):
         return ""
@@ -208,8 +247,12 @@ def customer_write_origin(headers):
     host = headers.get("Host", "")
     if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", host):
         return False
+    if (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+            and host != f"wideband.localhost:{PORT}"):
+        return False
     origin = headers.get("Origin")
-    expected = ("http" if host.startswith(("127.0.0.1:", "localhost:"))
+    expected = ("http" if os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+                or host.startswith(("127.0.0.1:", "localhost:"))
                 else "https") + "://" + host
     if origin and origin != expected:
         return False
@@ -368,7 +411,9 @@ def check_bundle(root: Path, hashes: dict[str, str]) -> None:
         if ("FLEETDECK_CUSTOMER_TERMINALS" not in chat
                 or "customer_access.has_session" not in chat
                 or 'self.path.startswith("/?key=")' in chat
-                or "Secure; HttpOnly; SameSite=Strict" not in access
+                or not ("Secure; HttpOnly; SameSite=Strict" in access
+                        or ("Secure; " in access and "local_http_request" in access
+                            and "HttpOnly; SameSite=Strict" in access))
                 or "<string>127.0.0.1</string>" not in template):
             raise ValueError("Fleetdeck customer terminal guard is missing")
 
@@ -415,7 +460,11 @@ def build(source: Path, target: Path) -> None:
         for name in sorted(selected):
             destination = target / name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            if name == "launchagents/fleetdeck-chat.plist.tmpl":
+            if name == "launchagents/fleetdeck-portal.plist.tmpl":
+                destination.write_text(
+                    customer_portal_template((source / name).read_text(encoding="utf-8")),
+                    encoding="utf-8")
+            elif name == "launchagents/fleetdeck-chat.plist.tmpl":
                 template = (source / name).read_text(encoding="utf-8")
                 if template.count("<string>tailscale</string>") != 1:
                     raise ValueError("Fleetdeck chat bind template changed")

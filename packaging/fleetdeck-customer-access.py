@@ -50,9 +50,16 @@ def session_value(capability: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
-def cookie_header(capability: str) -> str:
+def local_http_request(host: str | None, port: int) -> bool:
+    """Permit a host-only cookie only on the dedicated local preview name."""
+    return (os.environ.get("FLEETDECK_LOCAL_ONLY") == "1"
+            and host == f"wideband.localhost:{port}")
+
+
+def cookie_header(capability: str, *, secure: bool = True) -> str:
+    flags = "Secure; " if secure else ""
     return (f"{COOKIE_NAME}={session_value(capability)}; Path=/; "
-            f"Max-Age={COOKIE_MAX_AGE}; Secure; HttpOnly; SameSite=Strict")
+            f"Max-Age={COOKIE_MAX_AGE}; {flags}HttpOnly; SameSite=Strict")
 
 
 def has_session(cookie: str | None, capability: str) -> bool:

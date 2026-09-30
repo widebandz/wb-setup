@@ -12,7 +12,9 @@
 # watchdog and the daily brief are what escalate.
 set -uo pipefail
 
-export PATH="$HOME/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+TMUX_BIN="$(/bin/bash "$HERE/lib/toolchain-path" tmux 2>/dev/null)" || TMUX_BIN=""
 
 LOG="$HOME/.config/tmux/health.log"
 mkdir -p "$(dirname "$LOG")"
@@ -24,7 +26,7 @@ if nc -z -w2 127.0.0.1 22 >/dev/null 2>&1; then ssh="UP"; else ssh="DOWN"; fi
 #    works when invoked at its real path (it derives its bundle identifier from
 #    argv[0]), so prefer that over whatever is on PATH.
 TS_APP="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-if [ -x "$TS_APP" ]; then TS_BIN="$TS_APP"; else TS_BIN="$(command -v tailscale || true)"; fi
+if [ -x "$TS_APP" ]; then TS_BIN="$TS_APP"; else TS_BIN=""; fi
 if [ -n "$TS_BIN" ] && TS_IP4="$("$TS_BIN" ip -4 2>/dev/null)" && [ -n "$TS_IP4" ]; then
   ts="UP"
 else
@@ -32,8 +34,8 @@ else
 fi
 
 # 3. tmux server, and how many sessions are standing.
-if tmux has-session 2>/dev/null; then
-  tmx="UP"; sess="$(tmux ls 2>/dev/null | wc -l | tr -d ' ')"
+if [ -n "$TMUX_BIN" ] && "$TMUX_BIN" has-session 2>/dev/null; then
+  tmx="UP"; sess="$("$TMUX_BIN" ls 2>/dev/null | wc -l | tr -d ' ')"
 else
   tmx="DOWN"; sess=0
 fi

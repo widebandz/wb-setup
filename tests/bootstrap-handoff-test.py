@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory() as directory:
         env.update({
             "ROOT": directory,
             "DO_UI": "1",
+            "CLIENT_MODE": "1",
             "WB_SETUP_EMBEDDED": embedded,
             "WB_TEST_ARGS": str(args_path),
             "WB_TEST_HANDOFF": str(snippet),
@@ -35,7 +36,9 @@ with tempfile.TemporaryDirectory() as directory:
         master, slave = pty.openpty()
         try:
             subprocess.run(
-                ["bash", "-c", 'step() { :; }; say() { :; }; . "$WB_TEST_HANDOFF"'],
+                ["bash", "-c", 'step() { :; }; say() { :; }; '
+                 'wb_tc_resolve() { WB_TOOLCHAIN_PATH=/usr/bin/python3; return 0; }; '
+                 '. "$WB_TEST_HANDOFF"'],
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,

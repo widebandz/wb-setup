@@ -1,6 +1,7 @@
 #!/bin/bash
 # Finder entry point for Wideband Setup.app.
 set -uo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
 
 CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
 RESOURCES="$CONTENTS/Resources"
@@ -44,12 +45,11 @@ launch_terminal() {
 
 core_ready() {
   [ -f "$HOME/.sop-vars" ] \
-    && [ -x /opt/homebrew/bin/brew ] \
-    && [ -x /opt/homebrew/bin/python3 ] \
-    && [ -x /opt/homebrew/bin/tmux ] || return 1
-  local os_major
-  os_major="$(/usr/bin/sw_vers -productVersion | /usr/bin/cut -d. -f1)"
-  [ "$os_major" -lt 14 ] || [ -x /opt/homebrew/bin/imsg ]
+    && [ -f "$TARGET/lib/bootstrap-homebrew.sh" ] || return 1
+  # shellcheck source=lib/bootstrap-homebrew.sh
+  . "$TARGET/lib/bootstrap-homebrew.sh" || return 1
+  wb_tc_resolve || return 1
+  [ "$WB_TOOLCHAIN_KIND" = private ] || [ "$WB_TOOLCHAIN_KIND" = legacy_homebrew ]
 }
 
 connection_is_live() {
@@ -87,6 +87,16 @@ launch_background() {
   && [ -f "$PAYLOAD/setup.py" ] && [ -d "$AGENT_SOURCE" ] \
   && [ -f "$RESOURCES/agent-revision.sh" ] \
   && [ -x "$ENGINE_SOURCE" ] || fail
+[ -f "$PAYLOAD/lib/native-preflight.sh" ] || fail
+if ! PREFLIGHT_RESULT="$(/bin/bash "$PAYLOAD/lib/native-preflight.sh" \
+      "$SETUP_APP_SOURCE" "$PAYLOAD" "$BUILD_ID" 2>&1)"; then
+  /usr/bin/osascript - "$PREFLIGHT_RESULT" <<'APPLESCRIPT' >/dev/null 2>&1 || true
+on run argv
+  display alert "Wideband Setup preflight" message (item 1 of argv) as critical
+end run
+APPLESCRIPT
+  exit 1
+fi
 . "$RESOURCES/agent-revision.sh" || fail
 /bin/mkdir -p "$TARGET" "$STATE" "$HOME/Applications" || fail
 /bin/chmod 700 "$STATE" 2>/dev/null || fail
@@ -103,6 +113,22 @@ fi
 SETUP_APP_INSTALLED="$(sed -n '1p' "$SETUP_APP_MARKER" 2>/dev/null)"
 PREVIOUS_SETUP_APP="$SETUP_APP_TARGET"
 PREVIOUS_PAYLOAD_BUILD="$(sed -n '1p' "$MARKER" 2>/dev/null)"
+# A prior released package may keep using its own healthy Homebrew while the
+# private toolchain is staged. A fresh installation never inherits that path.
+case "$PREVIOUS_PAYLOAD_BUILD" in
+  0.7.0-*|0.7.1-*)
+    if [ "${PREVIOUS_PAYLOAD_BUILD%%-*}" != "${BUILD_ID%%-*}" ]; then
+      LEGACY_MARKER="$STATE/legacy-homebrew-allowed"
+      [ ! -L "$LEGACY_MARKER" ] || fail
+      if [ -e "$LEGACY_MARKER" ]; then
+        [ -f "$LEGACY_MARKER" ] \
+          && [ "$(/usr/bin/stat -f '%u' "$LEGACY_MARKER" 2>/dev/null)" = "$(/usr/bin/id -u)" ] || fail
+      fi
+      ( umask 077; printf '%s\n' "$PREVIOUS_PAYLOAD_BUILD" > "$STATE/legacy-homebrew-allowed" ) || fail
+      /bin/chmod 600 "$STATE/legacy-homebrew-allowed" || fail
+    fi
+    ;;
+esac
 SOURCE_IS_INSTALLED=0
 case "$SETUP_APP_SOURCE" in
   /Applications/*|"$HOME/Applications/"*) SOURCE_IS_INSTALLED=1 ;;
@@ -214,21 +240,30 @@ if [ "$INSTALLED" != "$BUILD_ID" ]; then
   ( umask 077; printf '%s\n' "$BUILD_ID" > "$MARKER" ) || fail
 fi
 
+# The bundled tool payload is copied into a new version and verified before
+# its mode-0600 active pointer is switched. A previous version remains on disk
+# for rollback. This never writes to another user's Homebrew installation.
+if [ -d "$PAYLOAD/vendor/toolchain" ]; then
+  [ -f "$PAYLOAD/lib/install-toolchain.sh" ] || fail
+  /bin/bash "$PAYLOAD/lib/install-toolchain.sh" "$PAYLOAD/vendor/toolchain" "$BUILD_ID" || fail
+fi
+
 /usr/bin/ditto --norsrc --noextattr --noqtn "$RESOURCES/run-setup.command" "$TARGET/.wideband-setup.command" || fail
 /usr/bin/ditto --norsrc --noextattr --noqtn "$ENGINE_SOURCE" "$TARGET/.wideband-setup-engine" || fail
 /bin/chmod 700 "$TARGET/.wideband-setup.command" "$TARGET/.wideband-setup-engine" || fail
 
-# An established Mac can host the private guide quietly behind the branded app.
-# A bare Mac still gets Terminal for Homebrew's one visible sudo prompt; the
-# native window remains in front and explains exactly why that prompt exists.
+# A verified toolchain can host the private guide quietly behind the app.
+# A Mac awaiting the private payload gets Terminal to display the exact
+# preflight blocker while the native guide remains available.
 if connection_is_live; then
   # The guide can stay live after bootstrap exits at a canceled owner-phone
   # prompt. In that state a later app launch must reopen Terminal to resume
   # bootstrap, while an in-progress bootstrap must keep its single prompt.
-  if [ "$(sed -n '1p' "$STATE/bootstrap-status" 2>/dev/null)" = needs_attention ] \
-     && ! core_ready; then
-    launch_terminal || fail
-  fi
+  case "$(sed -n '1p' "$STATE/bootstrap-status" 2>/dev/null)" in
+    needs_attention|needs_independent_toolchain|needs_homebrew_ownership)
+      if ! core_ready; then launch_terminal || fail; fi
+      ;;
+  esac
 elif core_ready; then
   launch_background || fail
 else

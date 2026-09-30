@@ -1,0 +1,15 @@
+#!/bin/bash
+# Print one verified executable path from the active Wideband toolchain.
+set -uo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+case "${1:-}" in
+  python3|tmux|imsg|node|npm|ttyd|git|jq|gh|sqlite3|ffmpeg) ;;
+  *) exit 2 ;;
+esac
+[ "$#" -eq 1 ] || exit 2
+HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
+# shellcheck source=lib/bootstrap-homebrew.sh
+. "$HERE/bootstrap-homebrew.sh" || exit 1
+wb_tc_resolve "$1" || exit 1
+printf '%s\n' "$WB_TOOLCHAIN_PATH"

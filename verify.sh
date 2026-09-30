@@ -14,6 +14,8 @@
 # A verifier that reports all green on a machine with known gaps is broken. If
 # this prints nothing but ✓ on a fresh build, distrust it before trusting it.
 set -uo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 QUICK=0; JSON=0; IMESSAGE_ONLY=0
 for arg in "$@"; do
@@ -77,9 +79,72 @@ if [ -f "$VARS" ]; then
   . "$VARS"
 fi
 ORG="${ORG:-}"; GH_USER="${GH_USER:-}"
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
+WB_TC_READY=0
+if [ -f "$HERE/lib/bootstrap-homebrew.sh" ]; then
+  # shellcheck source=lib/bootstrap-homebrew.sh
+  . "$HERE/lib/bootstrap-homebrew.sh"
+  if wb_tc_resolve; then
+    WB_TC_READY=1
+    export PATH="$WB_TOOLCHAIN_BIN:$PATH"
+  fi
+fi
+verified_tool() { # named executable from one verified toolchain
+  local tool="$1" path
+  [ "$WB_TC_READY" = 1 ] || return 1
+  if [ "$WB_TOOLCHAIN_KIND" = private ]; then
+    wb_tc_private_bin "$tool" || return 1
+    printf '%s\n' "$WB_TOOLCHAIN_PATH"
+  else
+    path="$WB_TOOLCHAIN_BIN/$tool"
+    [ -x "$path" ] || return 1
+    printf '%s\n' "$path"
+  fi
+}
 
 [ "$JSON" = "0" ] && echo "▩ wb-setup verify — $(hostname -s) · $(date '+%Y-%m-%d %H:%M')"
 
+PRIVATE_QUICK=0
+if [ "$QUICK" = 1 ] && [ "$IMESSAGE_ONLY" = 0 ] \
+   && [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+  PRIVATE_QUICK=1
+fi
+if [ "$PRIVATE_QUICK" = 1 ]; then
+  head_ "private client core"
+  for b in python3 tmux imsg node npm ttyd; do
+    if verified_tool "$b" >/dev/null 2>&1; then
+      if [ "$b" = imsg ]; then ok P6-IMSG "verified imsg transport";
+      else ok P3-CLI "verified $b"; fi
+    else
+      if [ "$b" = imsg ]; then no P6-IMSG "verified imsg transport unavailable";
+      else no P3-CLI "verified $b unavailable"; fi
+    fi
+  done
+  if [ "$(sw_vers -productVersion | cut -d. -f1)" -ge 14 ]; then
+    ok P6-IMSGOS "macOS supports the client transport"
+  else
+    no P6-IMSGOS "client transport requires macOS 14 or newer"
+  fi
+  skip P0-FDA "Wideband Agent permissions require their own live check"
+  skip P4-TSSERVE "tailnet and phone access require a separate route check"
+  skip P5-CLAUDE "provider sign-in and live head session remain separate checks"
+  skip P6-IMSGCHAT "owner chat binding needs a fresh incoming text"
+  skip P6-IMSGSERVICES "messaging services require binding and a physical reply"
+  PHONE_TOKEN="$HOME/.wideband/fleetdeck/phone-access-token"
+  if [ ! -L "$PHONE_TOKEN" ] && [ -f "$PHONE_TOKEN" ] \
+     && [ "$(/usr/bin/stat -f '%u' "$PHONE_TOKEN" 2>/dev/null)" = "$(/usr/bin/id -u)" ] \
+     && [ "$(/usr/bin/stat -f '%Lp' "$PHONE_TOKEN" 2>/dev/null)" = 600 ]; then
+    board_status="$(/usr/bin/curl -sS --max-time 2 -o /dev/null -w '%{http_code}' \
+      http://127.0.0.1:8790/healthz 2>/dev/null)" || board_status=""
+    if [ "$board_status" = 200 ]; then
+      ok P9-FLEET "local Fleetdeck portal health responds; owner route and phone remain separate checks"
+    else
+      no P9-FLEET "Fleetdeck token exists but local portal health is unavailable"
+    fi
+  else
+    skip P9-FLEET "private phone capability is absent; local board check is pending"
+  fi
+else
 if [ "$IMESSAGE_ONLY" = "0" ]; then
 # ── phase 0 · permissions ────────────────────────────────────────────────────
 head_ "phase 0 · permissions"
@@ -166,12 +231,28 @@ fi
 
 # ── phase 3 · core CLIs ──────────────────────────────────────────────────────
 head_ "phase 3 · core CLIs"
-for b in brew node npm git gh jq tmux python3 sqlite3; do
-  if command -v "$b" >/dev/null 2>&1; then ok P3-CLI "$b"; else no P3-CLI "$b missing"; fi
+for b in brew node npm git gh jq tmux python3 sqlite3 ttyd; do
+  if [ "$b" = brew ] && [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+    skip P3-CLI "Homebrew is unnecessary with the verified private toolchain"
+  elif [ "$b" = brew ] && [ "$WB_TC_READY" = 1 ] \
+    && [ -x "$WB_TOOLCHAIN_BIN/brew" ]; then
+    ok P3-CLI "approved legacy Homebrew"
+  elif [ "$b" != brew ] && verified_tool "$b" >/dev/null 2>&1; then
+    ok P3-CLI "$b"
+  elif [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+    case "$b" in
+      git|gh|jq|sqlite3)
+        skip P3-CLI "$b is an optional full-workstation tool, absent from the private client core" ;;
+      *) no P3-CLI "$b missing from the verified private toolchain" ;;
+    esac
+  else
+    no P3-CLI "$b missing from the verified toolchain"
+  fi
 done
 
-if command -v gh >/dev/null 2>&1; then
-  who="$(gh api user -q .login 2>/dev/null)"
+gh_bin="$(verified_tool gh 2>/dev/null)" || gh_bin=""
+if [ -n "$gh_bin" ]; then
+  who="$("$gh_bin" api user -q .login 2>/dev/null)"
   if [ -z "$who" ]; then
     no P3-GHAUTH "gh is not authenticated (gh auth login)"
   elif [ -n "$GH_USER" ] && [ "$who" != "$GH_USER" ]; then
@@ -186,8 +267,7 @@ fi
 # ── phase 4 · tailnet ────────────────────────────────────────────────────────
 head_ "phase 4 · tailscale"
 TSBIN=""
-command -v tailscale >/dev/null 2>&1 && TSBIN="$(command -v tailscale)"
-[ -z "$TSBIN" ] && [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ] \
+[ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ] \
   && TSBIN=/Applications/Tailscale.app/Contents/MacOS/Tailscale
 
 if [ -z "$TSBIN" ]; then
@@ -208,8 +288,9 @@ fi
 # ── phase 5 · the Claude layer ───────────────────────────────────────────────
 head_ "phase 5 · claude layer"
 
-if command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
-  ok P5-CLAUDE "claude installed ($(claude --version 2>/dev/null | head -1))"
+CLAUDE_BIN="$HOME/.local/bin/claude"
+if [ -x "$CLAUDE_BIN" ]; then
+  ok P5-CLAUDE "claude installed ($("$CLAUDE_BIN" --version 2>/dev/null | head -1))"
 else
   no P5-CLAUDE "claude not on PATH — check ~/.local/bin in .zshrc"
 fi
@@ -226,7 +307,7 @@ if [ -r "$SL" ]; then
   else
     no P5-SLCOLOR "status line colors are not \$'...' — they will print literally"
   fi
-  command -v jq >/dev/null 2>&1 \
+  verified_tool jq >/dev/null 2>&1 \
     && ok P5-SLJQ "jq present — status line can parse its input" \
     || no P5-SLJQ "jq missing — status line will render blank"
 else
@@ -234,8 +315,9 @@ else
 fi
 
 if [ -f "$HOME/.claude/settings.json" ]; then
-  if command -v jq >/dev/null 2>&1; then
-    if jq -e '.statusLine.command' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+  jq_bin="$(verified_tool jq 2>/dev/null)" || jq_bin=""
+  if [ -n "$jq_bin" ]; then
+    if "$jq_bin" -e '.statusLine.command' "$HOME/.claude/settings.json" >/dev/null 2>&1; then
       ok P5-SETTINGS "settings.json wires the status line"
     else
       no P5-SETTINGS "settings.json has no statusLine block"
@@ -261,8 +343,8 @@ for f in "$HOME/.claude/CLAUDE.md" "$HOME/.claude/USER.md"; do
   fi
 done
 
-if [ "$QUICK" = "0" ] && command -v claude >/dev/null 2>&1; then
-  n="$(claude mcp list 2>/dev/null | grep -c 'Connected')"
+if [ "$QUICK" = "0" ] && [ -x "$CLAUDE_BIN" ]; then
+  n="$("$CLAUDE_BIN" mcp list 2>/dev/null | grep -c 'Connected')"
   if [ "${n:-0}" -ge 1 ]; then ok P5-MCP "$n MCP servers connected"
   else no P5-MCP "no MCP servers connected"; fi
 else
@@ -277,11 +359,12 @@ fi # full workstation checks before the scoped iMessage runtime
 head_ "phase 6 · iMessage head runtime"
 imsg_json=""
 AGENT="$HOME/Applications/Wideband Agent.app/Contents/MacOS/Wideband Agent"
-imsg_python="$(command -v python3 || echo /usr/bin/python3)"
-if [ -x "$HOME/bin/wb-imessage" ] && [ -x "$AGENT" ]; then
+imsg_python="$(verified_tool python3 2>/dev/null)" || imsg_python=""
+if [ -n "$imsg_python" ] && [ -x "$HOME/bin/wb-imessage" ] && [ -x "$AGENT" ]; then
   imsg_json="$("$AGENT" run-background-task "$imsg_python" "$HOME/bin/wb-imessage" check 2>/dev/null || true)"
 fi
 imsg_has() {
+  [ -n "$imsg_python" ] || return 1
   printf '%s' "$imsg_json" | "$imsg_python" -c '
 import json, sys
 try:
@@ -296,10 +379,10 @@ if [ "$(sw_vers -productVersion | cut -d. -f1)" -ge 14 ]; then
 else
   no P6-IMSGOS "iMessage head runtime requires macOS 14 or newer"
 fi
-if [ -x /opt/homebrew/bin/imsg ]; then
+if verified_tool imsg >/dev/null 2>&1; then
   ok P6-IMSG "imsg transport installed"
 else
-  no P6-IMSG "imsg transport missing — install steipete/tap/imsg"
+  no P6-IMSG "verified imsg transport unavailable — reopen Wideband Setup to repair its toolchain"
 fi
 if imsg_has configured; then
   ok P6-IMSGCFG "private head runtime and workspace configured"
@@ -353,10 +436,11 @@ if [ ! -f "$SESSIONS" ]; then
 else
   ok P7-STD "session standard present"
 fi
-if [ -f "$SESSIONS" ] && command -v tmux >/dev/null 2>&1; then
+tmux_bin="$(verified_tool tmux 2>/dev/null)" || tmux_bin=""
+if [ -f "$SESSIONS" ] && [ -n "$tmux_bin" ]; then
   # Check the standard is actually STANDING, not merely written down. A config
   # listing five sessions and a server running none is the failure this catches.
-  live="$(tmux ls -F '#{session_name}' 2>/dev/null)"
+  live="$("$tmux_bin" ls -F '#{session_name}' 2>/dev/null)"
   missing=""
   while IFS= read -r line; do
     line="${line%%#*}"
@@ -401,11 +485,16 @@ fi
 head_ "PATH"
 path_miss=""
 for pair in "claude:$HOME/.local/bin/claude" "fleetdeck:$HOME/bin/fleetdeck" \
-            "tm:$HOME/bin/tm" "brew:/opt/homebrew/bin/brew"; do
+            "tm:$HOME/bin/tm"; do
   n="${pair%%:*}"; f="${pair#*:}"
   [ -x "$f" ] || continue
   command -v "$n" >/dev/null 2>&1 || path_miss="$path_miss $n"
 done
+if [ "${WB_TOOLCHAIN_KIND:-}" = legacy_homebrew ] \
+   && [ -x "$WB_TOOLCHAIN_BIN/brew" ] \
+   && ! command -v brew >/dev/null 2>&1; then
+  path_miss="$path_miss brew"
+fi
 if [ -z "$path_miss" ]; then
   ok SHELL-PATH "every installed tool is reachable on PATH"
 else
@@ -418,13 +507,15 @@ if [ ! -x "$HOME/bin/fleetdeck" ]; then
   no P9-FLEET "fleetdeck not installed — the board and the tmux chat are unavailable"
 else
   ok P9-FLEET "fleetdeck installed"
-  if [ -f "$HOME/srv/fleetdeck/config.json" ] && command -v jq >/dev/null 2>&1; then
-    m="$(jq -r '.machine // ""' "$HOME/srv/fleetdeck/config.json" 2>/dev/null)"
+  jq_bin="$(verified_tool jq 2>/dev/null)" || jq_bin=""
+  if [ -f "$HOME/srv/fleetdeck/config.json" ] && [ -n "$jq_bin" ]; then
+    m="$("$jq_bin" -r '.machine // ""' "$HOME/srv/fleetdeck/config.json" 2>/dev/null)"
     [ -z "$m" ] && ok P9-PINNED "config.json leaves machine empty (resolves from Tailscale)" \
                 || no P9-PINNED "config.json pins machine='$m' — the board will break on the next machine"
   fi
 fi
 fi # full workstation checks after the scoped iMessage runtime
+fi # private client core versus full workstation verification
 
 # ── summary ──────────────────────────────────────────────────────────────────
 if [ "$JSON" = "1" ]; then

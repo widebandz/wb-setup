@@ -8,6 +8,7 @@ import io
 import os
 import importlib.util
 from pathlib import Path
+import plistlib
 import socket
 import subprocess
 import sys
@@ -56,11 +57,60 @@ class FirstGoalTest(unittest.TestCase):
         }}), encoding="utf-8")
         self.state.chmod(0o600)
 
+    def test_launchagent_uses_only_resolver_verified_python(self):
+        private_bin = self.home / ".wideband/toolchain/versions/test/bin"
+        private_bin.mkdir(parents=True)
+        python = private_bin / "python3"
+        python.write_text("python")
+        answer = subprocess.CompletedProcess([], 0, str(python) + "\n", "")
+        with mock.patch.object(runner.subprocess, "run", return_value=answer) as resolve:
+            spec = plistlib.loads(runner.render_plist(4173))
+        self.assertEqual(spec["ProgramArguments"][0], str(python))
+        resolve.assert_called_once_with([str(runner.TOOLCHAIN_RESOLVER), "python3"],
+                                        capture_output=True, text=True, timeout=30)
+        with mock.patch.object(runner.subprocess, "run", return_value=
+                               subprocess.CompletedProcess([], 1, "", "invalid")):
+            with self.assertRaisesRegex(RuntimeError, "verified first-project Python"):
+                runner.render_plist(4173)
+
     def run_goal(self, action):
         result = subprocess.run([sys.executable, str(RUNNER), action], env=self.env,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
+
+    def test_graph_ports_are_reserved_and_owned_preview_tile_can_migrate(self):
+        class Probe:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                pass
+
+            def bind(self, address):
+                self.port = address[1]
+
+        with mock.patch.object(runner, "PORTS", range(4180, 4183)), \
+             mock.patch.object(runner.socket, "socket", side_effect=Probe):
+            self.assertEqual(runner.selected_port({"port": 4180}), 4182)
+            self.assertEqual(runner.selected_port({"port": 4181}), 4182)
+            self.assertEqual(runner.selected_port({"port": 4182}), 4182)
+
+        registry = self.home / "srv/fleetdeck/services.json"
+        registry.parent.mkdir(parents=True)
+        original = {"services": [{"id": "first-project", "port": 4180,
+                                  "source": "wideband-first-goal",
+                                  "name": "Aurora · First project"}]}
+        registry.write_text(json.dumps(original), encoding="utf-8")
+        with mock.patch.object(runner, "HOME", self.home):
+            runner.register_fleetdeck("Nova", 4182, "Aurora · First project", 4180)
+            updated = json.loads(registry.read_text(encoding="utf-8"))
+            self.assertEqual(updated["services"][0]["port"], 4182)
+            self.assertEqual(updated["services"][0]["name"], "Nova · First project")
+            registry.write_text(json.dumps(original), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "different port"):
+                runner.register_fleetdeck("Nova", 4182, "Another owner", 4180)
+            self.assertEqual(json.loads(registry.read_text(encoding="utf-8")), original)
 
     def test_website_preview_and_preserved_client_edit(self):
         self.write_state()

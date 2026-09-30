@@ -25,6 +25,7 @@ import tempfile
 MANIFEST = ".wideband-glitch-cat-pilot.json"
 PACK = "wideband-pilot"
 PORT = 4180
+TOOLCHAIN_RESOLVER = Path(__file__).resolve().parents[1] / "lib" / "toolchain-path"
 REQUIRED = {
     "package.json", "package-lock.json", "engine/cli.mjs",
     "engine/serve.mjs", "engine/paths.mjs", "engine/schema.mjs",
@@ -47,6 +48,19 @@ DEFAULT_LENS_PILOT = "let lens='surface',focus=null,depth=1,defs={},hideIso=true
 GRAPH_STYLE_MARKER = '</style></head><body><div id="wrap">'
 GRAPH_STAGE_MARKER = '<div id="stage">\n  <canvas id="c"></canvas>'
 GRAPH_SCRIPT_MARKER = "\n(async()=>{"
+GRAPH_SERVER_MARKER = ("createServer((req, res) => {\n"
+                       "  const url = new URL(req.url, `http://${req.headers.host}`)\n"
+                       "  try {")
+GRAPH_SERVER_GUARD = ("createServer((req, res) => {\n"
+                      "  // A foreign Host can resolve to loopback through DNS rebinding.\n"
+                      "  // This private engine is read only, but its graph is client data.\n"
+                      "  if (req.headers.host !== `127.0.0.1:${PORT}`\n"
+                      "      && req.headers.host !== `localhost:${PORT}`) {\n"
+                      "    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })\n"
+                      "    return res.end('forbidden\\n')\n"
+                      "  }\n"
+                      "  try {\n"
+                      "    const url = new URL(req.url, `http://127.0.0.1:${PORT}`)")
 MOBILE_GRAPH_STYLE = """
 #mobile-lenses,#mobile-close{display:none}
 @media(max-width:720px){
@@ -179,6 +193,9 @@ def sanitized_bytes(name: str, data: bytes, host_aliases: set[str] | None = None
         text = text.replace('<div id="side">', '<div id="side">\n  <button id="mobile-close" '
                             'type="button">Close</button>', 1)
         text = text.replace(GRAPH_SCRIPT_MARKER, "\n" + MOBILE_GRAPH_SCRIPT + GRAPH_SCRIPT_MARKER, 1)
+        if text.count(GRAPH_SERVER_MARKER) != 1:
+            raise ValueError("Glitch Cat graph server changed; review the Host boundary")
+        text = text.replace(GRAPH_SERVER_MARKER, GRAPH_SERVER_GUARD, 1)
     if name == "engine/cli.mjs":
         if text.count(TAILSCALE_SOURCE) != 1:
             raise ValueError("Glitch Cat Tailscale scan changed; review the reader")
@@ -347,15 +364,30 @@ def upgrade(source: Path, target: Path, *, port: int = PORT) -> Path:
         return backup
 
 
-def runtime_env(root: Path) -> dict[str, str]:
+def runtime_env(root: Path, node: str) -> dict[str, str]:
     return {**os.environ, "GLITCHCAT_PACK": PACK,
-            "GLITCHCAT_DB": str(root / ".data" / "kg.db")}
+            "GLITCHCAT_DB": str(root / ".data" / "kg.db"),
+            "PATH": f"{Path(node).parent}:/usr/bin:/bin:/usr/sbin:/sbin"}
+
+
+def tool_path(name: str) -> str:
+    """Resolve only a validated payload or explicitly approved legacy tool."""
+    if name not in ("node", "npm"):
+        raise ValueError("unreviewed graph tool")
+    try:
+        result = subprocess.run([str(TOOLCHAIN_RESOLVER), name],
+                                capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f"verified {name} is unavailable") from error
+    path = Path(result.stdout.strip())
+    if (result.returncode or not path.is_absolute() or path.name != name
+            or not path.is_file()):
+        raise ValueError(f"verified {name} is unavailable")
+    return str(path)
 
 
 def node_path() -> str:
-    node = shutil.which("node") or "/opt/homebrew/bin/node"
-    if not Path(node).is_file():
-        raise ValueError("Node 22.5 or newer is required")
+    node = tool_path("node")
     version = subprocess.check_output([node, "--version"], text=True).strip()
     match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", version)
     if not match or (int(match[1]), int(match[2])) < (22, 5):
@@ -388,10 +420,10 @@ def preflight(root: Path, *, need_db: bool = False, port: int = PORT) -> str:
 def build(root: Path, *, port: int = PORT) -> None:
     node = preflight(root)
     port_free(port)
-    npm = shutil.which("npm") or "/opt/homebrew/bin/npm"
-    if not Path(npm).is_file():
-        raise ValueError("npm is required to install the pinned YAML parser")
-    env = runtime_env(root)
+    npm = tool_path("npm")
+    if Path(npm).parent != Path(node).parent:
+        raise ValueError("verified Node and npm are from different installations")
+    env = runtime_env(root, node)
     subprocess.run([npm, "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
                    cwd=root, env=env, check=True)
     data_dir = root / ".data"
@@ -411,7 +443,7 @@ def build(root: Path, *, port: int = PORT) -> None:
 
 def serve(root: Path, port: int = PORT) -> None:
     node = preflight(root, need_db=True, port=port)
-    env = runtime_env(root)
+    env = runtime_env(root, node)
     subprocess.run([node, "engine/serve.mjs", "--port", str(port)],
                    cwd=root, env=env, check=True)
 

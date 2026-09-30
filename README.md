@@ -1,10 +1,11 @@
 # wb-setup
 
-For the 0.7.1 phone UI pilot, download the
-[unsigned DMG from the v0.7.1 release](https://github.com/widebandz/wb-setup/releases/tag/v0.7.1).
-It carries the private phone home, full Fleetdeck board, Wideband mark, and
-reviewed Knowledge Graph bundle. The new phone UI has local browser proof;
-the earlier 0.7.0 full board was tested in UTM and on an iPhone.
+The current 0.8.0 pilot is undergoing exact-artifact validation. The latest
+published download remains the
+[v0.7.1 unsigned DMG](https://github.com/widebandz/wb-setup/releases/tag/v0.7.1)
+until those checks and the public release finish. The new package includes a
+private toolchain, so a client profile can prepare the local Fleetdeck stack
+without using another profile's Homebrew or waiting for an agent Apple Account.
 
 The source bootstrap below builds the operator foundation but does not include
 those bundled customer phone apps:
@@ -13,7 +14,7 @@ those bundled customer phone apps:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.7.1. This unsigned pilot requires the documented
+**Next release:** 0.8.0. This unsigned pilot requires the documented
 Privacy & Security **Open Anyway** step.
 Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and
@@ -47,7 +48,7 @@ polls saved state, performs focused permission checks while a permission guide
 is open, displays real proof timestamps, and gives a persistent recovery banner
 if its engine disconnects. The app includes an arm64 engine, so the guide
 appears even before a bare Mac has Homebrew, Command Line Tools, or Python. It
-calls out Homebrew's one Terminal password action and continues updating while
+checks and activates the bundled private toolchain before local setup, and continues updating while
 those tools install. Once the foundation exists, later launches run quietly
 inside the branded app without requiring Terminal or browser knowledge.
 
@@ -58,23 +59,25 @@ wideband.ai mark, palette, and type system, presents one human action at a time,
 and opens the exact provider, app, or System Settings page for that action. A
 responsibility strip distinguishes what Wideband installs, what the client must
 approve, and what is customized together. The welcome flow explains the single
-Homebrew administrator-password prompt when a new Mac still needs it. The complete six-stage checklist remains
+native setup steps run. The complete six-stage checklist remains
 available behind **Operator view**.
 
 The package also installs `~/Applications/Wideband Agent.app`, the single
 branded macOS permission principal. Accessibility, Screen Recording, Full Disk
 Access, and Messages Automation are requested and verified against that exact
 app rather than trusting a checkbox or granting broad access to Terminal.
-The iMessage head runtime also launches through that app. The first client
-milestone is a real two-way text: choose an OS display name, an editable agent
-name, a head-agent provider, and a first goal; sign a separate agent Apple
-Account into Messages; send a fresh text from the owner's phone; bind that
-exact chat; and confirm the agent's reply on the phone. Apple Screen Sharing
-and other support access are guided later.
+The iMessage head runtime also launches through that app. Clients can first
+name the OS and agent, choose a provider and first goal, and prepare the local
+tools and Fleetdeck without an agent Apple Account. Text activation is a
+separate milestone: sign a separate agent Apple Account into Messages, send a
+fresh text from the owner's phone, bind that exact chat, and confirm the
+agent's reply on the phone. Apple Screen Sharing and other support access are
+guided later.
 
 The provider picker saves Claude Code, Codex, Gemini CLI, or Grok Build as a
 private onboarding choice. Claude Code is the current Wideband iMessage runtime
-path. The other choices are marked as previews and cannot activate the text
+path. The packaged client installs Claude Code only after Claude is selected
+and its sign-in action is opened. The other choices are marked as previews and cannot activate the text
 router until their sign-in, pane recognition, and reply path have been verified.
 Changing the provider after a chat is bound requires an explicit runtime
 migration so the saved choice cannot silently disagree with the active agent.
@@ -109,25 +112,16 @@ The 0.7.1 phone home passed isolated WebKit checks at 375×667 and 393×852
 using a copied candidate bundle and synthetic services. The new UI has not
 yet been checked on a physical iPhone or in an installed Home Screen app.
 
-Build the generic pilot:
+Build the generic pilot from the two reviewed source checkouts:
 
 ```bash
-./packaging/build-app.sh
+./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck --graph-source /path/to/glitch-cat
 ```
 
-For the full customer Fleetdeck board on a blank Mac, pass a reviewed
-Fleetdeck checkout when building the app:
-
-```bash
-./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck
-```
-
-This option bundles only allowlisted tracked Fleetdeck installer files and
+The build requires both sources. It bundles only allowlisted tracked Fleetdeck installer files and
 generic icons, plus the standalone customer portal. Local config, notes,
-backups, `.git`, and the operator portal are excluded. Without the option,
-`install.sh --phone-only` retains a public-clone fallback; the current public
-Fleetdeck release lacks the customer-mode guard and will stop that step rather
-than expose writable services. Use `--fleetdeck-source` for a customer handoff.
+backups, `.git`, and the operator portal are excluded. Missing either reviewed
+bundle stops packaging before a client installer can be produced.
 The customer portal's Notes beta has its own private store on the client's Mac;
 it does not import or sync the existing Fleetdeck operator Notes store.
 
@@ -135,6 +129,8 @@ Build a Developer ID signed artifact without submitting it for notarization:
 
 ```bash
 ./packaging/build-app.sh \
+  --fleetdeck-source /path/to/fleetdeck \
+  --graph-source /path/to/glitch-cat \
   --sign-identity "Developer ID Application: Wideband AI (…)"
 ```
 
@@ -143,6 +139,8 @@ profile, then build, submit, wait, staple, and validate in one command:
 
 ```bash
 ./packaging/build-app.sh \
+  --fleetdeck-source /path/to/fleetdeck \
+  --graph-source /path/to/glitch-cat \
   --sign-identity "Developer ID Application: Wideband AI (…)" \
   --notary-profile wideband-notary
 ```
@@ -156,11 +154,8 @@ For a client handoff, copy `packaging/client-profile.example.json` outside the
 repository, fill it with that client's approved build identity, then build:
 
 ```bash
-./packaging/build-app.sh --profile /secure/path/client-profile.json
+./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck --graph-source /path/to/glitch-cat --profile /secure/path/client-profile.json
 ```
-
-Add `--fleetdeck-source /path/to/fleetdeck` to a personalized build as well
-when that client's first phone view must work without fetching Fleetdeck.
 
 The unsigned pilot produces `dist/Wideband-Setup-unsigned.dmg`; a fully trusted
 release produces `dist/Wideband-Setup.dmg`. Either is one shareable file. The
@@ -224,36 +219,38 @@ does before you run it.
 1. **Refuses** if the machine is not arm64, is running as root, is below
    macOS 13 (macOS 14 for the iMessage client path), or the target directory
    sits inside a TCC-protected folder.
-2. **Installs Claude Code** — `claude.ai/install.sh`, the official
-   installer. Adds `~/.local/bin` to your PATH in `.zshrc`.
-3. **Downloads this repo** to `~/srv/wb-setup` as a tarball so the versioned
-   Homebrew health guard is available before the package manager is touched.
-4. **Verifies and starts Homebrew in the background**, logging to
-   `/tmp/wb-bootstrap-brew.log`. It separately proves the intended user,
-   `/opt/homebrew` ownership and writability, PATH, architecture, and Apple
-   Command Line Tools/Git. It runs the selected developer Git and reports the
-   Apple package receipt, so an incompatible post-upgrade toolchain is stopped
-   for Software Update instead of being accepted merely because files exist.
+2. **Handles the AI provider** — the packaged client defers installation until
+   you select Claude and open its sign-in action. The standalone operator
+   bootstrap installs Claude Code from `claude.ai/install.sh` and adds
+   `~/.local/bin` to `.zshrc`.
+3. **Uses the downloaded package's verified private tools** for the client
+   path. The separate source bootstrap downloads this repo as a tarball.
+4. **Inspects Homebrew read-only** and records whether this login owns a
+   healthy prefix. The packaged client uses its own Python, Node, tmux, ttyd,
+   and `imsg` even if another profile owns `/opt/homebrew`. Only the legacy
+   source/operator path may install or use an owned Homebrew after its health
+   checks.
 5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
    package preloads approved values; a generic client package asks only for
    the owner's phone number. GitHub, commit identity, work repository, and
-   extra graph packs can be filled in after the first text. An existing
+   extra graph packs can be filled in after local setup. An existing
    identity file is left alone.
-6. **Places four files** — a status line script, `~/.claude/SOP.md`,
-   `~/.claude/CLAUDE.md`, and `~/.claude/settings.json` (only if you do
-   not already have one).
+6. **Keeps operator files separate** — the packaged client leaves `.zshrc`
+   and existing Claude statusline, SOP, settings, and global instructions
+   untouched. The standalone operator bootstrap places those four files,
+   seeding settings and global instructions only when absent.
 7. **Queues the human gates.** The generic bootstrap prints them; the packaged
    client app presents them later as branded, resumable popups.
-8. **Runs `brew bundle`** against `Brewfile.quick` for the packaged client
-   path: Python, tmux, and `imsg` on macOS 14 or newer. The full operator path
-   continues to use `Brewfile`.
+8. **Verifies private tools** from a complete SHA-256 manifest for the
+   packaged client. The legacy source/operator path continues to use
+   `Brewfile`; an explicitly marked older 0.7.x install may use its own
+   healthy Homebrew during migration.
 9. **Opens Wideband Setup** on localhost unless `--no-ui` was requested.
 
-The Wideband payload stays under `$HOME`, asks for no passwords, and sends
-nothing anywhere. Apple Command Line Tools and Homebrew write to their own
-system-managed locations only after visible client approval. Wideband never
-runs an ownership repair automatically; any verified `/opt/homebrew` repair is
-printed for the client to review and run personally.
+The Wideband client tool payload stays under `$HOME` and asks for no password.
+It never changes a foreign Homebrew prefix. Account sign-ins and permissions
+remain explicit owner steps; no Apple Account is needed for the local first
+job and Fleetdeck installation.
 
 For a read-only post-upgrade diagnosis:
 

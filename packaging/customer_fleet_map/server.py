@@ -48,18 +48,21 @@ def render_page(prefix: str) -> bytes:
 
 
 def board_origin(value: str) -> str | None:
-    """Allow framing only by this Mac's explicit Fleetdeck HTTPS origin."""
+    """Allow framing only by this Mac's exact tailnet or loopback board."""
     try:
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError:
         return None
-    if (parsed.scheme != "https" or not parsed.hostname
-            or not parsed.hostname.endswith(".ts.net") or port != 8790
-            or parsed.username or parsed.password or parsed.path or parsed.query
-            or parsed.fragment):
+    if (parsed.username or parsed.password or parsed.path or parsed.query
+            or parsed.fragment or port != 8790):
         return None
-    return f"https://{parsed.hostname}:8790"
+    if parsed.scheme == "http" and parsed.hostname == "wideband.localhost":
+        return "http://wideband.localhost:8790"
+    if (parsed.scheme == "https" and parsed.hostname
+            and parsed.hostname.endswith(".ts.net")):
+        return f"https://{parsed.hostname}:8790"
+    return None
 
 
 class MapServer(ThreadingHTTPServer):
@@ -118,6 +121,9 @@ class MapHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/healthz":
             return self._send(200, b"ok\n")
+        if (self.server.board_origin == "http://wideband.localhost:8790"
+                and self.headers.get("Host") != f"wideband.localhost:{self.server.server_port}"):
+            return self._send(403, b"")
         route = self._route()
         if route is None:
             return self._send(403, b"")
@@ -143,6 +149,9 @@ class MapHandler(BaseHTTPRequestHandler):
         return self._send(404, b"")
 
     def do_POST(self):
+        if (self.server.board_origin == "http://wideband.localhost:8790"
+                and self.headers.get("Host") != f"wideband.localhost:{self.server.server_port}"):
+            return self._send(403, b"")
         if self._route() is None:
             return self._send(403, b"")
         return self._send(405, b"read-only map\n")

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("wb_setup_bind_test", ROOT / "setup.py")
 setup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(setup)
+PRIVATE_PYTHON = Path("/private/wideband/bin/python3")
 
 
 class BindHandoffTest(unittest.TestCase):
@@ -31,7 +32,7 @@ class BindHandoffTest(unittest.TestCase):
             self.assertTrue(command[3].endswith("/Applications/Wideband Agent.app"))
             self.assertEqual(command[4], "--stdout")
             self.assertEqual(command[6], "--stderr")
-            self.assertEqual(command[8:11], ["--args", "run-background-task", "/opt/homebrew/bin/python3"])
+            self.assertEqual(command[8:11], ["--args", "run-background-task", str(PRIVATE_PYTHON)])
             self.assertEqual(command[-2:], ["bind", "--confirm-separate-account"])
             self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
             self.assertEqual(kwargs["timeout"], 180)
@@ -44,7 +45,8 @@ class BindHandoffTest(unittest.TestCase):
             captured["paths"] = (stdout_path, stderr_path)
             return subprocess.CompletedProcess(command, returncode)
 
-        with mock.patch.object(setup.subprocess, "run", side_effect=launch):
+        with mock.patch.object(setup, "resolved_tool_path", return_value=PRIVATE_PYTHON), \
+             mock.patch.object(setup.subprocess, "run", side_effect=launch):
             result = self.runner._bind_via_agent_app({"PATH": "/usr/bin"})
         self.assertTrue(all(not path.exists() for path in captured["paths"]))
         return result
@@ -65,7 +67,8 @@ class BindHandoffTest(unittest.TestCase):
             "id": job_id, "action": "run_imessage_bind", "status": "running",
             "started_at": setup.now(), "finished_at": None, "exit_code": None, "output": "",
         }
-        with mock.patch.object(self.runner, "_bind_via_agent_app", return_value=False), \
+        with mock.patch.object(setup, "resolved_tool_path", return_value=PRIVATE_PYTHON), \
+             mock.patch.object(self.runner, "_bind_via_agent_app", return_value=False), \
              mock.patch.object(setup.subprocess, "Popen") as popen:
             self.runner._run(job_id)
         popen.assert_not_called()

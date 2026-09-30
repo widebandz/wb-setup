@@ -4,6 +4,9 @@
 import http.client
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -152,17 +155,36 @@ class ProviderChoiceTest(unittest.TestCase):
         cli.chmod(0o700)
         with mock.patch.object(setup.Path, "home", return_value=self.home), \
                 mock.patch.object(setup.shutil, "which", return_value=None):
-            self.assertEqual(self.app._claude_executable(), str(cli))
+            self.assertEqual(self.app._claude_executable(), str(cli.resolve()))
 
     def test_sign_in_helper_uses_auth_login_without_opening_claude_repl(self):
         with mock.patch.object(setup.platform, "system", return_value="Darwin"), \
+                mock.patch.object(setup, "resolved_tool_path", return_value=Path(sys.executable)), \
                 mock.patch.object(setup.subprocess, "run") as launch:
             self.app.open_claude_auth()
         helper = self.store.directory / "claude-sign-in.command"
         content = helper.read_text(encoding="utf-8")
-        self.assertIn("  claude auth login\n", content)
-        self.assertNotIn("\n  claude\n", content)
+        self.assertIn("packaging/claude-sign-in.sh", content)
+        script = (ROOT / "packaging" / "claude-sign-in.sh").read_text(encoding="utf-8")
+        self.assertIn('"$CLAUDE" auth login', script)
+        self.assertIn('if ! /usr/bin/curl --fail', script)
+        self.assertIn('/bin/bash -n "$installer"', script)
+        self.assertNotIn("| bash", script)
         launch.assert_called_once_with(["open", "-a", "Terminal", str(helper)], check=True, timeout=10)
+
+    def test_sign_in_helper_uses_existing_verified_home_cli(self):
+        cli = self.home / ".local" / "bin" / "claude"
+        cli.parent.mkdir(parents=True)
+        args_path = self.home / "claude-args.txt"
+        cli.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$WB_TEST_CLAUDE_ARGS"\n', encoding="utf-8")
+        cli.chmod(0o700)
+        result = subprocess.run(
+            ["/bin/bash", str(ROOT / "packaging" / "claude-sign-in.sh"), sys.executable],
+            env={**os.environ, "HOME": str(self.home), "WB_TEST_CLAUDE_ARGS": str(args_path)},
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(args_path.read_text(encoding="utf-8").strip(), "auth login")
 
     def test_provider_change_during_auth_check_cannot_confirm_claude(self):
         status, result = self.post("/api/onboarding", self.choices("claude"))

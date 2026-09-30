@@ -54,7 +54,7 @@
 
       <section class="onboarding-section" id="onboarding-section" aria-labelledby="onboarding-title">
         <div class="journey-nav" aria-label="Setup path">
-          <span class="active">01 · Name</span><span>02 · Connect</span><span>03 · Text</span><span>04 · Create</span><span>05 · Phone</span>
+          <span class="active">01 · Name</span><span>02 · Create</span><span>03 · Connect</span><span>04 · Text</span><span>05 · Phone</span>
         </div>
         <div class="onboarding-card">
           <div class="onboarding-intro">
@@ -79,7 +79,7 @@
               <label><input type="radio" name="agent_provider" value="codex"><span><strong>Codex <em>Preview</em></strong><small>Choose now; this head-agent path has not passed the Mac text test.</small></span></label>
               <label><input type="radio" name="agent_provider" value="gemini"><span><strong>Gemini CLI <em>Preview</em></strong><small>Choose now; this head-agent path has not passed the Mac text test.</small></span></label>
               <label><input type="radio" name="agent_provider" value="grok"><span><strong>Grok Build <em>Preview</em></strong><small>Choose now; a local head-agent runtime has not been verified.</small></span></label>
-              <p class="provider-note">Wideband saves your choice, then checks the selected tool and account before starting a head agent. Preview choices may pause setup until their runtime is ready.</p>
+              <p class="provider-note">Wideband saves your choice, then checks its tool and account before starting a head agent. Local tools, first job, and Fleetdeck can continue while a provider remains pending.</p>
             </fieldset>
             <fieldset class="goal-picker">
               <legend>What should your agent do first?</legend>
@@ -146,14 +146,15 @@
 
       <section class="first-goal-section" id="first-goal-section" hidden aria-labelledby="first-goal-title">
         <div>
-          <p class="overline">04 / Create</p>
+          <p class="overline">02 / Create</p>
           <h2 id="first-goal-title">Your first job</h2>
-          <p id="first-goal-detail">Wideband will prepare this after the agent answers your first text.</p>
+          <p id="first-goal-detail">Wideband prepares this locally while account and messaging setup can remain pending.</p>
           <p class="phone-portal-state" id="phone-portal-state">Fleetdeck phone view follows the first job.</p>
         </div>
         <div class="first-goal-links">
           <a class="secondary" id="first-goal-local" href="#" target="_blank" rel="noopener noreferrer" hidden>Open local preview ↗</a>
           <a class="secondary" id="first-goal-phone" href="#" target="_blank" rel="noopener noreferrer" hidden>Open project link ↗</a>
+          <a class="secondary" id="local-board-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Preview Fleetdeck on this Mac ↗</a>
           <a class="secondary" id="phone-portal-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Fleetdeck phone board ↗</a>
           <button class="secondary" id="phone-portal-copy" type="button" hidden>Copy phone link</button>
           <button class="secondary" id="phone-portal-check" type="button" hidden>Check phone HTTPS</button>
@@ -207,17 +208,17 @@
 
       <section class="handoff-section">
         <div class="section-heading compact">
-          <div><p class="overline">After the first text</p><h2>Finish the phone view and later setup.</h2></div>
-          <p>These steps stay visible while your agent works. Wideband returns to them as your first job and Fleetdeck are ready.</p>
+          <div><p class="overline">Remaining connections</p><h2>Finish messaging and private phone access.</h2></div>
+          <p>These steps stay visible while the local first job and Fleetdeck are prepared. Each connection needs its own real-world proof.</p>
         </div>
         <div class="handoff-list" id="handoff-list"></div>
       </section>
 
       <section class="client-complete" id="client-complete" hidden>
         <img src="/wideband-mark.png" alt="" class="complete-mark">
-        <p class="overline">First text complete</p>
-        <h2 id="completion-title">Your head agent answered by text.</h2>
-        <p id="completion-summary">Keep this Mac plugged in and online while Wideband prepares your first job and Fleetdeck phone view.</p>
+        <p class="overline" id="completion-eyebrow">First actions complete</p>
+        <h2 id="completion-title">Your setup choices are saved.</h2>
+        <p id="completion-summary">Wideband is preparing the local first job and Fleetdeck. Messaging and phone access have separate checks.</p>
         <div class="completion-grid">
           <div><span>Machine</span><strong id="completion-machine">Reading verification…</strong></div>
           <div><span>Custom profile</span><strong id="completion-profile">Reading profile state…</strong></div>

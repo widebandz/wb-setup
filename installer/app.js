@@ -29,6 +29,7 @@ let phonePortalProof = null;
 let phonePortalCheckedRun = "";
 let phonePortalCheckActive = false;
 let phonePortalCheckPromise = null;
+let localBoardProof = null;
 let setupHandoffActive = false;
 let setupHandoffError = "";
 
@@ -331,10 +332,10 @@ function providerGuide(step) {
   if (selectedAgentProvider() === "claude") {
     return {
       ...step.client_guide,
-      intro: "Connect Claude Code directly to your account. Wideband checks the local tool, but never sees your password.",
+      intro: "Connect Claude Code directly to your account. Wideband installs it for this login if needed, then checks sign-in without seeing your password.",
       success: "Claude Code reports a signed-in account; a real text reply is checked later.",
       instructions: [
-        "Select Open Claude sign-in below. A second Terminal window will open.",
+        "Select Open Claude sign-in below. A second Terminal window will install Claude Code if needed, then open its sign-in.",
         "Follow the secure browser sign-in opened by Claude Code.",
         "Approve the account you intend this custom agent to use.",
         "Return here after the sign-in window says 'Login successful'.",
@@ -390,7 +391,8 @@ function renderOnboarding() {
   const accountReady = Boolean(snapshot.state.completed["prepare.create-accounts"]);
   const textProved = Boolean(snapshot.state.completed["prove.messaging"]);
   const phoneProved = Boolean(snapshot.state.completed["prove.phone-board"]);
-  const phase = !saved ? 0 : !accountReady ? 1 : !textProved ? 2 : !phoneProved ? 3 : 4;
+  const firstJobReady = snapshot.state.action_runs.run_first_goal_apply?.status === "complete";
+  const phase = !saved ? 0 : !firstJobReady ? 1 : !accountReady ? 2 : !textProved ? 3 : !phoneProved ? 4 : 5;
   [...document.querySelectorAll(".journey-nav span")].forEach((node, index) => {
     node.classList.toggle("active", index === phase);
     node.classList.toggle("complete", index < phase);
@@ -452,34 +454,34 @@ function renderFirstGoal() {
   const action = $("#first-goal-action");
   const run = snapshot.state.action_runs.run_first_goal_apply;
   const status = snapshot.facts.first_goal || {};
-  const replied = checkStatus(allSteps().find((step) => step.id === "prove.messaging")).state === "done";
-  action.hidden = !replied;
+  action.hidden = false;
   action.textContent = run?.status === "needs_attention" ? "Retry first job" : "Check first job";
   action.onclick = (event) => handleAction(run?.status === "needs_attention" ? "run_first_goal_apply" : "run_first_goal_check", event.currentTarget);
-  if (!replied) detail.textContent = "Wideband prepares this after a real head-agent reply arrives on your phone.";
-  else if (!run || run.status === "running") detail.textContent = "Preparing your first job on this Mac…";
+  if (!run || run.status === "running") detail.textContent = "Preparing your first job on this Mac. The agent Apple Account can be connected later.";
   else if (run.status === "needs_attention") detail.textContent = "The first job needs attention. Review the build feed and retry after the issue is resolved.";
   else if (selected === "website" && status.status === "ready") detail.textContent = "Your starter site answers locally. Its phone preview follows Fleetdeck installation and a private HTTPS route; test the link on your phone.";
   else if (status.status === "prepared") detail.textContent = "Your first-job brief is ready. Text your agent the topic and the result you want.";
   else detail.textContent = "Wideband saved your choice. Check the first job to refresh its readiness.";
   const phoneRun = snapshot.state.action_runs.run_phone_install;
-  const phoneInstalled = replied && !snapshot.facts.deactivated && phoneRun?.status === "complete";
+  const phoneInstalled = !snapshot.facts.deactivated && phoneRun?.status === "complete";
   const recentProof = phoneInstalled && phonePortalProof?.run === phoneRun.finished_at
     && Date.now() - phonePortalProof.checkedAt < 60_000 ? phonePortalProof : null;
   const portalLink = $("#phone-portal-link");
   const portalCopy = $("#phone-portal-copy");
   const portalCheck = $("#phone-portal-check");
   const portalConnect = $("#phone-portal-connect");
+  const localBoard = $("#local-board-link");
   portalLink.hidden = true;
   portalCopy.hidden = true;
+  localBoard.hidden = true;
   portalCheck.hidden = !phoneInstalled;
   portalCheck.disabled = phonePortalCheckActive;
   portalConnect.hidden = !phoneInstalled || recentProof?.status === "ready";
   if (recentProof?.status === "ready") {
     try {
       const url = new URL(recentProof.url);
-      if (url.protocol === "https:" && url.hostname.endsWith(".ts.net")
-          && /^\/p\/[0-9a-f]{64}\/board$/.test(url.pathname)
+      if (url.protocol === "https:" && url.hostname.endsWith(".ts.net") && url.port === "8790"
+          && /^\/p\/[0-9a-f]{64}\/phone$/.test(url.pathname)
           && !url.username && !url.password && !url.search && !url.hash) {
         portalLink.href = url.href;
         portalLink.title = url.href;
@@ -488,13 +490,25 @@ function renderFirstGoal() {
       }
     } catch (_) { /* A malformed link is never presented. */ }
   }
+  if (phoneInstalled && localBoardProof?.status === "local_ready"
+      && localBoardProof.run === (phoneRun.finished_at || "complete")) {
+    try {
+      const url = new URL(localBoardProof.local_url);
+      if (url.protocol === "http:" && url.hostname === "wideband.localhost" && url.port === "8790"
+          && /^\/p\/[0-9a-f]{64}\/phone$/.test(url.pathname)
+          && !url.username && !url.password && !url.search && !url.hash) {
+        localBoard.href = url.href;
+        localBoard.hidden = false;
+      }
+    } catch (_) { /* Local preview is not verified yet. */ }
+  }
   const portalState = phonePortalCheckActive
     ? "Checking Fleetdeck's local portal and private HTTPS route…"
     : recentProof?.detail || (phoneRun?.status === "complete"
-    ? "Fleetdeck local portal installed. Check its private HTTPS link, then test it on your phone and add it to the home screen."
+    ? "Fleetdeck is installed locally. Open its Mac-only preview; private phone access waits for Tailscale and a real phone check."
     : phoneRun?.status === "needs_attention"
       ? "Fleetdeck local portal needs repair before the phone handoff."
-      : replied ? "Fleetdeck local portal is queued behind the first job." : "Fleetdeck phone view follows the first job.");
+      : "Fleetdeck local portal is queued behind the first job.");
   const boardConfirmed = Boolean(snapshot.state.completed["prove.phone-board"]);
   const handoff = snapshot.state.handoff || {};
   const deliveryStatus = handoffDeliveryStatus();
@@ -553,14 +567,14 @@ function renderFirstGoal() {
   phone.hidden = true;
   try {
     const url = new URL(status.local_url);
-    if (replied && run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "http:" && url.hostname === "127.0.0.1") {
+    if (run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "http:" && url.hostname === "127.0.0.1") {
       local.href = url.href;
       local.hidden = false;
     }
   } catch (_) { /* No verified local preview yet. */ }
   try {
     const url = new URL(status.phone_url);
-    if (replied && run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "https:" && url.hostname.endsWith(".ts.net")) {
+    if (run?.status === "complete" && status.status === "ready" && selected === "website" && url.protocol === "https:" && url.hostname.endsWith(".ts.net")) {
       phone.href = url.href;
       phone.hidden = false;
     }
@@ -577,6 +591,14 @@ async function checkPhonePortalLink() {
   } finally {
     phonePortalCheckPromise = null;
   }
+}
+
+async function checkLocalBoardLink() {
+  const run = snapshot.state.action_runs.run_phone_install;
+  if (run?.status !== "complete" || snapshot.facts.deactivated) return;
+  const result = await api("/api/local-board-link");
+  localBoardProof = { ...result, run: run.finished_at || "complete", checkedAt: Date.now() };
+  renderFirstGoal();
 }
 
 async function performPhonePortalLinkCheck(run) {
@@ -735,15 +757,19 @@ function renderFocusCard() {
   const action = $("#focus-action");
   const note = $("#focus-note");
   if (!step) {
-    $("#focus-count").textContent = "First text complete";
+    const messagingStep = allSteps().find((item) => item.id === "prove.messaging");
+    const textProved = messagingStep && checkStatus(messagingStep).state === "done";
+    $("#focus-count").textContent = textProved ? "First text complete" : "First actions complete";
     $("#focus-stage").textContent = "Saved";
     $("#focus-icon").textContent = "✓";
-    $("#focus-eyebrow").textContent = "The agent replied";
-    $("#focus-title").textContent = "Your head agent is reachable by text.";
-    $("#focus-description").textContent = "Your phone received a real answer. Keep this Mac plugged in and online while Wideband prepares your first job and Fleetdeck phone view.";
+    $("#focus-eyebrow").textContent = textProved ? "The agent replied" : "Name and Mac basics saved";
+    $("#focus-title").textContent = textProved ? "Your head agent is reachable by text." : "Local setup can continue.";
+    $("#focus-description").textContent = textProved
+      ? "Your phone received a real answer. Check the first job and Fleetdeck status below; private phone access has its own proof."
+      : "Wideband can prepare core tools, your first job, and Fleetdeck while agent sign-in and messaging remain pending.";
     action.hidden = true;
     note.hidden = false;
-    note.textContent = "The phone board and later support setup remain visible below.";
+    note.textContent = "Account, messaging, and private phone proofs remain visible below.";
     $("#client-complete").hidden = false;
     return;
   }
@@ -815,11 +841,16 @@ function renderCompletion() {
   const profileReady = profile && checkStatus(profile).state === "done";
   const handoff = readinessForSteps(clientSteps().filter((step) => step.client_phase === "handoff"));
   const machineReady = verification && verification.failed === 0;
+  const messagingStep = allSteps().find((step) => step.id === "prove.messaging");
+  const textProved = messagingStep && checkStatus(messagingStep).state === "done";
 
-  $("#completion-title").textContent = "Your head agent answered by text.";
-  $("#completion-summary").textContent = machineReady
-    ? "The text path and machine foundation are verified. Your first job and Fleetdeck phone view are next."
-    : "Your phone reply is confirmed. Wideband will resolve remaining machine checks and prepare your first job and phone view.";
+  $("#completion-eyebrow").textContent = textProved ? "First text complete" : "First actions complete";
+  $("#completion-title").textContent = textProved ? "Your head agent answered by text." : "Your setup choices are saved.";
+  $("#completion-summary").textContent = textProved
+    ? (machineReady
+      ? "The text path and machine checks passed. Review the first job and Fleetdeck phone proof below."
+      : "Your phone reply is confirmed. Wideband will resolve remaining machine checks; first-job and Fleetdeck status remain visible below.")
+    : "Wideband can prepare the local first job and Fleetdeck while agent sign-in, messaging, and private phone access remain pending.";
   $("#completion-machine").textContent = verification
     ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred`
     : "Machine verification has not run yet";
@@ -863,6 +894,7 @@ function renderReadiness() {
   const textChecks = ["P6-IMSGOS", "P6-IMSG", "P6-IMSGCFG", "P6-IMSGCHAT", "P6-IMSGHEAD", "P6-IMSGSERVICES"];
   const textReady = textChecks.every((id) => imessage[id] === "pass");
   const textBroken = snapshot.facts.bootstrap_status === "unsupported_macos"
+    || snapshot.facts.bootstrap_status === "needs_independent_toolchain"
     || ["P6-IMSGOS", "P6-IMSG"].some((id) => imessage[id] === "fail")
     || snapshot.state.action_runs.run_imessage_bind?.status === "needs_attention";
   const foundationState = deactivated
@@ -876,6 +908,8 @@ function renderReadiness() {
     ? "Wideband services are deactivated. Repair restores the managed runtime."
     : snapshot.facts.bootstrap_status === "unsupported_macos"
       ? "This iMessage runtime needs macOS 14 or newer."
+    : snapshot.facts.bootstrap_status === "needs_independent_toolchain"
+      ? "A verified Wideband toolchain is required for this login before local services can start."
     : install?.status === "complete"
       ? textReady
         ? "imsg, exact owner chat, head session, and guarded services verified."
@@ -884,15 +918,16 @@ function renderReadiness() {
         ? "The first-text installation needs review."
         : "The first-text foundation is being prepared.";
 
-  const permissions = immediateClientSteps().filter((step) => permissionStepIds.includes(step.id));
+  const setupSteps = clientSteps().filter((step) => step.client_phase !== "handoff");
+  const permissions = setupSteps.filter((step) => permissionStepIds.includes(step.id));
   const permissionState = readinessForSteps(permissions);
-  const approvals = immediateClientSteps().filter((step) => !permissionStepIds.includes(step.id));
+  const approvals = setupSteps.filter((step) => !permissionStepIds.includes(step.id));
   const approvalState = readinessForSteps(approvals);
   const proofs = clientSteps().filter((step) => step.client_phase === "handoff");
   const proofState = readinessForSteps(proofs);
 
   $("#readiness-grid").replaceChildren(
-    readinessCard("Machine", "Wideband foundation", foundationState, foundationDetail, openSupport),
+    readinessCard("Machine", "iMessage foundation", foundationState, foundationDetail, openSupport),
     readinessCard(
       "macOS",
       "First-text permissions",
@@ -902,7 +937,7 @@ function renderReadiness() {
     ),
     readinessCard(
       "Client",
-      "Accounts and profile",
+      "Accounts and setup",
       approvalState.state,
       `${approvalState.done} of ${approvalState.total} client-owned steps complete.`,
       approvalState.next ? () => openGuide(approvalState.next.id) : null,
@@ -959,7 +994,7 @@ function renderMachineState() {
       bootstrapDone,
       "Core tools",
       bootstrapDone
-        ? "Homebrew, Python, tmux, and imsg are ready."
+        ? "Python, tmux, and imsg passed the selected toolchain checks."
         : bootstrapStatus === "unsupported_macos"
           ? "iMessage head-agent setup requires macOS 14 or newer on this Mac."
         : bootstrapStatus === "needs_admin_password"
@@ -971,15 +1006,17 @@ function renderMachineState() {
             : bootstrapStatus === "needs_developer_tools_update"
               ? "Apple's developer-tool files remain, but Git cannot run after the macOS upgrade."
             : bootstrapStatus === "needs_homebrew_ownership"
-              ? "Homebrew was left by another ownership context. Terminal shows the verified repair boundary."
+              ? "The shared Homebrew is unavailable to this login. Wideband will not change its ownership."
+            : bootstrapStatus === "needs_independent_toolchain"
+              ? "A verified Wideband toolchain is required; any existing Homebrew remains untouched."
           : bootstrapStatus === "collecting_identity"
             ? "Complete the Wideband setup popup currently on screen."
             : bootstrapStatus === "needs_attention"
               ? "The core tool install needs review in Terminal."
               : "Homebrew and the core tools are installing in Terminal.",
-      !bootstrapDone && !["unsupported_macos", "needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
+      !bootstrapDone && !["unsupported_macos", "needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "needs_independent_toolchain", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
     ),
-    machineRow(installDone, "Wideband text foundation", installDone ? "Wideband Agent and the messaging foundation are installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : ["run_install", "run_imessage_install"].includes(running?.action) ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Queued behind the core tools.", ["run_install", "run_imessage_install"].includes(running?.action)),
+    machineRow(installDone, "Wideband text foundation", installDone ? "Wideband Agent and the messaging foundation are installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : ["run_install", "run_imessage_install"].includes(running?.action) ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Available after the separate agent Apple Account is ready; local Fleetdeck can continue.", ["run_install", "run_imessage_install"].includes(running?.action)),
     machineRow(messagingReady, "iMessage head-agent runtime", messagingReady ? "Owner chat, persistent head session, and guarded reply services verified." : "Waiting for the separate Apple Account, fresh owner text, and live runtime checks.", ["run_imessage_init", "run_imessage_bind"].includes(running?.action)),
     machineRow(Boolean(verification) && !verification.failed, "Machine checks", verification ? `${verification.passed} passed · ${verification.failed} need attention · ${verification.skipped} deferred` : "Checks run automatically after installation.", running?.action?.includes("verify")),
     machineRow(snapshot.facts.personalized, "Client build profile", snapshot.facts.personalized ? "This installer was prepared for this client." : "Generic pilot build; the operator should verify identity values."),
@@ -1035,8 +1072,14 @@ function renderMachineState() {
     state.textContent = "Operator review";
     state.classList.add("attention");
     badge.classList.add("attention");
-    badge.querySelector("strong").textContent = "Homebrew ownership needs a safe review";
-    badge.querySelector("small").textContent = "Review the two scoped commands in Terminal, run them in a new Terminal window, then reopen Wideband Setup. Never use a blind broad chown.";
+    badge.querySelector("strong").textContent = "Existing Homebrew is unavailable";
+    badge.querySelector("small").textContent = "Wideband will not take ownership of another profile's Homebrew. A separate verified toolchain is needed for this login.";
+  } else if (!bootstrapDone && bootstrapStatus === "needs_independent_toolchain") {
+    state.textContent = "Toolchain needed";
+    state.classList.add("attention");
+    badge.classList.add("attention");
+    badge.querySelector("strong").textContent = "Wideband toolchain is unavailable";
+    badge.querySelector("small").textContent = "The existing Homebrew remains untouched. Review the installer preflight before continuing with first job or messaging.";
   } else if (!bootstrapDone && bootstrapStatus === "needs_attention") {
     state.textContent = "Review Terminal";
     state.classList.add("attention");
@@ -1369,15 +1412,40 @@ async function runAutomaticMachineWork() {
       await waitForJob(running.id, false);
       await refreshState();
     }
+    const firstJob = snapshot.state.action_runs.run_first_goal_apply;
+    if (snapshot.state.completed["identify.name-your-system"]
+        && (!firstJob || firstJob.status === "interrupted")) {
+      const job = await api("/api/actions/run_first_goal_apply", { method: "POST", body: {} });
+      await waitForJob(job.id, false);
+      await refreshState();
+    }
+    const phone = snapshot.state.action_runs.run_phone_install;
+    if (snapshot.state.action_runs.run_first_goal_apply?.status === "complete"
+        && (!phone || phone.status === "interrupted")) {
+      const job = await api("/api/actions/run_phone_install", { method: "POST", body: {} });
+      await waitForJob(job.id, false);
+      await refreshState();
+    }
+    const installedPhone = snapshot.state.action_runs.run_phone_install;
+    if (installedPhone?.status === "complete" && !snapshot.facts.deactivated) {
+      const currentLocalProof = localBoardProof?.run === (installedPhone.finished_at || "complete")
+        && Date.now() - localBoardProof.checkedAt < 60_000;
+      if (!currentLocalProof) await checkLocalBoardLink();
+      const currentProof = phonePortalProof?.run === (installedPhone.finished_at || "complete")
+        && Date.now() - phonePortalProof.checkedAt < 60_000;
+      if (!currentProof) await checkPhonePortalLink();
+    }
     const install = textInstallRun();
-    if (!install || install.status === "interrupted") {
+    if (snapshot.state.completed["prepare.create-accounts"]
+        && (!install || install.status === "interrupted")) {
       const job = await api("/api/actions/run_imessage_install", { method: "POST", body: {} });
       await refreshState();
       const finished = await waitForJob(job.id, false);
       await refreshState();
       if (finished.status === "complete") toast("Wideband text foundation installed");
       else toast("Wideband text installation needs review", 5200);
-    } else if (!snapshot.state.last_verification && install.status === "complete") {
+    } else if (snapshot.state.completed["prepare.create-accounts"]
+        && !snapshot.state.last_verification && install?.status === "complete") {
       const job = await api("/api/actions/run_verify_imessage", { method: "POST", body: {} });
       await waitForJob(job.id, false);
       await refreshState();
@@ -1398,26 +1466,6 @@ async function runAutomaticMachineWork() {
         await waitForJob(check.id, false);
         await refreshState();
       }
-    }
-    const firstJob = snapshot.state.action_runs.run_first_goal_apply;
-    const reply = allSteps().find((step) => step.id === "prove.messaging");
-    if (reply && checkStatus(reply).state === "done" && (!firstJob || firstJob.status === "interrupted")) {
-      const job = await api("/api/actions/run_first_goal_apply", { method: "POST", body: {} });
-      await waitForJob(job.id, false);
-      await refreshState();
-    }
-    const phone = snapshot.state.action_runs.run_phone_install;
-    if (snapshot.state.action_runs.run_first_goal_apply?.status === "complete"
-        && (!phone || phone.status === "interrupted")) {
-      const job = await api("/api/actions/run_phone_install", { method: "POST", body: {} });
-      await waitForJob(job.id, false);
-      await refreshState();
-    }
-    const installedPhone = snapshot.state.action_runs.run_phone_install;
-    if (installedPhone?.status === "complete") {
-      const currentProof = phonePortalProof?.run === (installedPhone.finished_at || "complete")
-        && Date.now() - phonePortalProof.checkedAt < 60_000;
-      if (!currentProof) await checkPhonePortalLink();
     }
   } catch (error) {
     toast(`Machine setup needs operator review: ${error.message}`, 5200);

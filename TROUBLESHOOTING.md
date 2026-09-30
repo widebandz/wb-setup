@@ -158,10 +158,10 @@ update check report the same version shown on the public release page.
 
 ## Terminal appeared behind the app
 
-On a genuinely bare Mac, this is the one intentional exception to the quiet
-embedded experience. Homebrew requires an interactive administrator-password
-prompt. Enter the password in Terminal; no dots or characters appear while
-typing. Leave that window open until the guide says the foundation is ready.
+The client package carries its own verified tools and does not need Homebrew.
+Terminal may host the first bootstrap or recovery while the native guide is
+open. Leave that window open until the guide says the local core is ready.
+Enter a Mac password only into an explicit macOS prompt.
 
 On an established machine, reopening Wideband Setup should run quietly. If the
 readiness screen already says the foundation is installed but every launch
@@ -177,6 +177,8 @@ suggest a recursive `chown`; later Homebrew downloads API data but fails with
 leave the Homebrew prefix on disk while removing or deselecting Apple Command
 Line Tools. The old prefix may also belong to a different setup user. These are
 two independent failures; the existence of `brew` proves neither is healthy.
+The packaged 0.8.0 client installer should use its private tools and leave a
+foreign prefix untouched. If it instead blocks, export a support bundle.
 
 Run the read-only guard from the downloaded repository:
 
@@ -187,7 +189,8 @@ bash ~/srv/wb-setup/bootstrap.sh --diagnose-homebrew
 It reports the invoking user and UID, home owner, GUI console user,
 architecture, PATH, selected developer directory, runnable Git version, Apple
 Command Line Tools receipt, exact prefix owner and mode, and the number of
-objects owned by another UID. It does not use `sudo` or change the machine.
+objects owned by another UID when the current user owns the prefix. It does
+not use `sudo` or change the machine.
 
 Do not copy a generic `sudo chown -R <name> /opt/homebrew` from an error. The
 bootstrap prints a repair only when all of these are true:
@@ -199,11 +202,10 @@ bootstrap prints a repair only when all of these are true:
 - the standard Homebrew directories have no extended ACL or file-flag state
   that a scoped ownership/mode repair cannot safely explain.
 
-The printed repair uses `find -xdev`, changes ownership only on objects whose
-UID differs, uses `chown -h` so symlinks are not followed, and restores owner
-access only on directories already owned by that UID. It does not make every
-file writable. Wideband never runs it. The client must personally review and
-execute the two printed commands, then reopen Wideband Setup.
+For a recognized prefix already owned throughout by the current user, the
+legacy source bootstrap may print a directory-mode repair that the owner must
+review. It never prints or runs a command to transfer another user's prefix.
+The packaged client installer needs no Homebrew repair.
 
 If the report shows ACL entries, file flags, or effective non-writability that
 is not explained by ownership or owner-write bits, no repair command is
@@ -693,14 +695,14 @@ macOS 13, but it cannot claim that texting the head agent works there.
 
 **Class:** ledger-vs-object. A Messages Automation grant is not a listener.
 
-**Fix:** run the guided iMessage install again. Its Brewfile installs the upstream
-`steipete/tap/imsg` formula with trust scoped to that formula. If Homebrew
-refuses a third-party tap, review the exact formula and its source before
-approving it. The [upstream install guide](https://github.com/openclaw/imsg/blob/main/docs/install.md)
-names this package and its macOS requirement.
+**Fix:** for a packaged 0.8.0 client install, reopen the downloaded Wideband
+Setup app and inspect its private-tool preflight. It includes a checksum-pinned
+`imsg` transport and must never borrow a different profile's Homebrew binary.
+The legacy source/operator install can still use the upstream
+[`imsg` install guide](https://github.com/openclaw/imsg/blob/main/docs/install.md).
 
-**Proof:** `/opt/homebrew/bin/imsg --version` succeeds. No test message is
-sent by this check.
+**Proof:** `~/srv/wb-setup/lib/toolchain-path imsg` returns a verified path;
+that path's `--version` succeeds. No test message is sent by this check.
 
 ## P6-IMSGCFG — the private head runtime is not configured
 

@@ -26,6 +26,7 @@ GOALS = {"research", "website", "proposal"}
 SERVICE_ID = "first-project"
 LABEL = "ai.wideband.first-project"
 PORTS = range(4173, 4200)
+RESERVED_PORTS = {4180, 4181}  # Knowledge Graph engine and owner-gated front.
 HOME = Path.home()
 STATE = HOME / ".wideband" / "setup" / "state.json"
 GOAL_DIR = HOME / ".wideband" / "first-goal"
@@ -34,6 +35,11 @@ PROJECT = HOME / "wideband" / "first-project"
 PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 SCRIPT = Path(__file__).with_name("site_server.py")
 BRAND_ICON = Path(__file__).resolve().parents[1] / "installer" / "wideband-mark.png"
+TOOLCHAIN_RESOLVER = Path(__file__).resolve().parents[1] / "lib" / "toolchain-path"
+TAILSCALE_CANDIDATES = (
+    Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"),
+    HOME / "Applications/Tailscale.app/Contents/MacOS/Tailscale",
+)
 
 
 def private_json(path: Path, data: dict) -> None:
@@ -78,9 +84,11 @@ def read_status() -> dict:
 
 def selected_port(previous: dict) -> int:
     prior = previous.get("port")
-    if isinstance(prior, int) and prior in PORTS:
+    if isinstance(prior, int) and prior in PORTS and prior not in RESERVED_PORTS:
         return prior
     for port in PORTS:
+        if port in RESERVED_PORTS:
+            continue
         with socket.socket() as sock:
             try:
                 sock.bind(("127.0.0.1", port))
@@ -133,10 +141,25 @@ a{{color:#67e8f9}}</style></head><body><main><small>Wideband · first website</s
 """
 
 
+def verified_python() -> str:
+    """Resolve this profile's installed Python without consulting ambient PATH."""
+    try:
+        result = subprocess.run([str(TOOLCHAIN_RESOLVER), "python3"],
+                                capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("verified first-project Python is unavailable") from error
+    path = Path(result.stdout.strip())
+    if (result.returncode or not path.is_absolute() or path.name != "python3"
+            or not path.is_file()):
+        raise RuntimeError("verified first-project Python is unavailable")
+    return str(path)
+
+
 def render_plist(port: int) -> bytes:
     return plistlib.dumps({
         "Label": LABEL,
-        "ProgramArguments": ["/opt/homebrew/bin/python3", str(SCRIPT), "--directory", str(PROJECT / "public"), "--port", str(port)],
+        "ProgramArguments": [verified_python(), str(SCRIPT), "--directory",
+                             str(PROJECT / "public"), "--port", str(port)],
         "RunAtLoad": True,
         "KeepAlive": True,
         "WorkingDirectory": str(PROJECT),
@@ -161,6 +184,8 @@ def site_ready(port: int) -> bool:
 
 
 def start_server(port: int) -> None:
+    if os.environ.get("WB_FIRST_GOAL_SKIP_LAUNCHD") == "1":
+        return
     PLIST.parent.mkdir(parents=True, exist_ok=True)
     data = render_plist(port)
     if PLIST.exists() and PLIST.read_bytes() != data:
@@ -178,8 +203,6 @@ def start_server(port: int) -> None:
     finally:
         if os.path.exists(temp):
             os.unlink(temp)
-    if os.environ.get("WB_FIRST_GOAL_SKIP_LAUNCHD") == "1":
-        return
     target = f"gui/{os.getuid()}/{LABEL}"
     if subprocess.run(["/bin/launchctl", "print", target], capture_output=True).returncode == 0:
         subprocess.run(["/bin/launchctl", "bootout", target], capture_output=True, check=False)
@@ -200,8 +223,8 @@ def start_server(port: int) -> None:
 
 
 def phone_url(port: int) -> str | None:
-    candidates = [Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"), Path("/opt/homebrew/bin/tailscale")]
-    binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
+    binary = next((path for path in TAILSCALE_CANDIDATES
+                   if path.is_file() and os.access(path, os.X_OK)), None)
     if binary is None:
         return None
 
@@ -279,7 +302,8 @@ def phone_url(port: int) -> str | None:
     return None
 
 
-def register_fleetdeck(os_name: str, port: int, previous_name: str | None = None) -> None:
+def register_fleetdeck(os_name: str, port: int, previous_name: str | None = None,
+                       previous_port: int | None = None) -> None:
     registry = HOME / "srv" / "fleetdeck" / "services.json"
     if not registry.is_file():
         return
@@ -290,7 +314,11 @@ def register_fleetdeck(os_name: str, port: int, previous_name: str | None = None
     existing = next((item for item in services if isinstance(item, dict) and item.get("id") == SERVICE_ID), None)
     if existing:
         if existing.get("port") != port:
-            raise RuntimeError("Fleetdeck first-project tile has a different port; review it before changing")
+            if (previous_port not in RESERVED_PORTS or existing.get("port") != previous_port
+                    or existing.get("source") != "wideband-first-goal"
+                    or existing.get("name") != previous_name):
+                raise RuntimeError("Fleetdeck first-project tile has a different port; review it before changing")
+            existing["port"] = port
         if existing.get("source") != "wideband-first-goal" or existing.get("name") != previous_name:
             return
         existing["name"] = f"{os_name} · First project"
@@ -307,8 +335,8 @@ def register_fleetdeck(os_name: str, port: int, previous_name: str | None = None
 
 
 def retire_phone_route(port: int) -> str | None:
-    candidates = [Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale"), Path("/opt/homebrew/bin/tailscale")]
-    binary = next((path for path in candidates if path.is_file() and os.access(path, os.X_OK)), None)
+    binary = next((path for path in TAILSCALE_CANDIDATES
+                   if path.is_file() and os.access(path, os.X_OK)), None)
     if binary is None:
         return None
     try:
@@ -387,6 +415,10 @@ def apply() -> dict:
                     "service_id": SERVICE_ID if goal == "website" else None,
                     "updated_at": dt.datetime.now(dt.timezone.utc).isoformat()}
     port = selected_port(prior) if goal == "website" else None
+    if goal == "website" and prior.get("goal") == "website" and prior.get("port") in RESERVED_PORTS:
+        warning = retire_phone_route(prior["port"])
+        if warning:
+            raise RuntimeError(warning)
     private_json(STATUS, status | {"status": "preparing"})
     if goal == "website":
         assert port is not None
@@ -412,7 +444,11 @@ def apply() -> dict:
         start_server(port)
         if os.environ.get("WB_FIRST_GOAL_SKIP_LAUNCHD") != "1" and not site_ready(port):
             raise RuntimeError("first-project preview did not answer its health check")
-        register_fleetdeck(os_name, port, f"{prior.get('os_name')} · First project" if prior.get("goal") == "website" else None)
+        register_fleetdeck(
+            os_name, port,
+            f"{prior.get('os_name')} · First project" if prior.get("goal") == "website" else None,
+            prior.get("port") if prior.get("goal") == "website" else None,
+        )
         ready = site_ready(port)
         status.update({"status": "ready" if ready else "prepared", "port": port,
                        "local_url": f"http://127.0.0.1:{port}/"})

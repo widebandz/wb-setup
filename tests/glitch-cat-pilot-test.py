@@ -7,11 +7,15 @@ import errno
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest import mock
+import urllib.error
+import urllib.request
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "packaging" / "glitch-cat-pilot.py"
@@ -43,7 +47,8 @@ class GlitchCatPilotTest(unittest.TestCase):
                         'const title="sample-agent // health";\n'
                         + pilot.GRAPH_STYLE_MARKER + '\n'
                         + '<div id="side">\n' + pilot.GRAPH_STAGE_MARKER + '\n'
-                        + pilot.DEFAULT_LENS_SOURCE + pilot.GRAPH_SCRIPT_MARKER)
+                        + pilot.DEFAULT_LENS_SOURCE + pilot.GRAPH_SCRIPT_MARKER + '\n'
+                        + pilot.GRAPH_SERVER_MARKER)
             elif name == "engine/cli.mjs":
                 data = pilot.TAILSCALE_SOURCE
             elif name == "engine/types.mjs":
@@ -59,6 +64,33 @@ class GlitchCatPilotTest(unittest.TestCase):
         pilot.bundle(self.source, bundle)
         return bundle
 
+    def test_graph_uses_only_verified_node_and_npm(self) -> None:
+        toolbin = self.base / "private" / "bin"
+        toolbin.mkdir(parents=True)
+        for name in ("node", "npm"):
+            (toolbin / name).write_text("tool")
+        answer = subprocess.CompletedProcess([], 0, str(toolbin / "node") + "\n", "")
+        with mock.patch.object(pilot.subprocess, "run", return_value=answer) as resolve, \
+             mock.patch.object(pilot.subprocess, "check_output", return_value="v24.21.0\n"):
+            self.assertEqual(pilot.node_path(), str(toolbin / "node"))
+        resolve.assert_called_once_with([str(pilot.TOOLCHAIN_RESOLVER), "node"],
+                                        capture_output=True, text=True, timeout=30)
+        self.assertEqual(pilot.runtime_env(self.base, str(toolbin / "node"))["PATH"],
+                         f"{toolbin}:/usr/bin:/bin:/usr/sbin:/sbin")
+        with mock.patch.object(pilot.subprocess, "run", return_value=
+                               subprocess.CompletedProcess([], 1, "", "missing")):
+            with self.assertRaisesRegex(ValueError, "verified node"):
+                pilot.node_path()
+
+        other_bin = self.base / "other" / "bin"
+        other_bin.mkdir(parents=True)
+        (other_bin / "npm").write_text("tool")
+        with mock.patch.object(pilot, "preflight", return_value=str(toolbin / "node")), \
+             mock.patch.object(pilot, "port_free"), \
+             mock.patch.object(pilot, "tool_path", return_value=str(other_bin / "npm")):
+            with self.assertRaisesRegex(ValueError, "different installations"):
+                pilot.build(self.base)
+
     def test_only_tracked_engine_package_and_icons_ship(self) -> None:
         bundle = self.bundled()
         hashes = pilot.verify(bundle)
@@ -73,6 +105,8 @@ class GlitchCatPilotTest(unittest.TestCase):
         self.assertNotIn("sample-agent", (bundle / "engine/serve.mjs").read_text())
         self.assertIn(pilot.DEFAULT_LENS_PILOT, (bundle / "engine/serve.mjs").read_text())
         self.assertIn('id="mobile-lenses"', (bundle / "engine/serve.mjs").read_text())
+        self.assertIn("req.headers.host !== `127.0.0.1:${PORT}`",
+                      (bundle / "engine/serve.mjs").read_text())
         self.assertIn("/Applications/Tailscale.app/Contents/MacOS/Tailscale",
                       (bundle / "engine/cli.mjs").read_text())
 
@@ -124,6 +158,59 @@ class GlitchCatPilotTest(unittest.TestCase):
         bad = self.base / "sanitized-bundle"
         pilot.bundle(self.source, bad)
         self.assertNotIn("tailnet789", (bad / "engine/query.mjs").read_text())
+
+    def test_bundled_viewer_rejects_foreign_host_before_api(self) -> None:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node is needed for the HTTP boundary test")
+        source = ("import { createServer } from 'node:http'\n"
+                  "const PORT = Number(process.argv[2])\n"
+                  "const html = `<style>" + pilot.GRAPH_STYLE_MARKER
+                  + '<div id="side">' + pilot.GRAPH_STAGE_MARKER
+                  + pilot.GRAPH_SCRIPT_MARKER + '`\n'
+                  + pilot.DEFAULT_LENS_SOURCE + '\n'
+                  + pilot.GRAPH_SERVER_MARKER + "\n"
+                  "    res.writeHead(200, { 'content-type': 'application/json' })\n"
+                  "    return res.end(JSON.stringify({ private: true, path: url.pathname }))\n"
+                  "  } catch (error) { res.writeHead(500); res.end(String(error)) }\n"
+                  "}).listen(PORT, '127.0.0.1')\n")
+        file = self.base / "viewer.mjs"
+        file.write_bytes(pilot.sanitized_bytes("engine/serve.mjs", source.encode()))
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        proc = subprocess.Popen([node, str(file), str(port)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        def stop_viewer() -> None:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=2)
+            proc.stderr.close()
+        self.addCleanup(stop_viewer)
+        base = f"http://127.0.0.1:{port}/api/stats"
+        for _ in range(40):
+            try:
+                with urllib.request.urlopen(base, timeout=0.2) as response:
+                    self.assertEqual(response.status, 200)
+                break
+            except urllib.error.URLError:
+                time.sleep(0.05)
+        else:
+            proc.kill()
+            _out, errors = proc.communicate(timeout=2)
+            self.fail(f"isolated viewer did not start: {errors.decode()[:400]}")
+        for host in ("attacker.example", f"attacker.example:{port}",
+                     f"127.0.0.1:{port + 1}"):
+            request = urllib.request.Request(base, headers={"Host": host})
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(request, timeout=2)
+            with denied.exception as response:
+                self.assertEqual(response.code, 403)
+                self.assertNotIn(b"private", response.read())
+        request = urllib.request.Request(base, headers={"Host": f"localhost:{port}"})
+        with urllib.request.urlopen(request, timeout=2) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.load(response)["private"], True)
 
     def test_upgrade_retains_local_pack_index_and_dependencies(self) -> None:
         old = self.bundled()

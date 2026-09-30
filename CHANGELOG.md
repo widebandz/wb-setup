@@ -3,6 +3,17 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.8.0 — unsigned pilot (release validation in progress)
+
+### Private tools and account-free local setup
+
+- Bundled checksum-pinned Apple Silicon Python, Node/npm, tmux, ttyd, and `imsg` so a client installation does not depend on, use, or change another macOS profile's Homebrew. The installer checks the downloaded app and complete tool payload before copying files, then activates a private version with the previous version retained for rollback.
+- Added read-only core preflight and explicit blocked states. A foreign or damaged Homebrew prefix is inventory, not an ownership-repair request for a new client install. The local first job and real Fleetdeck board, terminal, Live Terminal Network, and Knowledge Graph can be prepared before Apple Account, provider, and Messages sign-in.
+- Kept iMessage activation behind a separate agent Apple Account, exact owner-chat binding, permission checks, and a physical send-and-reply proof. The guide no longer presents an unverified text route as complete.
+- Deferred Claude Code installation to the selected Claude sign-in action. Client bootstrap leaves `.zshrc` and operator Claude files untouched; the sign-in action downloads the official installer to a private file and checks the fetch and script before execution. Preview providers remain pending.
+- Updated the managed Fleetdeck adapter from the current reviewed source. Local-only preview uses a guarded `wideband.localhost` capability; private iPhone access still needs Tailscale Serve and owner confirmation.
+- Added isolated toolchain tamper/rollback tests, preflight tests, local phone-stack checks, and customer map/graph tests. Exact DMG, VM, and phone results are recorded separately after release validation.
+
 ## 0.7.1 — unsigned pilot (2026-09-30 UTC)
 
 ### Customer phone home

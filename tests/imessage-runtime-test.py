@@ -6,9 +6,11 @@ import hashlib
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -424,8 +426,16 @@ class InstallStagingTest(unittest.TestCase):
         agent.parent.mkdir(parents=True)
         agent.write_text("#!/bin/sh\necho '{\"bound\":false}'\n", encoding="utf-8")
         agent.chmod(0o755)
-        self.bin = self.home / "fakebin"
-        self.bin.mkdir()
+        toolchain = self.home / ".wideband" / "toolchain"
+        version = toolchain / "versions" / "install-staging-test"
+        self.bin = version / "bin"
+        self.bin.mkdir(parents=True, mode=0o700)
+        for directory in (self.home / ".wideband", toolchain,
+                          toolchain / "versions", version, self.bin):
+            directory.chmod(0o700)
+        active = toolchain / "active"
+        active.write_text("install-staging-test\n", encoding="ascii")
+        active.chmod(0o600)
         self.loaded = self.home / "loaded"
         self.loaded.mkdir()
         self.log = self.home / "launchctl.log"
@@ -443,10 +453,18 @@ class InstallStagingTest(unittest.TestCase):
         )
         launchctl.chmod(0o755)
         for name, body in (("sw_vers", "echo 15.0\n"), ("tmux", "exit 0\n"),
-                           ("imsg", "exit 0\n")):
+                           ("imsg", "exit 0\n"),
+                           ("python3", f"exec {shlex.quote(sys.executable)} \"$@\"\n")):
             script = self.bin / name
             script.write_text("#!/bin/sh\n" + body, encoding="utf-8")
-            script.chmod(0o755)
+            script.chmod(0o700)
+        launchctl.chmod(0o700)
+        manifest = version / "manifest.sha256"
+        manifest.write_text("".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  bin/{path.name}\n"
+            for path in sorted(self.bin.iterdir())
+        ), encoding="ascii")
+        manifest.chmod(0o600)
         self.env = dict(os.environ, HOME=str(self.home),
                         PATH=str(self.bin) + ":" + os.environ.get("PATH", ""),
                         WB_TEST_LAUNCH_LOG=str(self.log), WB_TEST_LOADED=str(self.loaded))

@@ -35,6 +35,7 @@ GOAL_STATUS = Path(os.environ.get("FLEETDECK_FIRST_GOAL_STATUS_PATH", "~/.wideba
 NOTES_PATH = Path(os.environ.get("FLEETDECK_NOTES_PATH", "~/.wideband/fleetdeck/notes-beta.json")).expanduser()
 ACCESS_TOKEN_PATH = Path(os.environ.get(
     "FLEETDECK_ACCESS_TOKEN_PATH", "~/.wideband/fleetdeck/phone-access-token")).expanduser()
+TOOLCHAIN_RESOLVER = Path.home() / "srv" / "wb-setup" / "lib" / "toolchain-path"
 NOTE_MAX = 500
 BODY_MAX = 64 * 1024
 NOTES_FILE_MAX = 32 * 1024 * 1024  # 500 notes × 12k Unicode characters
@@ -121,16 +122,33 @@ def onboarding_config() -> dict | None:
             "first_project_url": phone_url(raw.get("first_project_url"))}
 
 
+def verified_tmux() -> str | None:
+    """Use this profile's validated tmux; an ambient executable is not proof."""
+    try:
+        result = subprocess.run([str(TOOLCHAIN_RESOLVER), "tmux"],
+                                capture_output=True, text=True, timeout=15)
+        path = Path(result.stdout.strip())
+        if (result.returncode or not path.is_absolute() or path.name != "tmux"
+                or not path.is_file()):
+            return None
+        return str(path)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
 def active_head_pane(session: str) -> str | None:
     """Find the active Claude pane, checking both tmux and its live process."""
     if session != "wb-head":
+        return None
+    tmux = verified_tmux()
+    if tmux is None:
         return None
     try:
         fields = ("#{session_name}", "#{window_active}", "#{pane_active}", "#{pane_id}",
                   "#{pane_current_command}", "#{pane_start_command}",
                   "#{pane_pid}", "#{pane_dead}")
         listed = subprocess.run(
-            ["tmux", "list-panes", "-s", "-t", session,
+            [tmux, "list-panes", "-s", "-t", session,
              "-F", "|".join(fields)],
             capture_output=True, text=True, timeout=3)
         if listed.returncode:
@@ -151,7 +169,7 @@ def active_head_pane(session: str) -> str | None:
                     or dead != "0"):
                 return None
             process = subprocess.run(
-                ["ps", "-p", pid, "-o", "args="],
+                ["/bin/ps", "-p", pid, "-o", "args="],
                 capture_output=True, text=True, timeout=3)
             argv = process.stdout.strip()
             if process.returncode or (argv != start and not argv.startswith(start + " ")):
@@ -167,8 +185,11 @@ def head_session_snapshot(session: str) -> str | None:
     pane = active_head_pane(session)
     if pane is None:
         return None
+    tmux = verified_tmux()
+    if tmux is None:
+        return None
     try:
-        captured = subprocess.run(["tmux", "capture-pane", "-p", "-t", pane,
+        captured = subprocess.run([tmux, "capture-pane", "-p", "-t", pane,
                                    "-S", "-120"], capture_output=True, text=True, timeout=3)
         if captured.returncode or active_head_pane(session) != pane:
             return None
@@ -224,8 +245,7 @@ def local_project_healthy(port: int) -> bool:
 def live_serve_url(port: int) -> str:
     """Resolve only an HTTPS Serve mapping to the exact local project port."""
     candidates = ("/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-                  str(Path.home() / "Applications/Tailscale.app/Contents/MacOS/Tailscale"),
-                  "/opt/homebrew/bin/tailscale")
+                  str(Path.home() / "Applications/Tailscale.app/Contents/MacOS/Tailscale"))
     binary = next((path for path in candidates if os.access(path, os.X_OK)), None)
     if not binary:
         return ""

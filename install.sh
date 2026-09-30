@@ -1,9 +1,9 @@
 #!/bin/bash
 # install.sh — reconcile this machine with this repo.
 #
-# Runs AFTER bootstrap.sh: Homebrew exists, jq exists, Claude Code is authed.
-# Everything here either needs one of those or needs to merge into a file the
-# operator may already own.
+# Runs AFTER bootstrap.sh or the validated private toolchain is activated.
+# Scoped installs use only that verified toolchain, while the legacy full
+# install still checks its historical dependencies.
 #
 # The repo is the source of truth. Rendered artifacts are COPIES, not symlinks:
 # macOS attributes TCC grants to a binary's resolved real path, and symlinking a
@@ -81,17 +81,37 @@ if [ "$PHONE_ONLY" != "1" ] || [ -n "${OPERATOR_PHONE:-}" ]; then
     || { echo "  ✗ REFUSING: OPERATOR_PHONE must be E.164 in $VARS"; exit 1; }
 fi
 
-miss=0
-required_bins="jq tmux git"
-[ "$IMESSAGE_ONLY" = "1" ] && required_bins="python3 tmux"
-[ "$PHONE_ONLY" = "1" ] && required_bins="python3 tmux"
-for b in $required_bins; do
-  command -v "$b" >/dev/null 2>&1 || { echo "  ✗ missing: $b   (brew install $b)"; miss=1; }
-done
-[ "$miss" = 0 ] || { echo; echo "install the missing tools, then re-run."; exit 1; }
-
 PREFIX="com.$ORG"
-PY="$(command -v python3 || echo /usr/bin/python3)"
+if [ "$IMESSAGE_ONLY" = "1" ] || [ "$PHONE_ONLY" = "1" ]; then
+  scoped_python="$("$HERE/lib/toolchain-path" python3)" \
+    && scoped_tmux="$("$HERE/lib/toolchain-path" tmux)" \
+    || { echo "  ✗ private or approved legacy Python/tmux toolchain is unavailable"; exit 1; }
+  scoped_bin="${scoped_python%/python3}"
+  if [ "$scoped_tmux" != "$scoped_bin/tmux" ]; then
+    echo "  ✗ scoped Python and tmux are from different installations"
+    exit 1
+  fi
+  if [ "$IMESSAGE_ONLY" = "1" ]; then
+    scoped_imsg="$("$HERE/lib/toolchain-path" imsg)" \
+      || { echo "  ✗ verified imsg is unavailable"; exit 1; }
+    if [ "$scoped_imsg" != "$scoped_bin/imsg" ]; then
+      echo "  ✗ imsg is from a different installation"
+      exit 1
+    fi
+  fi
+  PATH="$scoped_bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  export PATH
+  PY="$scoped_python"
+else
+  miss=0
+  for b in jq tmux git; do
+    command -v "$b" >/dev/null 2>&1 \
+      || { echo "  ✗ missing: $b   (brew install $b)"; miss=1; }
+  done
+  [ "$miss" = 0 ] \
+    || { echo; echo "install the missing tools, then re-run."; exit 1; }
+  PY="$(command -v python3 || echo /usr/bin/python3)"
+fi
 AGENT_EXECUTABLE="$HOME/Applications/Wideband Agent.app/Contents/MacOS/Wideband Agent"
 MARK="${MARK:-◈}"
 # Where the work repo lives — the root the `website` session opens in.
@@ -297,12 +317,14 @@ except (ValueError, AssertionError):
 }
 
 install_phone_portal() {
-  # This step follows the first successful text. Reconcile the real Fleetdeck
-  # board first, then its VM-local terminal map, graph and guarded tmux chat.
+  # Reconcile the real Fleetdeck board and its Mac-local terminal map, graph,
+  # and guarded tmux chat. A provider, Apple Account, and Tailscale can follow.
   local fd="$HOME/srv/fleetdeck" state="$HOME/.wideband/setup/state.json"
   local bundle="$HERE/vendor/fleetdeck" stage="" portal_port prefix base portal_values
   local upgrade_result="" upgrade_backup="" portal_upgraded=0
   local portal_pid_before="" portal_pid_after=""
+  local phone_python="" phone_node="" phone_npm="" phone_ttyd="" phone_tmux="" toolbin=""
+  local PATH="$PATH"
   # Bash functions see their caller's locals. Every failure after a managed
   # source upgrade comes through here so the old portal and manifest return.
   phone_portal_fail() {
@@ -360,12 +382,45 @@ PY
     echo "  ✗ the reviewed real Fleetdeck and Knowledge Graph bundles are required"
     return 1
   fi
-  if ! command -v brew >/dev/null 2>&1 \
-     || ! brew bundle --file="$HERE/Brewfile.phone" \
-          >"$HOME/.wideband/setup/phone-tools-install.log" 2>&1; then
-    echo "  ✗ phone workspace tools could not install; see phone-tools-install.log"
+  if [ -e "$HOME/.wideband/toolchain/active" ] \
+     || [ -L "$HOME/.wideband/toolchain/active" ]; then
+    # An activated private payload is authoritative. A damaged or incomplete
+    # one must never fall through to the other macOS profile's Homebrew.
+    phone_python="$(WB_TC_REQUIRE_PRIVATE=1 "$HERE/lib/toolchain-path" python3)" \
+      && phone_node="$(WB_TC_REQUIRE_PRIVATE=1 "$HERE/lib/toolchain-path" node)" \
+      && phone_npm="$(WB_TC_REQUIRE_PRIVATE=1 "$HERE/lib/toolchain-path" npm)" \
+      && phone_ttyd="$(WB_TC_REQUIRE_PRIVATE=1 "$HERE/lib/toolchain-path" ttyd)" \
+      && phone_tmux="$(WB_TC_REQUIRE_PRIVATE=1 "$HERE/lib/toolchain-path" tmux)" \
+      || { echo "  ✗ private phone toolchain is missing or failed integrity checks"; return 1; }
+  else
+    # Existing, explicitly marked 0.7.x installs may still own Homebrew.
+    # The resolver proves the legacy marker, ownership, and CLT first.
+    phone_python="$("$HERE/lib/toolchain-path" python3)" \
+      || { echo "  ✗ no verified phone toolchain is available"; return 1; }
+    if [ "$phone_python" != /opt/homebrew/bin/python3 ] \
+       || [ ! -x /opt/homebrew/bin/brew ] \
+       || ! /opt/homebrew/bin/brew bundle --file="$HERE/Brewfile.phone" \
+            >"$HOME/.wideband/setup/phone-tools-install.log" 2>&1; then
+      echo "  ✗ verified legacy Homebrew phone tools could not install; see phone-tools-install.log"
+      return 1
+    fi
+    phone_node="$("$HERE/lib/toolchain-path" node)" \
+      && phone_npm="$("$HERE/lib/toolchain-path" npm)" \
+      && phone_ttyd="$("$HERE/lib/toolchain-path" ttyd)" \
+      && phone_tmux="$("$HERE/lib/toolchain-path" tmux)" \
+      || { echo "  ✗ legacy phone tools did not pass verification"; return 1; }
+  fi
+  toolbin="${phone_python%/python3}"
+  if [ "$phone_node" != "$toolbin/node" ] \
+     || [ "$phone_npm" != "$toolbin/npm" ] \
+     || [ "$phone_ttyd" != "$toolbin/ttyd" ] \
+     || [ "$phone_tmux" != "$toolbin/tmux" ]; then
+    echo "  ✗ phone tools are from different installations"
     return 1
   fi
+  local PY="$phone_python"
+  PATH="$toolbin:/usr/bin:/bin:/usr/sbin:/sbin"
+  export PATH
 
   if [ -L "$fd" ]; then
     echo "  ✗ $fd is a symlink; left untouched"
@@ -557,7 +612,13 @@ PY
     phone_portal_fail "the real terminal network, Knowledge Graph, or tmux chat did not activate; see phone-stack-install.log"
     return 1
   fi
-  echo "  ✓ real Fleetdeck board, terminal network, Knowledge Graph and tmux chat are installed"
+  if grep -Fq 'Fleetdeck companion services are local-only on 127.0.0.1' \
+       "$HOME/.wideband/setup/phone-stack-install.log"; then
+    echo "  ✓ Fleetdeck board, map, Knowledge Graph and terminal are installed on this Mac"
+    echo "  ~ iPhone access and setup texts await private Tailscale Serve and messaging proof"
+  else
+    echo "  ✓ real Fleetdeck board, terminal network, Knowledge Graph and tmux chat are installed"
+  fi
 }
 
 # The packaged installer places this app before install.sh runs. Keep the

@@ -5,8 +5,7 @@
 	<key>Label</key>
 	<string>__PREFIX__.cost-watch</string>
 	<!-- Launch through the signed/ad-hoc-signed Wideband app so macOS presents
-	     one branded background item. Python remains absolute because launchd's
-	     PATH does not contain the Homebrew prefix. -->
+	     one branded background item. Python is a verified absolute path. -->
 	<key>ProgramArguments</key>
 	<array>
 		<string>__AGENT_EXECUTABLE__</string>
@@ -16,10 +15,9 @@
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<!-- launchd's default PATH contains none of the places brew puts things,
-		     and this loop shells out to imsg. -->
+		<!-- cost-watch resolves its imsg binary through Wideband's toolchain guard. -->
 		<key>PATH</key>
-		<string>__HOME__/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/bin:__HOME__/.local/bin</string>
 	</dict>
 	<key>StartCalendarInterval</key>
 	<dict>

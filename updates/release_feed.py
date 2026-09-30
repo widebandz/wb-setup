@@ -166,7 +166,7 @@ def build_feed(
             "version": release,
             "build_id": build_id,
             "published_at": published_at,
-            "minimum_macos": "13.0",
+            "minimum_macos": "14.0",
             "architecture": "arm64",
             "trust": trust,
             "requires_gatekeeper_exception": gatekeeper,

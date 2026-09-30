@@ -26,6 +26,7 @@
 #   a non-zero last exit is a broken loop that looks installed, which is the
 #   single most common silent failure in this build.
 set -uo pipefail
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
 
 VARS="$HOME/.sop-vars"
 if [ -f "$VARS" ]; then
@@ -34,6 +35,28 @@ if [ -f "$VARS" ]; then
 fi
 ORG="${ORG:-}"; GH_USER="${GH_USER:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/bin:$HOME/.local/bin"
+WB_TC_READY=0
+if [ -f "$HERE/lib/bootstrap-homebrew.sh" ]; then
+  # shellcheck source=lib/bootstrap-homebrew.sh
+  . "$HERE/lib/bootstrap-homebrew.sh"
+  if wb_tc_resolve; then
+    WB_TC_READY=1
+    export PATH="$WB_TOOLCHAIN_BIN:$PATH"
+  fi
+fi
+verified_tool() {
+  local tool="$1" path
+  [ "$WB_TC_READY" = 1 ] || return 1
+  if [ "$WB_TOOLCHAIN_KIND" = private ]; then
+    wb_tc_private_bin "$tool" || return 1
+    printf '%s\n' "$WB_TOOLCHAIN_PATH"
+  else
+    path="$WB_TOOLCHAIN_BIN/$tool"
+    [ -x "$path" ] || return 1
+    printf '%s\n' "$path"
+  fi
+}
 
 sec() { printf '\n\033[1m── %s %s\033[0m\n' "$1" "$(printf '%.0s─' $(seq 1 $((60 - ${#1}))))"; }
 kv()  { printf '  %-22s %s\n' "$1" "$2"; }
@@ -73,10 +96,12 @@ if [ -f "$VARS" ]; then
 else
   kv "~/.sop-vars" "MISSING — nothing downstream can render"
 fi
-kv "git user.name"  "$(git config --global user.name 2>/dev/null || echo -)"
-kv "git user.email" "$(git config --global user.email 2>/dev/null || echo -)"
-if command -v gh >/dev/null 2>&1; then
-  who="$(gh api user -q .login 2>/dev/null)"
+git_bin="$(verified_tool git 2>/dev/null)" || git_bin=""
+kv "git user.name"  "$([ -n "$git_bin" ] && "$git_bin" config --global user.name 2>/dev/null || echo -)"
+kv "git user.email" "$([ -n "$git_bin" ] && "$git_bin" config --global user.email 2>/dev/null || echo -)"
+gh_bin="$(verified_tool gh 2>/dev/null)" || gh_bin=""
+if [ -n "$gh_bin" ]; then
+  who="$("$gh_bin" api user -q .login 2>/dev/null)"
   if [ -z "$who" ]; then kv "gh auth" "NOT AUTHENTICATED"
   elif [ -n "$GH_USER" ] && [ "$who" != "$GH_USER" ]; then
     kv "gh auth" "$who  ← MISMATCH, \$GH_USER is $GH_USER"
@@ -87,8 +112,24 @@ fi
 
 # ── tools, by resolved real path ─────────────────────────────────────────────
 sec "tools (resolved real path)"
+kv "toolchain" "$([ "$WB_TC_READY" = 1 ] && printf '%s' "$WB_TOOLCHAIN_KIND" || printf 'unavailable')"
 for b in brew node npm git gh jq tmux python3 sqlite3 claude ttyd ffmpeg tm tm-standard; do
-  w="$(command -v "$b" 2>/dev/null || true)"
+  if [ "$b" = brew ] && [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+    printf '  %-14s %s\n' "$b" "not used (private toolchain)"
+    continue
+  fi
+  case "$b" in
+    brew)
+      if [ "${WB_TOOLCHAIN_KIND:-}" = legacy_homebrew ]; then
+        w="$WB_TOOLCHAIN_BIN/brew"
+      else
+        w=""
+      fi ;;
+    node|npm|git|gh|jq|tmux|python3|sqlite3|ttyd|ffmpeg)
+      w="$(verified_tool "$b" 2>/dev/null)" || w="" ;;
+    claude) w="$HOME/.local/bin/claude"; [ -x "$w" ] || w="" ;;
+    tm|tm-standard) w="$HOME/bin/$b"; [ -x "$w" ] || w="" ;;
+  esac
   if [ -z "$w" ]; then
     printf '  %-14s %s\n' "$b" "MISSING"
   else
@@ -183,9 +224,10 @@ fi
 
 # ── tmux ─────────────────────────────────────────────────────────────────────
 sec "tmux"
-if command -v tmux >/dev/null 2>&1 && tmux has-session 2>/dev/null; then
-  kv "live sessions" "$(tmux ls 2>/dev/null | wc -l | tr -d ' ')"
-  tmux ls 2>/dev/null | sed 's/^/      /'
+tmux_bin="$(verified_tool tmux 2>/dev/null)" || tmux_bin=""
+if [ -n "$tmux_bin" ] && "$tmux_bin" has-session 2>/dev/null; then
+  kv "live sessions" "$("$tmux_bin" ls 2>/dev/null | wc -l | tr -d ' ')"
+  "$tmux_bin" ls 2>/dev/null | sed 's/^/      /'
 else
   kv "server" "DOWN — no sessions"
 fi

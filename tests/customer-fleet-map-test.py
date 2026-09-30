@@ -119,6 +119,44 @@ class MapServerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MapServer(("127.0.0.1", 0), access_path=self.token_path,
                       board_url="https://example.com:8790", cache=Cache())
+        with self.assertRaises(ValueError):
+            MapServer(("127.0.0.1", 0), access_path=self.token_path,
+                      board_url="http://example.com:8790", cache=Cache())
+
+    def test_local_board_can_frame_a_truthful_zero_session_map(self):
+        empty = snapshot()
+        empty["nodes"] = empty["nodes"][:1]
+        empty["summary"]["live_sessions"] = 0
+
+        class EmptyCache:
+            def get(self):
+                return 200, validate_snapshot(empty) | {"status": "fresh"}
+
+        server = MapServer(("127.0.0.1", 0), access_path=self.token_path,
+                           board_url="http://wideband.localhost:8790", cache=EmptyCache())
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}/p/{TOKEN}"
+            with self.assertRaises(urllib.error.HTTPError) as denied:
+                urllib.request.urlopen(base + "/fleet-map", timeout=3)
+            self.assertEqual(denied.exception.code, 403)
+            denied.exception.close()
+            request = urllib.request.Request(
+                base + "/fleet-map", headers={"Host": f"wideband.localhost:{server.server_port}"})
+            with urllib.request.urlopen(request, timeout=3) as response:
+                self.assertIn("http://wideband.localhost:8790",
+                              response.headers["Content-Security-Policy"])
+            request = urllib.request.Request(
+                base + "/api/fleet-map", headers={"Host": f"wideband.localhost:{server.server_port}"})
+            with urllib.request.urlopen(request, timeout=3) as response:
+                data = json.load(response)
+            self.assertEqual(data["summary"]["live_sessions"], 0)
+            self.assertFalse(any(node["type"] == "session" for node in data["nodes"]))
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=2)
 
 
 class CollectorTests(unittest.TestCase):

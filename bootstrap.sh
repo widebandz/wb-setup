@@ -29,6 +29,10 @@
 # Idempotent. Safe to re-run.
 set -uo pipefail
 
+# Never resolve preflight tools from an inherited, possibly foreign Homebrew
+# prefix. The client's private toolchain is selected explicitly below.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin"
+
 REPO="widebandz/wb-setup"
 TARBALL="https://github.com/$REPO/archive/refs/heads/main.tar.gz"
 ROOT="${WB_SETUP_ROOT:-$HOME/srv/wb-setup}"
@@ -148,6 +152,11 @@ if [ "$DIAGNOSE_HOMEBREW" = 1 ]; then
   wb_hb_clt_probe
   wb_hb_prefix_probe /opt/homebrew
   wb_hb_print_report
+  wb_tc_private_probe || true
+  printf '    private tools   %s\n' "$WB_TOOLCHAIN_STATE"
+  if [ "$WB_TOOLCHAIN_STATE" = ready ]; then
+    printf '    active version  %s\n' "$WB_TOOLCHAIN_BUILD_ID"
+  fi
   if wb_hb_repair_available; then
     echo
     wb_hb_print_repair
@@ -162,32 +171,36 @@ bootstrap_status starting
 # Zero dependencies: no Node, no Homebrew, no Command Line Tools. Seconds.
 # This is the step that is conventionally put last and belongs first.
 
-step "1/6  Claude Code"
-bootstrap_status installing_agent
-if [ "$DO_CLAUDE" = "0" ]; then
-  say "  ~ skipped (--no-claude)"
-elif command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
-  say "  = already installed"
+if [ "$CLIENT_MODE" = "1" ]; then
+  step "1/6  AI provider"
+  say "  ~ install and sign-in follow the provider you choose in Wideband Setup"
 else
-  if { curl -fsSL https://claude.ai/install.sh 2>/tmp/wb-claude-install.log \
-       || { say "  ! could not reach claude.ai — the network may be blocking it"; false; }; } \
-       | bash >>/tmp/wb-claude-install.log 2>&1; then
-    say "  + ~/.local/bin/claude"
+  step "1/6  Claude Code"
+  bootstrap_status installing_agent
+  if [ "$DO_CLAUDE" = "0" ]; then
+    say "  ~ skipped (--no-claude)"
+  elif command -v claude >/dev/null 2>&1 || [ -x "$HOME/.local/bin/claude" ]; then
+    say "  = already installed"
   else
-    say "  ! install failed — see /tmp/wb-claude-install.log"
-    say "    Everything below still runs; authenticate later with: claude"
+    if { curl -fsSL https://claude.ai/install.sh 2>/tmp/wb-claude-install.log \
+         || { say "  ! could not reach claude.ai — the network may be blocking it"; false; }; } \
+         | bash >>/tmp/wb-claude-install.log 2>&1; then
+      say "  + ~/.local/bin/claude"
+    else
+      say "  ! install failed — see /tmp/wb-claude-install.log"
+      say "    Everything below still runs; authenticate later with: claude"
+    fi
   fi
-fi
 
-# `command not found: claude` is the single most reported failure, and it is
-# always this. Fix it in the file, not just this shell.
-if ! grep -qs '\.local/bin' "$HOME/.zshrc" 2>/dev/null; then
-  printf '\n# added by wb-setup bootstrap — Claude Code installs here\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"
-  say "  + ~/.local/bin on PATH (~/.zshrc)"
-else
-  say "  = ~/.local/bin already on PATH"
+  # `command not found: claude` is the single most reported operator failure.
+  if ! grep -qs '\.local/bin' "$HOME/.zshrc" 2>/dev/null; then
+    printf '\n# added by wb-setup bootstrap — Claude Code installs here\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.zshrc"
+    say "  + ~/.local/bin on PATH (~/.zshrc)"
+  else
+    say "  = ~/.local/bin already on PATH"
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
 fi
-export PATH="$HOME/.local/bin:$PATH"
 
 # ── 2. the repo ──────────────────────────────────────────────────────────────
 # Tarball, not clone: git does not exist yet. Fetch this small payload before
@@ -308,14 +321,43 @@ prepare_brew_log() {
 # leave the prefix in place while removing/deselecting CLT or changing the
 # ownership context. Inspect identity, prefix and Git separately before brew.
 
-step "3/6  Homebrew + Command Line Tools (background)"
+if [ "$CLIENT_MODE" = 1 ]; then
+  step "3/6  Wideband tools"
+else
+  step "3/6  Homebrew + Command Line Tools (background)"
+fi
 wb_hb_identity_probe
 wb_hb_clt_probe
 wb_hb_prefix_probe /opt/homebrew
 wb_hb_print_report
 
+# A packaged client uses the versioned private toolchain. Only a machine with
+# prior released package lineage may keep using its own healthy Homebrew. A
+# foreign prefix is never an install target or a source of executable paths.
+if [ "$CLIENT_MODE" = 1 ]; then
+  if wb_tc_resolve; then
+    if [ "$WB_TOOLCHAIN_KIND" = private ]; then
+      DO_BREW=0
+      say "  ✓ private Wideband toolchain $WB_TOOLCHAIN_BUILD_ID passed ownership and SHA-256 checks"
+    else
+      say "  ✓ prior Wideband package may use its own healthy Homebrew"
+    fi
+  else
+    bootstrap_status needs_independent_toolchain
+    say "  ✗ no verified private Wideband toolchain is active for this client"
+    say "    Homebrew at /opt/homebrew is not a substitute for a fresh client install."
+    say "    Reopen a Wideband Setup package that includes the private tool payload."
+    say "    Do not change ownership of another user's Homebrew prefix."
+    exit 1
+  fi
+fi
+
 if [ "$DO_BREW" = "0" ]; then
-  say "  ~ skipped (--no-brew)"
+  if [ "$CLIENT_MODE" = 1 ] && [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+    say "  = Homebrew not needed for the private client toolchain"
+  else
+    say "  ~ skipped (--no-brew)"
+  fi
 elif [ "$WB_HB_IDENTITY_SAFE" != 1 ]; then
   BREW_BLOCK_REASON="identity"
   bootstrap_status needs_attention
@@ -329,17 +371,30 @@ else
       if wb_hb_repair_available; then
         PREFIX_REPAIR_REQUIRED=1
       else
-        BREW_BLOCK_REASON="unsafe_prefix"
-        bootstrap_status needs_homebrew_ownership
-        say "  ✗ /opt/homebrew is not healthy, but the intended repair user is not proven."
-        say "    No chown command will be suggested. An operator must review the report above."
+        if [ "$WB_HB_PREFIX_OWNER" != "$WB_HB_USER" ]; then
+          BREW_BLOCK_REASON="foreign_homebrew"
+          bootstrap_status needs_independent_toolchain
+          say "  ✗ /opt/homebrew belongs to another user. Wideband will not use or change it."
+          say "    Use a Wideband Setup package with an independent private toolchain."
+        else
+          BREW_BLOCK_REASON="unsafe_prefix"
+          bootstrap_status needs_homebrew_ownership
+          say "  ✗ /opt/homebrew is not healthy; an operator must review the report above."
+        fi
         DO_BREW=0
       fi
       ;;
     *)
-      BREW_BLOCK_REASON="unsafe_prefix"
-      bootstrap_status needs_homebrew_ownership
-      say "  ✗ refusing an unrecognized or redirected /opt/homebrew target ($WB_HB_PREFIX_STATE)"
+      if [ "$WB_HB_PREFIX_OWNER" != "$WB_HB_USER" ] \
+         && [ "$WB_HB_PREFIX_OWNER" != missing ]; then
+        BREW_BLOCK_REASON="foreign_homebrew"
+        bootstrap_status needs_independent_toolchain
+        say "  ✗ /opt/homebrew belongs to another user. Wideband will not use or change it."
+      else
+        BREW_BLOCK_REASON="unsafe_prefix"
+        bootstrap_status needs_homebrew_ownership
+        say "  ✗ refusing an unrecognized or redirected /opt/homebrew target ($WB_HB_PREFIX_STATE)"
+      fi
       DO_BREW=0
       ;;
   esac
@@ -595,7 +650,7 @@ if [ -n "${CLIENT_NAME:-}" ] && ! valid_value CLIENT_NAME "$CLIENT_NAME"; then
 fi
 chmod 600 "$VARS" 2>/dev/null || say "  ! could not make $VARS private"
 
-if ! grep -qs 'sop-vars' "$HOME/.zshrc" 2>/dev/null; then
+if [ "$CLIENT_MODE" != "1" ] && ! grep -qs 'sop-vars' "$HOME/.zshrc" 2>/dev/null; then
   printf '\n# added by wb-setup bootstrap\n[ -f ~/.sop-vars ] && source ~/.sop-vars\n' >> "$HOME/.zshrc"
   say "  + sourced from ~/.zshrc"
 fi
@@ -614,6 +669,9 @@ place() {  # place SRC DEST [mode]
   cp "$src" "$dest" && chmod "$mode" "$dest" && say "  + $dest"
 }
 
+if [ "$CLIENT_MODE" = "1" ]; then
+  say "  ~ operator Claude files are deferred; local first-job setup can continue"
+else
 place "$ROOT/dotfiles/statusline-command.sh" "$HOME/.claude/statusline-command.sh" 755
 place "$ROOT/SOP.md"                          "$HOME/.claude/SOP.md"
 
@@ -634,6 +692,7 @@ elif [ -f "$ROOT/templates/global-claude.md.tmpl" ]; then
   sed -e "s|__ORG__|${ORG:-acme}|g" -e "s|__ROOT__|$ROOT|g" \
       "$ROOT/templates/global-claude.md.tmpl" > "$HOME/.claude/CLAUDE.md"
   say "  + ~/.claude/CLAUDE.md"
+fi
 fi
 
 # ── 6. the human queue ───────────────────────────────────────────────────────
@@ -737,7 +796,9 @@ fi
 # URL. Observed on a real client machine, 2026-09-10.
 #
 # By this point Homebrew exists, so there is a second route. Same tool.
-if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; then
+if [ "$CLIENT_MODE" != "1" ] \
+   && ! command -v claude >/dev/null 2>&1 \
+   && [ ! -x "$HOME/.local/bin/claude" ]; then
   if [ -n "$BREW_BIN" ]; then
     step "Claude Code — retry via Homebrew"
     say "  the direct installer did not succeed; trying the cask"
@@ -750,14 +811,21 @@ if ! command -v claude >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/claude" ]; th
     fi
   else
     step "Claude Code — not installed"
-    say "  No healthy Homebrew to fall back to. After resolving the preflight, either of:"
-    say "    curl -fsSL https://claude.ai/install.sh | bash"
-    say "    brew install --cask claude-code"
+    if [ "$CLIENT_MODE" = 1 ] && [ "${WB_TOOLCHAIN_KIND:-}" = private ]; then
+      say "  The direct provider installer did not complete. Check the network and retry"
+      say "  the provider sign-in step in Wideband Setup after core setup finishes."
+    else
+      say "  No healthy Homebrew to fall back to. After resolving the preflight, either of:"
+      say "    curl -fsSL https://claude.ai/install.sh | bash"
+      say "    brew install --cask claude-code"
+    fi
   fi
 fi
 
 # ── handoff ──────────────────────────────────────────────────────────────────
-if [ "$BREW_BLOCK_REASON" = "ownership" ] \
+if [ "$BREW_BLOCK_REASON" = "foreign_homebrew" ]; then
+  bootstrap_status needs_independent_toolchain
+elif [ "$BREW_BLOCK_REASON" = "ownership" ] \
   || [ "$BREW_BLOCK_REASON" = "unsafe_prefix" ]; then
   bootstrap_status needs_homebrew_ownership
 elif [ "$BREW_BLOCK_REASON" = "developer_tools" ]; then
@@ -770,10 +838,7 @@ elif [ -n "$BREW_BLOCK_REASON" ]; then
   bootstrap_status needs_attention
 elif [ "$CLIENT_MODE" = "1" ] \
    && [ -f "$VARS" ] \
-   && [ -x /opt/homebrew/bin/brew ] \
-   && [ -x /opt/homebrew/bin/python3 ] \
-   && [ -x /opt/homebrew/bin/tmux ] \
-   && [ -x /opt/homebrew/bin/imsg ]; then
+   && wb_tc_resolve; then
   bootstrap_status ready
 elif [ "$CLIENT_MODE" != "1" ] \
    && [ -f "$VARS" ] \
@@ -815,7 +880,14 @@ EOF
 # process in this Terminal; closing it stops the local server. The native app
 # already owns the guide, so its handoff must not open Safari.
 if [ "$DO_UI" = "1" ] && [ -t 1 ]; then
-  if command -v python3 >/dev/null 2>&1 || [ -x /opt/homebrew/bin/python3 ]; then
+  UI_PYTHON=""
+  if [ "$CLIENT_MODE" = 1 ]; then
+    if wb_tc_resolve python3; then UI_PYTHON="$WB_TOOLCHAIN_PATH"; fi
+  elif [ "$BREW_USABLE" = 1 ] && [ -x /opt/homebrew/bin/python3 ]; then
+    UI_PYTHON=/opt/homebrew/bin/python3
+  fi
+  if [ -n "$UI_PYTHON" ]; then
+    export WB_SETUP_PYTHON="$UI_PYTHON"
     step "Opening Wideband Setup"
     if [ "${WB_SETUP_EMBEDDED:-0}" = 1 ]; then
       exec bash "$ROOT/setup.sh" --no-open
