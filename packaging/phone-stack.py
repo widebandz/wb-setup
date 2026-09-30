@@ -125,10 +125,14 @@ def tailscale_name() -> str:
     status = json.loads(call(str(TS_APP), "status", "--json").stdout)
     if status.get("BackendState") != "Running":
         raise ValueError("Tailscale is not connected")
-    name = status.get("Self", {}).get("DNSName", "").rstrip(".")
-    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9.-]+\.ts\.net", name):
+    reported = status.get("Self", {}).get("DNSName", "")
+    if not isinstance(reported, str):
         raise ValueError("Tailscale did not report this Mac's MagicDNS name")
-    return name.lower()
+    name = reported.rstrip(".").lower()
+    if len(name) > 253 or not re.fullmatch(
+            r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}ts\.net", name):
+        raise ValueError("Tailscale did not report this Mac's MagicDNS name")
+    return name
 
 
 def ensure_serve(name: str, public_port: int, local_port: int, *,
@@ -391,6 +395,7 @@ def run() -> None:
     ensure_job(chat_label, plist(chat_label, [python, str(chat)], FD, {
         "PORT": "8783", "TTYD_PORT": "8784", "BIND": "127.0.0.1",
         "FLEETDECK_CUSTOMER_TERMINALS": "1",
+        "FLEETDECK_HOST": name,
     }))
     def chat_ready() -> bool:
         try:

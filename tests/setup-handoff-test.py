@@ -135,12 +135,13 @@ class SetupHandoffTest(unittest.TestCase):
         self.assertEqual(self.queue(), {"status": "queued", "queued": 2})
         self.assertEqual([path.name for path in sorted(self.files())], list(setup.HANDOFF_FILE_NAMES))
         first, second = [path.read_text(encoding="utf-8") for path in sorted(self.files())]
-        self.assertIn(f"Dashboard: https://{DNS}:{PORT}{PREFIX}/board", first)
+        self.assertIn(f"Phone home: https://{DNS}:{PORT}{PREFIX}/phone", first)
+        self.assertIn(f"Full Fleetdeck board: https://{DNS}:{PORT}{PREFIX}/board", first)
         for path in ("/agent", "/project", "/notes"):
             self.assertIn(f"https://{DNS}:{PORT}{PREFIX}{path}", first)
-        self.assertIn(f"Knowledge graph: https://{DNS}:{setup.GRAPH_TLS_PORT}{PREFIX}/graph", first)
-        self.assertIn(f"Live terminal network: https://{DNS}:{setup.FLEET_MAP_TLS_PORT}{PREFIX}/fleet-map", first)
-        self.assertIn(f"Interactive terminals: https://{DNS}:{setup.CHAT_TLS_PORT}{PREFIX}/chat", first)
+        self.assertIn(f"Knowledge graph: https://{DNS}:{setup.GRAPH_TLS_PORT}{PREFIX}/graph", second)
+        self.assertIn(f"Live terminal network: https://{DNS}:{setup.FLEET_MAP_TLS_PORT}{PREFIX}/fleet-map", second)
+        self.assertIn(f"Interactive terminals: https://{DNS}:{setup.CHAT_TLS_PORT}{PREFIX}/chat", second)
         self.assertIn("Notes (beta)", first)
         self.assertIn("https://apps.apple.com/us/app/tailscale/id1470499037", second)
         self.assertIn("https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908", second)
@@ -156,7 +157,7 @@ class SetupHandoffTest(unittest.TestCase):
         self.assertEqual(self.store.read()["handoff"]["version"], 1)
         self.assertEqual(self.store.read()["handoff"]["status"], "queued")
         self.assertEqual([path for _host, _port, path in self.page_calls],
-                         [PREFIX + "/board", PREFIX + "/fleet-map", PREFIX + "/graph", PREFIX + "/chat"]
+                         [PREFIX + "/phone", PREFIX + "/board", PREFIX + "/fleet-map", PREFIX + "/graph", PREFIX + "/chat"]
                          + [PREFIX + path for path in setup.HANDOFF_PAGE_MARKERS]
                          + [PREFIX + "/fleet-map", PREFIX + "/graph", PREFIX + "/chat"])
         self.assertTrue(all(host == DNS for host, _port, _path in self.page_calls))
@@ -408,7 +409,7 @@ class SetupHandoffTest(unittest.TestCase):
         for path in setup.HANDOFF_PAGE_MARKERS:
             self.broken_page = PREFIX + path
             self.page_calls.clear()
-            expected_error = "private Fleetdeck HTTPS" if path == "/board" else "every Fleetdeck phone page"
+            expected_error = "private Fleetdeck HTTPS" if path in ("/phone", "/board") else "every Fleetdeck phone page"
             with self.assertRaisesRegex(RuntimeError, expected_error):
                 self.queue()
             self.assertEqual(self.files(), [])
@@ -464,6 +465,8 @@ class SetupHandoffTest(unittest.TestCase):
             netmap = (f'<a id="netmap" href="https://{DNS}:{setup.FLEET_MAP_TLS_PORT}'
                       f'{PREFIX}/fleet-map"' if suffix == "/board" else "")
             responses[(PORT, suffix)] = Response("<html>" + " ".join(markers) + netmap + "</html>")
+        responses[(PORT, "/wb-logo-256.mp4")] = Response(
+            b"\x00\x00\x00\x20ftypisom" + bytes(32), mime="video/mp4")
         responses[(PORT, "/api/status")] = Response(json.dumps({"services": [{"id": "head"}]}), mime="application/json")
         responses[(PORT, PREFIX + "/api/notes")] = Response(status=303, location="/api/notes", set_cookie=cookie)
         responses[(PORT, "/api/notes")] = Response(json.dumps({"notes": []}), mime="application/json")
@@ -512,6 +515,10 @@ class SetupHandoffTest(unittest.TestCase):
         with mock.patch.object(setup.http.client, "HTTPSConnection", Connection):
             for suffix in setup.HANDOFF_PAGE_MARKERS:
                 self.assertTrue(setup.portal_handoff_page(DNS, PORT, PREFIX + suffix), suffix)
+            responses[(PORT, "/wb-logo-256.mp4")] = Response(status=404)
+            self.assertFalse(setup.portal_handoff_page(DNS, PORT, PREFIX + "/phone"))
+            responses[(PORT, "/wb-logo-256.mp4")] = Response(
+                b"\x00\x00\x00\x20ftypisom" + bytes(32), mime="video/mp4")
             for port, path in ((setup.FLEET_MAP_TLS_PORT, PREFIX + "/fleet-map"),
                                (setup.GRAPH_TLS_PORT, PREFIX + "/graph"),
                                (setup.CHAT_TLS_PORT, PREFIX + "/chat")):
@@ -562,9 +569,42 @@ class SetupHandoffTest(unittest.TestCase):
             self.assertFalse(setup.portal_handoff_page(DNS, PORT, "/p/" + "A" * 64 + "/board"))
 
     def test_handoff_rejects_links_without_exact_phone_capability(self):
-        for path in ("/board", PREFIX + "/phone", PREFIX + "/board/", "/p/" + "A" * 64 + "/board"):
+        for path in ("/phone", PREFIX + "/board", PREFIX + "/phone/", "/p/" + "A" * 64 + "/phone"):
             with self.assertRaisesRegex(RuntimeError, "valid private phone link"):
                 setup._handoff_messages(f"https://{DNS}:{PORT}{path}", "Trace", "Aurora", False)
+
+    def test_long_valid_names_and_tailnet_host_fit_two_texts_with_all_links(self):
+        agent_name, os_name = "A" * 60, "O" * 60
+        host = "client-" + "a" * 45 + ".example-tailnet.ts.net"
+        self.assertEqual(len(host), 75)
+        names = setup.clean_onboarding({
+            "agent_name": agent_name, "os_name": os_name,
+            "first_goal": "website", "agent_provider": "claude",
+        })
+        self.assertEqual(names["agent_name"], agent_name)
+        self.assertEqual(names["os_name"], os_name)
+        prefix = "/p/" + "a" * 64
+        origin = f"https://{host}:{PORT}"
+        first, second = setup._handoff_messages(
+            origin + prefix + "/phone", agent_name, os_name, True)
+        self.assertTrue(all(0 < len(body) <= 1500 for body in (first, second)))
+        for port, path in ((PORT, "/phone"), (PORT, "/board"),
+                           (PORT, "/agent"), (PORT, "/project"),
+                           (PORT, "/notes"), (setup.GRAPH_TLS_PORT, "/graph"),
+                           (setup.FLEET_MAP_TLS_PORT, "/fleet-map"),
+                           (setup.CHAT_TLS_PORT, "/chat")):
+            link = f"https://{host}:{port}{prefix}{path}"
+            self.assertEqual((first + second).count(link), 1, link)
+        self.assertIn("Add to Home Screen", first)
+        self.assertIn("Tailscale: https://apps.apple.com/", second)
+        self.assertIn("Termius SSH: https://apps.apple.com/", second)
+        self.assertIn("tmux ls", second)
+        self.assertIn("tm ls", second)
+        self.assertIn("claude -c", second)
+        with self.assertRaisesRegex(RuntimeError, "too long for the guarded text outbox"):
+            setup._handoff_messages(
+                f"https://{'w' * 230}.example-tailnet.ts.net:{PORT}{prefix}/phone",
+                agent_name, os_name, True)
 
     def test_tm_shortcut_only_when_installed(self):
         tm = self.home / "bin" / "tm"

@@ -6,15 +6,18 @@ from __future__ import annotations
 import json
 import hashlib
 import http.client
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import os
 from pathlib import Path
+import re
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from unittest import mock
@@ -106,8 +109,20 @@ class FleetdeckBundleTest(unittest.TestCase):
                     def do_POST(self):
                         if not self.authed():
                             return
-                    def reply(self, *args): pass
-                    def proxy(self): pass
+                    def reply(self, *args):
+                        self.send_header("Cache-Control", "no-store")
+                    def proxy(self):
+                        lines = []
+                        buf = b""
+                        rest = b""
+                        if True:
+                            if b" 101 " in lines[0]:
+                                self.wfile.write(buf)
+                            else:
+                                kept = [l for l in lines[1:]
+                                        if not re.match(rb"(?i)(connection|keep-alive)\\s*:", l)]
+                                self.wfile.write(b"\\r\\n".join([lines[0]] + kept + [b"Connection: close"])
+                                                 + b"\\r\\n\\r\\n" + rest)
                 if __name__ == "__main__":
                     if customer_mode():
                         print("refusing writable chat in customer mode; use portal /watch", flush=True)
@@ -120,6 +135,8 @@ class FleetdeckBundleTest(unittest.TestCase):
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(value, encoding="utf-8")
+        self.logo = b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isommp42"
+        (self.source / bundler.BRAND_VIDEO).write_bytes(self.logo)
         subprocess.run(["git", "-C", str(self.source), "add", "."], check=True)
 
     def run_bundle(self, *args: str, success: bool = True) -> subprocess.CompletedProcess[str]:
@@ -201,7 +218,9 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertFalse((target / name).exists(), name)
         manifest = json.loads((target / ".wideband-fleetdeck-bundle.json").read_text())
         self.assertEqual(manifest["source"], "customer-allowlisted-working-tree")
-        self.assertEqual(set(manifest["files"]), bundler.REQUIRED | {"icons/server.png"})
+        self.assertEqual(set(manifest["files"]),
+                         bundler.REQUIRED | {"icons/server.png", bundler.BRAND_VIDEO})
+        self.assertEqual((target / bundler.BRAND_VIDEO).read_bytes(), self.logo)
 
         installed = self.base / "installed-fleetdeck"
         shutil.copytree(target, installed)
@@ -247,6 +266,54 @@ class FleetdeckBundleTest(unittest.TestCase):
         self.assertIn("operator identifier", self.run_bundle(
             "build", str(self.source), str(target), success=False).stderr)
         self.assertFalse(target.exists())
+
+    def test_logo_is_exact_tracked_mp4_and_private_metadata_is_rejected(self) -> None:
+        logo = self.source / bundler.BRAND_VIDEO
+        target = self.base / "logo-bundle"
+        logo.unlink()
+        self.assertIn("logo video", self.run_bundle(
+            "build", str(self.source), str(target), success=False).stderr)
+        self.assertFalse(target.exists())
+
+        logo.write_bytes(b"\x00\x00\x00\x10bad!bad!bad!")
+        self.assertIn("not an MP4", self.run_bundle(
+            "build", str(self.source), str(target), success=False).stderr)
+        self.assertFalse(target.exists())
+
+        logo.write_bytes(self.logo + b"owner@internal.example")
+        self.assertIn("operator identifier", self.run_bundle(
+            "build", str(self.source), str(target), success=False).stderr)
+        self.assertFalse(target.exists())
+
+        logo.write_bytes(self.logo)
+        extra = self.source / "assets" / "wb-logo-other.mp4"
+        extra.write_bytes(self.logo)
+        subprocess.run(["git", "-C", str(self.source), "add", str(extra)], check=True)
+        self.run_bundle("build", str(self.source), str(target))
+        self.assertTrue((target / bundler.BRAND_VIDEO).is_file())
+        self.assertFalse((target / "assets/wb-logo-other.mp4").exists())
+
+    def test_logo_addition_upgrades_old_managed_bundle_and_restores_cleanly(self) -> None:
+        current, installed = self.old_and_installed()
+        (installed / bundler.BRAND_VIDEO).unlink()
+        manifest_path = installed / bundler.MANIFEST
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"].pop(bundler.BRAND_VIDEO)
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        (installed / "config.json").write_text('{"client":"keep"}\n')
+        self.run_bundle("verify-managed", str(installed))
+
+        result = self.run_bundle("upgrade", str(current), str(installed)).stdout.strip().splitlines()
+        self.assertEqual(result[0], "upgraded")
+        self.run_bundle("check-current", str(current), str(installed))
+        self.assertEqual((installed / bundler.BRAND_VIDEO).read_bytes(), self.logo)
+        self.assertEqual((installed / "config.json").read_text(), '{"client":"keep"}\n')
+
+        self.assertEqual(self.run_bundle("restore", str(current), str(installed), result[1]).stdout.strip(),
+                         "restored")
+        self.run_bundle("verify-managed", str(installed))
+        self.assertFalse((installed / bundler.BRAND_VIDEO).exists())
+        self.assertEqual((installed / "config.json").read_text(), '{"client":"keep"}\n')
 
     def test_portal_only_upgrade_preserves_client_data_and_keeps_backup(self) -> None:
         old, installed = self.old_and_installed()
@@ -425,6 +492,12 @@ class FleetdeckBundleTest(unittest.TestCase):
         bundle = self.base / "actual-board"
         self.run_bundle("build", str(source), str(bundle))
         self.run_bundle("verify", str(bundle))
+        logo = bundle / bundler.BRAND_VIDEO
+        self.assertEqual(logo.read_bytes(), (source / bundler.BRAND_VIDEO).read_bytes())
+        self.assertEqual(logo.stat().st_size, 234_847)
+        manifest_files = json.loads((bundle / bundler.MANIFEST).read_text())["files"]
+        self.assertEqual(manifest_files[bundler.BRAND_VIDEO],
+                         hashlib.sha256(logo.read_bytes()).hexdigest())
         portal_source = (bundle / "portal_server.py").read_text()
         chat_source = (bundle / "chat_server.py").read_text()
         self.assertIn("def scan():", portal_source)
@@ -454,6 +527,84 @@ class FleetdeckBundleTest(unittest.TestCase):
                "FLEETDECK_NOTES_PATH": str(self.base / "notes-beta.json"),
                "FLEETDECK_HOST": "client.tail000.ts.net",
                "FLEETDECK_MAP_ORIGIN": "https://client.tail000.ts.net:18970"}
+
+        # A real service scan enables only the two dynamic keys; an empty
+        # registry must never make them look live on the client's phone.
+        ready_code = "\n".join((
+            "import json, sys",
+            "sys.path.insert(0, sys.argv[1])",
+            "import portal_server as portal",
+            "portal.cached_scan = lambda: {'services': json.loads(sys.argv[2])}",
+            "portal.customer_map_ready = lambda: sys.argv[3] == 'ready'",
+            "handler = portal.CustomerHandler.__new__(portal.CustomerHandler)",
+            "handler._send = lambda _status, body, _mime, _extra=None: body",
+            "sys.stdout.write(handler._customer_phone())",
+        ))
+        ready_services = [
+            {"id": "chat", "linkable": True,
+             "url": "https://client.tail000.ts.net:8783/"},
+            {"id": "graph", "linkable": True,
+             "url": "https://client.tail000.ts.net:8792/"},
+        ]
+        def render_ready_phone(services: list[dict] | None = None,
+                               map_ready: bool = True) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.run([sys.executable, "-c", ready_code, str(bundle),
+                                   json.dumps(ready_services if services is None else services),
+                                   "ready" if map_ready else "down"],
+                                  env={**env, "HOME": str(self.base)},
+                                  capture_output=True, timeout=10)
+
+        ready_probe = render_ready_phone()
+        self.assertEqual(ready_probe.returncode, 0, ready_probe.stderr.decode())
+        self.assertIn(b'<a class="key" href="/app/chat">', ready_probe.stdout)
+        self.assertIn(b'<a class="key" href="/app/graph">', ready_probe.stdout)
+        self.assertNotIn(b"not ready", ready_probe.stdout)
+        self.assertIn(b'href="/agent"', ready_probe.stdout)
+        self.assertIn(b"AGENT SETUP", ready_probe.stdout)
+        self.assertNotIn(b'href="sms:', ready_probe.stdout)
+        for bad_url in ("", "https://other.tail000.ts.net:8783/",
+                        "https://client.tail000.ts.net:8784/"):
+            with self.subTest(chat_url=bad_url):
+                bad_services = [{**ready_services[0], "url": bad_url}, ready_services[1]]
+                probe = render_ready_phone(bad_services)
+                self.assertEqual(probe.returncode, 0, probe.stderr.decode())
+                self.assertNotIn(b'href="/app/chat"', probe.stdout)
+                self.assertIn(b'<a class="key" href="/app/graph">', probe.stdout)
+                self.assertIn(b"not ready", probe.stdout)
+        map_down = render_ready_phone(map_ready=False)
+        self.assertEqual(map_down.returncode, 0, map_down.stderr.decode())
+        self.assertNotIn(b'href="/app/netmap"', map_down.stdout)
+        self.assertIn(b'<a class="key" href="/app/chat">', map_down.stdout)
+
+        config_dir = self.base / ".wideband" / "imessage"
+        config_dir.mkdir(parents=True, mode=0o700)
+        message_config = config_dir / "config.json"
+        draft = {
+            "owner_phone": "+15551234567",
+            "session": "wb-head", "agent_command": "claude",
+            "binding": {"chat_id": 49, "chat_guid": "synthetic-bound-chat",
+                        "account_login": "agent@example.invalid"},
+        }
+        message_config.write_text(json.dumps(draft))
+        message_config.chmod(0o600)
+        draft_probe = render_ready_phone()
+        self.assertEqual(draft_probe.returncode, 0, draft_probe.stderr.decode())
+        self.assertIn(b'href="/agent"', draft_probe.stdout)
+        self.assertNotIn(b'href="sms:', draft_probe.stdout)
+
+        draft["binding"]["bound_at"] = "2026-09-29T12:00:00+00:00"
+        message_config.write_text(json.dumps(draft))
+        bound_probe = render_ready_phone()
+        self.assertEqual(bound_probe.returncode, 0, bound_probe.stderr.decode())
+        self.assertIn(b'href="sms:agent@example.invalid"', bound_probe.stdout)
+        self.assertIn(b"TEXT AGENT", bound_probe.stdout)
+        self.assertNotIn(b"studio@wideband.ai", bound_probe.stdout)
+
+        message_config.chmod(0o644)
+        unsafe_probe = render_ready_phone()
+        self.assertEqual(unsafe_probe.returncode, 0, unsafe_probe.stderr.decode())
+        self.assertIn(b'href="/agent"', unsafe_probe.stdout)
+        self.assertNotIn(b'href="sms:', unsafe_probe.stdout)
 
         # The private map listener's bare root rejects requests. It must not
         # appear as a tappable unregistered app, while a different listener
@@ -500,20 +651,39 @@ class FleetdeckBundleTest(unittest.TestCase):
                 self.fail("actual Fleetdeck portal did not start")
             self.assertEqual(request(port, "/board")[0], 403)
             status, headers, _ = request(port, "/p/" + "a" * 64 + "/phone")
-            self.assertEqual((status, headers.get("Location")), (303, "/board"))
+            self.assertEqual((status, headers.get("Location")), (303, "/phone"))
             self.assertIn("Secure; HttpOnly; SameSite=Strict", headers["Set-Cookie"])
             cookie = headers["Set-Cookie"].split(";", 1)[0]
             status, headers, page = request(port, "/board", cookie=cookie)
             self.assertEqual(status, 200)
             self.assertIn(b"api/status", page)
             self.assertIn(b"/p/" + b"a" * 64 + b"/fleet-map", page)
+            self.assertIn(b'<a id="simple" class="" href="/phone"', page)
             self.assertNotIn(b'<a id="cashflow"', page)
             self.assertIn(b'<a id="notes" href="/notes"', page)
             self.assertIn(b'Notes \xce\xb2', page)
             self.assertEqual(headers.get("Referrer-Policy"), "no-referrer")
             status, _, phone = request(port, "/phone", cookie=cookie)
             self.assertEqual(status, 200)
-            self.assertIn(b'<a id="notes" href="/notes"', phone)
+            self.assertIn(b'<div class="clock">', phone)
+            self.assertIn(b'<div class="grid">', phone)
+            self.assertIn(b'/wb-logo-256.mp4', phone)
+            self.assertIn(b'href="/board"', phone)
+            self.assertEqual(set(re.findall(rb'<a class="key" href="([^\"]+)"', phone)),
+                             {b"/board", b"/project", b"/notes"})
+            self.assertEqual(phone.count(b'<a class="key"')
+                             + phone.count(b'<span class="key"'), 6)
+            self.assertEqual(phone.count(b"not ready"), 3)
+            for label in (b"BOARD", b"PROJECT", b"TERMINALS", b"GRAPH", b"NETWORK",
+                          "NOTES β".encode()):
+                self.assertIn(b"<span>" + label + b"</span>", phone)
+            self.assertEqual(request(port, "/wb-logo-256.mp4")[0], 403)
+            status, video_headers, video = request(port, "/wb-logo-256.mp4", cookie=cookie)
+            self.assertEqual(status, 200)
+            self.assertEqual(video_headers.get("Content-Type"), "video/mp4")
+            self.assertEqual(len(video), 234_847)
+            self.assertEqual(video, logo.read_bytes())
+            self.assertEqual(request(port, "/assets/wb-logo-256.mp4", cookie=cookie)[0], 404)
             status, _, api = request(port, "/api/status", cookie=cookie)
             self.assertEqual(status, 200)
             services = json.loads(api)["services"]
@@ -524,10 +694,12 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertNotIn(b"Your starter map", graph)
             status, _, manifest = request(port, "/manifest.webmanifest", cookie=cookie)
             self.assertEqual(status, 200)
-            self.assertEqual(json.loads(manifest)["start_url"], "/p/" + "a" * 64 + "/board")
+            self.assertEqual(json.loads(manifest)["start_url"], "/p/" + "a" * 64 + "/phone")
             self.assertEqual(request(port, "/api/agent", cookie=cookie,
                                      method="POST", body=b"{}")[0], 404)
             self.assertEqual(request(port, "/p/" + "b" * 64 + "/board")[0], 403)
+            status, headers, _ = request(port, "/p/" + "a" * 64 + "/board")
+            self.assertEqual((status, headers.get("Location")), (303, "/board"))
             status, _, notes_page = request(port, "/notes", cookie=cookie)
             self.assertEqual(status, 200)
             self.assertIn(b'Notes \xce\xb2', notes_page)
@@ -554,6 +726,44 @@ class FleetdeckBundleTest(unittest.TestCase):
                                   env={**env, "BIND": "127.0.0.1"},
                                   capture_output=True, timeout=5)
         self.assertEqual(disabled.returncode, 78)
+        missing_host_env = {**env, "BIND": "127.0.0.1",
+                            "FLEETDECK_CUSTOMER_TERMINALS": "1"}
+        missing_host_env.pop("FLEETDECK_HOST")
+        missing_host = subprocess.run([sys.executable, str(bundle / "chat_server.py")],
+                                      env=missing_host_env, capture_output=True, timeout=5)
+        self.assertEqual(missing_host.returncode, 78)
+        unsafe_host = subprocess.run([sys.executable, str(bundle / "chat_server.py")],
+                                     env={**missing_host_env, "FLEETDECK_HOST":
+                                          "client.tail000.ts.net.evil.invalid"},
+                                     capture_output=True, timeout=5)
+        self.assertEqual(unsafe_host.returncode, 78)
+
+        class TtydFixture(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if self.path == "/t/ws":
+                    self.send_response(101)
+                    self.send_header("Connection", "Upgrade")
+                    self.send_header("Upgrade", "websocket")
+                    self.send_header("X-Frame-Options", "DENY")
+                    self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+                    self.end_headers()
+                    self.close_connection = True
+                    return
+                payload = b"private ttyd fixture"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("X-Frame-Options", "DENY")
+                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, _format: str, *args: object) -> None:
+                pass
+
+        ttyd = ThreadingHTTPServer(("127.0.0.1", 0), TtydFixture)
+        ttyd_thread = threading.Thread(target=ttyd.serve_forever, daemon=True)
+        ttyd_thread.start()
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             chat_port = listener.getsockname()[1]
@@ -561,7 +771,8 @@ class FleetdeckBundleTest(unittest.TestCase):
                 "from http.server import ThreadingHTTPServer; import chat_server; "
                 "ThreadingHTTPServer(('127.0.0.1', int(sys.argv[2])), chat_server.H).serve_forever()")
         chat = subprocess.Popen([sys.executable, "-c", code, str(bundle), str(chat_port)],
-                                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                                env={**env, "TTYD_PORT": str(ttyd.server_port)},
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             for _ in range(50):
                 try:
@@ -588,7 +799,32 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertEqual((status, headers.get("Location")), (303, "/"))
             chat_cookie = headers["Set-Cookie"].split(";", 1)[0]
             self.assertEqual(chat_cookie, cookie)
-            self.assertEqual(request(chat_port, "/", cookie=chat_cookie)[0], 200)
+            status, headers, _ = request(chat_port, "/", cookie=chat_cookie)
+            self.assertEqual(status, 200)
+            self.assertEqual(headers.get("Content-Security-Policy"),
+                             "frame-ancestors 'self' https://client.tail000.ts.net:8790")
+            status, headers, body = request(chat_port, "/t/", cookie=chat_cookie)
+            self.assertEqual((status, body), (200, b"private ttyd fixture"))
+            self.assertEqual(headers.get("Content-Security-Policy"),
+                             "frame-ancestors 'self' https://client.tail000.ts.net:8790")
+            self.assertNotIn("X-Frame-Options", headers)
+            with socket.create_connection(("127.0.0.1", chat_port), timeout=5) as raw:
+                raw.sendall(("GET /t/ws HTTP/1.1\r\n"
+                             f"Host: 127.0.0.1:{chat_port}\r\n"
+                             f"Cookie: {chat_cookie}\r\n"
+                             "Connection: Upgrade\r\n"
+                             "Upgrade: websocket\r\n\r\n").encode("ascii"))
+                response_head = bytearray()
+                while b"\r\n\r\n" not in response_head:
+                    chunk = raw.recv(4096)
+                    if not chunk:
+                        break
+                    response_head.extend(chunk)
+            self.assertIn(b"HTTP/1.0 101", response_head)
+            self.assertIn(b"Connection: Upgrade", response_head)
+            self.assertIn(b"Content-Security-Policy: frame-ancestors 'self' "
+                          b"https://client.tail000.ts.net:8790", response_head)
+            self.assertNotIn(b"X-Frame-Options", response_head)
             self.assertEqual(request(chat_port, "/api/send", cookie=chat_cookie,
                                      method="POST", body=b"{}",
                                      extra={"Origin": "https://other.tail000.ts.net:8783"})[0], 403)
@@ -600,6 +836,9 @@ class FleetdeckBundleTest(unittest.TestCase):
             chat.wait(timeout=5)
             if chat.stderr:
                 chat.stderr.close()
+            ttyd.shutdown()
+            ttyd.server_close()
+            ttyd_thread.join(timeout=5)
 
     def test_actual_board_upgrade_adds_files_without_changing_client_data(self) -> None:
         source = Path(os.environ.get("FLEETDECK_TEST_SOURCE", ROOT.parent / "fleetdeck"))

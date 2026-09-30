@@ -67,7 +67,12 @@ HANDOFF_FILE_NAMES = (
 HANDOFF_OUTBOX_STATES = ("pending", "processing", "sent", "review", "rejected")
 HANDOFF_PROCESSING_STALE_SECONDS = 90  # imsg's 60-second timeout plus margin
 HANDOFF_PAGE_MARKERS = {
-    "/board": (" // portal</title>", '<main id="app">'),
+    "/phone": ('<div class="clock">', '<div class="grid">',
+               '<video src="/wb-logo-256.mp4"', 'href="/app/chat"',
+               'href="/app/graph"', 'href="/app/netmap"',
+               'href="/notes"', 'href="/board"'),
+    "/board": (" // portal</title>", '<main id="app">',
+               'id="simple" class="" href="/phone"'),
     "/agent": ("Talk in Messages", "HEAD AGENT"),
     "/project": ("<title>First project // Fleetdeck</title>", "First project"),
     "/notes": (" // notes</title>", "Notes β"),
@@ -80,9 +85,9 @@ GRAPH_LOCAL_PORT = 4181
 CHAT_TLS_PORT = 8783
 CHAT_LOCAL_PORT = 8783
 PHONE_TOKEN_PATTERN = re.compile(r"[0-9a-f]{64}")
-PHONE_LINK_PATH_PATTERN = re.compile(r"(/p/[0-9a-f]{64})/board")
+PHONE_LINK_PATH_PATTERN = re.compile(r"(/p/[0-9a-f]{64})/phone")
 PHONE_ROUTE_PATTERN = re.compile(
-    r"/p/([0-9a-f]{64})(/(?:board|agent|project|notes|api/status|api/notes|fleet-map|api/fleet-map|graph|api/stats|api/graph|chat))"
+    r"/p/([0-9a-f]{64})(/(?:phone|board|agent|project|notes|api/status|api/notes|fleet-map|api/fleet-map|graph|api/stats|api/graph|chat))"
 )
 BIND_SUCCESS_OUTPUT = {
     "owner chat bound and first message queued; run installer to activate services",
@@ -1201,6 +1206,13 @@ def portal_handoff_page(host: str, port: int, path: str) -> bool:
                 if suffix == "/board":
                     markers += (f'<a id="netmap" href="https://{host}:{FLEET_MAP_TLS_PORT}'
                                 f'/p/{token}/fleet-map"',)
+                elif suffix == "/phone":
+                    video_status, video_mime, video_body, _location, _header = _handoff_https_get(
+                        host, port, "/wb-logo-256.mp4", "video/mp4", cookie=cookie,
+                        limit=512 * 1024)
+                    if (video_status != 200 or video_mime != "video/mp4"
+                            or len(video_body) < 32 or video_body[4:8] != b"ftyp"):
+                        return False
             elif suffix == "/chat" and port == CHAT_TLS_PORT:
                 cookie = _handoff_bootstrap(host, port, token, suffix, "/")
                 if cookie is None:
@@ -1421,8 +1433,10 @@ def phone_portal_link(
             continue
         if not probe("https", dns_name, tls_port):
             return waiting("Tailscale Serve is mapped, but its HTTPS health check failed. Check Tailscale sign-in and HTTPS certificates.")
+        if not surface_probe(dns_name, tls_port, f"/p/{token}/phone"):
+            return attention("Fleetdeck's private phone home is not answering with this access link. Repair the phone view.")
         if not surface_probe(dns_name, tls_port, f"/p/{token}/board"):
-            return attention("Fleetdeck's private phone page is not answering with this access link. Repair the phone view.")
+            return attention("Fleetdeck's private board is not answering with this access link. Repair the phone view.")
         if not _private_handoff_serve_routes(home, runner, dns_name):
             return waiting("The VM's private map, graph, and terminal HTTPS routes are not ready yet.")
         prefix = f"/p/{token}"
@@ -1439,8 +1453,8 @@ def phone_portal_link(
         suffix = "" if tls_port == 443 else f":{tls_port}"
         return {
             "status": "ready",
-            "url": f"https://{dns_name}{suffix}/p/{token}/board",
-            "detail": "Fleetdeck's HTTPS route answered on this Mac. Open it on your phone to confirm phone reachability, then add it to the home screen.",
+            "url": f"https://{dns_name}{suffix}/p/{token}/phone",
+            "detail": "Fleetdeck's private phone home and board answered on this Mac. Open the phone home on your iPhone, then add it to the Home Screen.",
         }
     return waiting("Tailscale Serve has no HTTPS route to this Fleetdeck portal. Set up Serve, then check again.")
 
@@ -1469,17 +1483,19 @@ def _handoff_messages(phone_url: str, agent_name: str, os_name: str, tm_shortcut
     dashboard = (
         f"{agent_name} is ready on {os_name}. Save your private Fleetdeck links; "
         "connect Tailscale on your iPhone before opening them.\n"
-        f"Dashboard: {phone_url}\n"
+        f"Phone home: {phone_url}\n"
+        f"Full Fleetdeck board: {origin}{prefix}/board\n"
         f"Agent: {origin}{prefix}/agent\n"
         f"Project: {origin}{prefix}/project\n"
-        f"Knowledge graph: {graph_url}\n"
-        f"Live terminal network: {map_url}\n"
-        f"Interactive terminals: {chat_url}\n"
         f"Notes (beta): {origin}{prefix}/notes\n"
-        "Open the dashboard in Safari, then Share > Add to Home Screen. Pin this chat for the links."
+        "Open Phone home in Safari, then Share > Add to Home Screen."
     )
     shortcut = " tm ls is a shortcut after the full Wideband tools are installed." if tm_shortcut else ""
     commands = (
+        "More Fleetdeck links:\n"
+        f"Knowledge graph: {graph_url}\n"
+        f"Live terminal network: {map_url}\n"
+        f"Interactive terminals: {chat_url}\n"
         "iPhone apps:\n"
         "Tailscale: https://apps.apple.com/us/app/tailscale/id1470499037\n"
         "Termius SSH: https://apps.apple.com/us/app/termius-modern-ssh-client/id549039908\n"
@@ -1487,7 +1503,7 @@ def _handoff_messages(phone_url: str, agent_name: str, os_name: str, tm_shortcut
         f"In its terminal, tmux ls lists sessions; tmux attach -t wb-head joins {agent_name}."
         f"{shortcut}\n"
         "In a separate Mac shell: claude starts a session; claude -c continues the latest one. "
-        "Inside Claude, /help shows commands."
+        "Inside Claude, /help shows commands. Pin this chat for your links."
     )
     if any(len(message) > 1500 for message in (dashboard, commands)):
         raise RuntimeError("the setup handoff is too long for the guarded text outbox")
@@ -1737,7 +1753,7 @@ def queue_setup_handoff(
 
     parsed_link = urllib.parse.urlsplit(link["url"])
     host, port = parsed_link.hostname, parsed_link.port or 443
-    prefix = parsed_link.path.removesuffix("/board")
+    prefix = parsed_link.path.removesuffix("/phone")
     if not host or any(not surface_probe(host, port, prefix + path) for path in HANDOFF_PAGE_MARKERS):
         raise RuntimeError("verify every Fleetdeck phone page over private HTTPS before the setup handoff")
     if not _private_handoff_serve_routes(home, runner, host):

@@ -42,6 +42,8 @@ SOURCE_FILES = LEGACY_SOURCE_FILES | {
 GENERATED_FILES = LEGACY_GENERATED_FILES | {"chat_server.py", "customer_access.py"}
 REQUIRED = SOURCE_FILES | GENERATED_FILES
 UPGRADE_FILES = GENERATED_FILES | {"glyphs.json", "make-icons.py", "assets/icon-180.png"}
+BRAND_VIDEO = "assets/wb-logo-256.mp4"
+BRAND_VIDEO_MAX_BYTES = 512_000
 PORTAL_NAME = "portal_server.py"
 CHAT_NAME = "chat_server.py"
 AUTH_ADAPTER_SOURCE = Path(__file__).with_name("fleetdeck-customer-auth.pyinc")
@@ -60,11 +62,22 @@ NOTES_AGE_PILOT = (" function ago(ts){\n"
 
 
 def optional_assets(paths: set[str]) -> set[str]:
-    """Only public glyph and icon PNGs used by the real Fleetdeck UI."""
-    return {name for name in paths if (
+    """Only reviewed public art, including the one fixed Wideband video mark."""
+    images = {name for name in paths if (
         (name.startswith("icons/") and name.count("/") == 1)
         or (name.startswith("assets/glyphs/") and name.count("/") == 2)
     ) and name.endswith(".png")}
+    return images | ({BRAND_VIDEO} if BRAND_VIDEO in paths else set())
+
+
+def check_brand_video(path: Path) -> None:
+    """Keep a tracked, small MP4 at the one reviewed public asset path."""
+    if not regular_file(path) or not 12 <= path.stat().st_size <= BRAND_VIDEO_MAX_BYTES:
+        raise ValueError("Wideband logo video is missing, unsafe, or too large")
+    with path.open("rb") as stream:
+        header = stream.read(12)
+    if header[4:8] != b"ftyp" or int.from_bytes(header[:4], "big") < 12:
+        raise ValueError("Wideband logo video is not an MP4")
 
 
 def replace_assignment(source: str, name: str, expression: str) -> str:
@@ -175,7 +188,22 @@ def customer_chat(source: str) -> str:
     source = source.replace(query_branch, token_branch, 1)
     source = source.replace("import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat",
                             "import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat\nimport hmac\nimport customer_access", 1)
-    origin_guard = '''def customer_write_origin(headers):
+    origin_guard = '''def customer_board_origin():
+    """Trust only the installed tailnet host, never an incoming Host header."""
+    host = os.environ.get("FLEETDECK_HOST", "")
+    if len(host) > 253 or not re.fullmatch(
+            r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.){2,}ts\\.net", host):
+        return ""
+    return f"https://{host}:8790"
+
+
+CUSTOMER_BOARD_ORIGIN = customer_board_origin()
+if not CUSTOMER_BOARD_ORIGIN:
+    raise SystemExit(78)
+CUSTOMER_FRAME_POLICY = "frame-ancestors 'self' " + CUSTOMER_BOARD_ORIGIN
+
+
+def customer_write_origin(headers):
     """Only this origin may drive a customer tmux terminal."""
     host = headers.get("Host", "")
     if not re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]{1,5})?", host):
@@ -216,16 +244,47 @@ def customer_chat(source: str) -> str:
     guard = ('    if customer_mode():\n'
              '        print("refusing writable chat in customer mode; use portal /watch", flush=True)\n'
              '        raise SystemExit(78)\n')
-    replacement = ('    if os.environ.get("FLEETDECK_CUSTOMER_TERMINALS") != "1" or BIND != "127.0.0.1":\n'
-                   '        print("customer terminals require explicit opt-in and loopback bind", flush=True)\n'
+    replacement = ('    if (os.environ.get("FLEETDECK_CUSTOMER_TERMINALS") != "1"\n'
+                   '            or BIND != "127.0.0.1" or not CUSTOMER_BOARD_ORIGIN):\n'
+                   '        print("customer terminals require opt-in, loopback, and a validated board host", flush=True)\n'
                    '        raise SystemExit(78)\n')
     if source.count(guard) != 1:
         raise ValueError("Fleetdeck chat startup guard changed")
     source = source.replace(guard, replacement, 1)
-    source = source.replace('        self.send_header("Cache-Control", "no-store")\n',
-                            '        self.send_header("Cache-Control", "no-store")\n'
+    reply_cache_header = '        self.send_header("Cache-Control", "no-store")\n'
+    if source.count(reply_cache_header) != 1:
+        raise ValueError("Fleetdeck chat response headers changed")
+    source = source.replace(reply_cache_header,
+                            reply_cache_header +
                             '        self.send_header("Referrer-Policy", "no-referrer")\n'
-                            '        self.send_header("X-Content-Type-Options", "nosniff")\n', 1)
+                            '        self.send_header("X-Content-Type-Options", "nosniff")\n'
+                            '        self.send_header("Content-Security-Policy", CUSTOMER_FRAME_POLICY)\n', 1)
+    proxy_head = r'''            if b" 101 " in lines[0]:
+                self.wfile.write(buf)
+            else:
+                kept = [l for l in lines[1:]
+                        if not re.match(rb"(?i)(connection|keep-alive)\s*:", l)]
+                self.wfile.write(b"\r\n".join([lines[0]] + kept + [b"Connection: close"])
+                                 + b"\r\n\r\n" + rest)
+'''
+    proxy_hardened = r'''            # The browser may frame ttyd only from this exact board origin.
+            # Replace upstream CSP/XFO with one exact policy for this owner UI.
+            kept = [line for line in lines[1:]
+                    if not re.match(rb"(?i)(content-security-policy|x-frame-options)\s*:", line)]
+            frame_policy = b"Content-Security-Policy: " + CUSTOMER_FRAME_POLICY.encode("ascii")
+            if b" 101 " in lines[0]:
+                self.wfile.write(b"\r\n".join([lines[0]] + kept + [frame_policy])
+                                 + b"\r\n\r\n" + rest)
+            else:
+                kept = [line for line in kept
+                        if not re.match(rb"(?i)(connection|keep-alive)\s*:", line)]
+                self.wfile.write(b"\r\n".join([lines[0]] + kept
+                                           + [frame_policy, b"Connection: close"])
+                                 + b"\r\n\r\n" + rest)
+'''
+    if source.count(proxy_head) != 1:
+        raise ValueError("Fleetdeck ttyd response proxy changed")
+    source = source.replace(proxy_head, proxy_hardened, 1)
     compile(source, CHAT_NAME, "exec")
     return source
 
@@ -276,6 +335,8 @@ def check_bundle(root: Path, hashes: dict[str, str]) -> None:
         if not regular_file(root / name):
             raise ValueError(f"missing bundled Fleetdeck customer file: {name}")
     check_source(root, legacy=legacy)
+    if BRAND_VIDEO in hashes:
+        check_brand_video(root / BRAND_VIDEO)
     portal = (root / "portal_server.py").read_text(encoding="utf-8")
     # The first customer portal used `route` for the health request path.
     # Accept that verified release so it can upgrade to the current portal.
@@ -320,6 +381,8 @@ def build(source: Path, target: Path) -> None:
     ).split(b"\0")
     paths = [os.fsdecode(name) for name in names if name]
     tracked = set(paths)
+    if BRAND_VIDEO not in tracked or not regular_file(source / BRAND_VIDEO):
+        raise ValueError("reviewed Wideband logo video is missing or not tracked")
     if not SOURCE_FILES.issubset(tracked | {PORTAL_NAME, CHAT_NAME}):
         raise ValueError("required Fleetdeck customer files are not tracked")
     if not {PORTAL_NAME, CHAT_NAME}.issubset(tracked):
@@ -328,6 +391,7 @@ def build(source: Path, target: Path) -> None:
         if not safe_name(name) or not regular_file(source / name):
             raise ValueError(f"unsafe or missing tracked Fleetdeck file: {name!r}")
     check_source(source)
+    check_brand_video(source / BRAND_VIDEO)
     for item in (source / PORTAL_NAME, source / CHAT_NAME, AUTH_ADAPTER_SOURCE, ACCESS_SOURCE):
         if not regular_file(item):
             raise ValueError(f"reviewed Fleetdeck source is missing: {item.name}")

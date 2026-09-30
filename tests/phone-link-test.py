@@ -58,6 +58,7 @@ class PhoneLinkTest(unittest.TestCase):
         self.dns = DNS
         self.probe_calls = []
         self.surface_calls = []
+        self.broken_surface_path = None
         self.api_calls = []
         self.https_healthy = True
         self.surface_healthy = True
@@ -80,7 +81,7 @@ class PhoneLinkTest(unittest.TestCase):
 
     def surface_probe(self, host, port, path):
         self.surface_calls.append((host, port, path))
-        return self.surface_healthy
+        return self.surface_healthy and path != self.broken_surface_path
 
     def api_probe(self, host, port, path):
         self.api_calls.append((host, port, path))
@@ -95,9 +96,10 @@ class PhoneLinkTest(unittest.TestCase):
     def test_ready_requires_local_and_https_health(self):
         result = self.inspect()
         self.assertEqual(result["status"], "ready")
-        self.assertEqual(result["url"], f"https://{DNS}:{PORT}/p/{TOKEN}/board")
+        self.assertEqual(result["url"], f"https://{DNS}:{PORT}/p/{TOKEN}/phone")
         self.assertEqual(self.probe_calls, [("http", "127.0.0.1", PORT), ("https", DNS, PORT)])
         self.assertEqual(self.surface_calls, [
+            (DNS, PORT, f"/p/{TOKEN}/phone"),
             (DNS, PORT, f"/p/{TOKEN}/board"),
             (DNS, setup.FLEET_MAP_TLS_PORT, f"/p/{TOKEN}/fleet-map"),
             (DNS, setup.GRAPH_TLS_PORT, f"/p/{TOKEN}/graph"),
@@ -112,7 +114,17 @@ class PhoneLinkTest(unittest.TestCase):
         result = self.inspect()
         self.assertEqual(result["status"], "needs_attention")
         self.assertNotIn("url", result)
-        self.assertEqual(self.surface_calls, [(DNS, PORT, f"/p/{TOKEN}/board")])
+        self.assertEqual(self.surface_calls, [(DNS, PORT, f"/p/{TOKEN}/phone")])
+
+    def test_board_must_work_even_when_phone_home_answers(self):
+        self.broken_surface_path = f"/p/{TOKEN}/board"
+        result = self.inspect()
+        self.assertEqual(result["status"], "needs_attention")
+        self.assertNotIn("url", result)
+        self.assertEqual(self.surface_calls, [
+            (DNS, PORT, f"/p/{TOKEN}/phone"),
+            (DNS, PORT, f"/p/{TOKEN}/board"),
+        ])
 
     def test_incomplete_live_stack_never_exposes_link(self):
         self.serve["Web"].pop(f"{DNS}:{setup.FLEET_MAP_TLS_PORT}")

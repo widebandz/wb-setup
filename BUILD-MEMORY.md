@@ -295,10 +295,12 @@ child `:8784` bind loopback only and are hidden as internal plumbing on the
 board. The map reads the client's actual tmux and service state; the graph
 builds a private SQLite index of client-local files and shows its build
 timestamp. Rebuild the graph after meaningful project or service changes; it
-is a knowledge index, not a live tmux feed. The full Fleetdeck board and
-clock-and-key phone home retain the host layout and real service scan rather
-than serving the earlier fixed five-card customer page. Notes beta is visible
-from the real board and opens its existing private route.
+is a knowledge index, not a live tmux feed. The published 0.7.0 customer
+adapter serves the full Fleetdeck board at `/board` and `/phone`; it does not
+expose upstream Fleetdeck's clock-and-key simple screen or its four-square
+switch. The board retains the real service scan rather than serving the
+earlier fixed five-card customer page. Notes beta is visible from the real
+board and opens its existing private route.
 
 The phone board opens through a persistent 256-bit owner capability at
 `/p/<token>/board`; it establishes a secure, HttpOnly, same-site session
@@ -320,6 +322,53 @@ proof; the owner must still open the new board on an iPhone and launch its Home
 Screen icon. Owner-only setup texts are queued through the guarded iMessage
 outbox only after the real phone reply and this phone-board confirmation.
 The first-goal runner does not create a public Funnel link.
+
+### Unreleased customer phone home (after 0.7.0)
+
+The current isolated working tree gives the customer portal a dedicated
+clock-and-key `/phone` page while `/board` remains the full registry-driven
+Fleetdeck board. The phone page reuses Fleetdeck's responsive `PHONE_PAGE`
+layout with six customer keys: `BOARD`, `PROJECT`, `TERMINALS`, `GRAPH`,
+`NETWORK`, and `NOTES β`. Terminal and graph keys depend on their exact
+owner-gated HTTPS destinations in the live registry; missing or mismatched
+services stay visible as `not ready`. The network key also requires the
+owner-gated map API to return a live session from this Mac. The Wideband
+video mark links back to the full board. This is an explicit customer adapter
+change; a viewport, PWA install, or `fd_home` cookie did not enable the
+simple screen in the published 0.7.0 artifact. The full board retains the
+upstream four-square control, now linked directly to `/phone`, so an installed
+phone app can return from the board without browser chrome.
+
+The phone home, board, and `:8790` portal keep the same owner capability and
+private Tailscale Serve boundary. A link to `/p/<token>/phone` establishes the
+secure, HttpOnly session cookie; `/p/<token>/board` remains a separate full
+board link. The Home Screen manifest starts at the capability phone route.
+`/app/chat`, `/app/graph`, and `/app/netmap` frame only the existing private
+terminal, graph, and map routes inside the phone app; they add no listener.
+The writable terminal requires its validated tailnet host at startup and
+sets `frame-ancestors` on its own page and proxied ttyd responses to its
+own origin and the exact `:8790` Fleetdeck origin. Its POST and WebSocket
+origin checks remain in place.
+An existing 0.7.0 Home Screen icon may keep its saved `/p/<token>/board` URL.
+That link remains the full board; the owner must open the new `/phone` link
+and add it to the Home Screen to change the icon's destination.
+The call key uses `sms:` for the agent account only after an exact, completed
+`wb-head`/Claude iMessage binding is read from a private regular config file.
+If that proof is absent or unsafe, it leads to `/agent` as `AGENT SETUP`.
+
+The bundled Wideband mark is one tracked, size-bounded MP4 at
+`assets/wb-logo-256.mp4`; the portal serves `/wb-logo-256.mp4` only after
+owner-session authorization. Setup's phone-link check now requires both phone
+home and full board over private HTTPS; the phone-page probe also checks the
+authenticated MP4 response. The first handoff text names the phone home and
+full board separately; all eight direct Fleetdeck links fit across the two
+guarded texts even with long valid names. Local tests exercise the rendered
+six keys, disabled service states, asset gate, manifest, managed bundle
+upgrade/restore, safe Messages fallback, phone-link readiness, and handoff
+rejection paths. A local unsigned candidate has passed package integrity
+checks. No published release DMG, clean client installation, physical iPhone
+proof, or 0.4.4 migration test has yet been recorded for this unreleased
+change.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
