@@ -22,10 +22,10 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery baseline: the v0.7.0 GitHub prerelease and its
-  unsigned DMG/checksums were published, and the Pages feed and fresh public
-  download matched on 2026-09-28. For 0.7.1, confirm the exact GitHub asset,
-  Pages feed, and a fresh download before telling clients it is available.
+- Update delivery status: the v0.7.1 GitHub prerelease, unsigned DMG, and
+  checksums are public. The Pages workflow succeeded; the branded feed and a
+  fresh public DMG download matched the exact 0.7.1 build and SHA-256 from the
+  host network on 2026-09-30. See the delivery record below.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and
@@ -872,6 +872,31 @@ Cool published the community announcement in Skool's Releases category at
 `https://www.skool.com/wideband-8959/wideband-setup-v070-is-live-fleetdeck-imessage-pilot`.
 The rendered post retained the direct DMG link, checksum, pilot limitations,
 and install guidance; its email broadcast was left off.
+
+### 0.7.1 public phone UI pilot delivery, September 30, 2026 UTC
+
+Source commit `8bd9d33` and tag `v0.7.1` contain the private clock-and-key
+Fleetdeck phone home, board return, animated Wideband mark, in-app service
+links, and the Setup phone link/handoff change. The iMessage router, guarded
+outbox, provider path, permission logic, and Wideband Agent revision are
+unchanged. Existing 0.7.0 Home Screen icons retain their saved board URL until
+the owner adds the new phone-home link to the Home Screen.
+
+The exact DMG build `0.7.1-20260930003207` passed source and embedded
+self-tests 83/83 each; Fleetdeck bundle, phone-link, and handoff tests 14/14,
+12/12, and 19/19; packaged installer browser E2E; and isolated WebKit phone
+checks at 375×667 and 393×852, including MP4 playback and board return.
+Recursive ad-hoc signature, arm64, disk-image, managed bundle, and checksum
+checks passed. The new 0.7.1 phone UI was not installed in UTM or tested on a
+physical iPhone; the 0.7.0 real-stack proof does not cover this changed UI.
+
+GitHub Release `v0.7.1` publishes the unsigned DMG and checksums as a
+prerelease. Its DMG SHA-256 is
+`0aa8f27473b6a462334f6e2027576065b63bb36dfe16558ff8a6cfd5aa8e9754`.
+GitHub Pages workflow `36651064714` succeeded. From the host network,
+`https://os.wideband.ai/version` returned the exact build, size, URL, and hash;
+a fresh public DMG download matched the feed. An independent second-network
+fetch of the branded endpoint was not available for this release check.
 
 ## Lessons that must not regress
 
