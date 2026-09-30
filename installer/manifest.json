@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "0.7.0",
+  "release": "0.7.1",
   "product": "Wideband Setup",
   "description": "A guided, verified build for a custom Wideband operator machine.",
   "stages": [

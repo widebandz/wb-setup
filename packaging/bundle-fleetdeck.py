@@ -268,9 +268,22 @@ def customer_write_origin(headers):
                                  + b"\r\n\r\n" + rest)
 '''
     proxy_hardened = r'''            # The browser may frame ttyd only from this exact board origin.
-            # Replace upstream CSP/XFO with one exact policy for this owner UI.
-            kept = [line for line in lines[1:]
-                    if not re.match(rb"(?i)(content-security-policy|x-frame-options)\s*:", line)]
+            # Keep upstream CSP directives unrelated to framing.
+            kept = []
+            for line in lines[1:]:
+                name, separator, value = line.partition(b":")
+                if not separator:
+                    kept.append(line)
+                elif name.strip().lower() == b"x-frame-options":
+                    continue
+                elif name.strip().lower() == b"content-security-policy":
+                    directives = [part.strip() for part in value.split(b";") if part.strip()]
+                    other = [part for part in directives
+                             if not re.match(rb"(?i)frame-ancestors(?:\s|$)", part)]
+                    if other:
+                        kept.append(b"Content-Security-Policy: " + b"; ".join(other))
+                else:
+                    kept.append(line)
             frame_policy = b"Content-Security-Policy: " + CUSTOMER_FRAME_POLICY.encode("ascii")
             if b" 101 " in lines[0]:
                 self.wfile.write(b"\r\n".join([lines[0]] + kept + [frame_policy])

@@ -1,8 +1,11 @@
 # wb-setup
 
-For the full 0.7.0 phone pilot, download the
-[unsigned DMG from the v0.7.0 release](https://github.com/widebandz/wb-setup/releases/tag/v0.7.0).
-It contains the reviewed Fleetdeck and Knowledge Graph bundles tested in UTM.
+For the 0.7.1 phone UI pilot, download the
+[unsigned DMG from the v0.7.1 release](https://github.com/widebandz/wb-setup/releases/tag/v0.7.1).
+It carries the private phone home, full Fleetdeck board, Wideband mark, and
+reviewed Knowledge Graph bundle. The new phone UI has local browser proof;
+the earlier 0.7.0 full board was tested in UTM and on an iPhone.
+
 The source bootstrap below builds the operator foundation but does not include
 those bundled customer phone apps:
 
@@ -10,8 +13,9 @@ those bundled customer phone apps:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.7.0. This is an unsigned pilot release; macOS requires
-the documented Privacy & Security **Open Anyway** step. Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
+**Current release:** 0.7.1. This unsigned pilot requires the documented
+Privacy & Security **Open Anyway** step.
+Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and
 proven E2E behavior. [CHANGELOG.md](CHANGELOG.md) records what changed by
 release; [AGENTS.md](AGENTS.md) carries the non-negotiable context for future
@@ -76,20 +80,23 @@ Changing the provider after a chat is bound requires an explicit runtime
 migration so the saved choice cannot silently disagree with the active agent.
 
 After the first real reply and the phone view are ready, the client opens the
-private Fleetdeck board on their iPhone and confirms it works. That final
+private Fleetdeck phone home on their iPhone and confirms it works. That final
 confirmation queues two owner-only iMessages through the guarded outbox: one
-with the dashboard, agent, project, knowledge graph, live terminal, and Notes
-beta links; the other with Claude and tmux commands plus the Tailscale and
-Termius iPhone app links. Setup verifies each private HTTPS page before
-queueing. The handoff card shows guarded outbox delivery; an uncertain send
-is held for review and never retried automatically. Reopening an older
-completed setup offers a manual send control instead of sending old handoff
+with the phone home, full board, agent, project, knowledge graph, live terminal,
+network, and Notes beta links; the other with Claude and tmux commands plus
+the Tailscale and Termius iPhone app links. Setup verifies each private HTTPS
+page before queueing. The handoff card shows guarded outbox delivery; an
+uncertain send is held for review and never retried automatically. Reopening
+an older completed setup offers a manual send control instead of sending old handoff
 texts automatically.
 
-The phone view installs the reviewed real Fleetdeck service board. Its linked
-apps show live tmux sessions, the read-only Live Terminal Network from this
-Mac's services and sessions, and the Glitch Cat Knowledge Graph over a local
-graph pack. Notes beta stores notes privately on this Mac, separately from the
+The phone view opens a six-key Fleetdeck home at `/phone` with Board, Project,
+Terminals, Graph, Network, and Notes beta. Keys for unavailable services remain
+visible as `not ready`. The full service board remains at `/board`, with a
+four-square link back to the phone home. Its linked apps
+show live tmux sessions, the read-only Live Terminal Network from this Mac's
+services and sessions, and the Glitch Cat Knowledge Graph over a local graph
+pack. Notes beta stores notes privately on this Mac, separately from the
 operator Fleetdeck Notes store. The board and companion apps use private
 Tailscale Serve routes and owner-only access.
 
@@ -97,7 +104,10 @@ The earlier real-stack UTM pilot passed source and embedded self-tests (83/83
 each) and a restart check. One fresh owner iMessage reached the VM agent and
 its reply arrived on the owner's iPhone. The owner also confirmed the full
 phone board, its apps and Home Screen icon, and receipt of both setup handoff
-texts. This was a single UTM and physical iPhone pilot.
+texts. This was a single UTM and physical iPhone pilot for the 0.7.0 board.
+The 0.7.1 phone home passed isolated WebKit checks at 375×667 and 393×852
+using a copied candidate bundle and synthetic services. The new UI has not
+yet been checked on a physical iPhone or in an installed Home Screen app.
 
 Build the generic pilot:
 

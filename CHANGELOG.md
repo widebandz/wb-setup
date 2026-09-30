@@ -3,14 +3,14 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
-## Unreleased (after 0.7.0)
+## 0.7.1 — unsigned pilot (2026-09-30 UTC)
 
 ### Customer phone home
 
 - Added a private clock-and-key Fleetdeck phone home at `/phone` while keeping the full service board at `/board`. Its six keys are Board, Project, Terminals, Graph, Network, and Notes beta; unavailable companion services remain visible as not ready. The Wideband video mark opens the full board, and the board's four-square control returns to the phone home.
-- Kept terminal, graph, and network views inside the installed phone app through allowlisted shells for the existing owner-gated services. The call key opens the bound agent account in Messages only when the private iMessage binding is complete and safe to read; otherwise it opens agent setup details.
-- Changed the owner capability link, Home Screen manifest, and first setup text to open the phone home. Setup now verifies both phone home and full board over private HTTPS, including the authenticated logo asset, before offering or sending the link.
-- Added source-bundle, portal, link, and handoff tests for the new routes, private asset, managed upgrade and restore, service readiness, and Messages fallback. This work has not yet been packaged as a release or proved on a client iPhone or a 0.4.4 migration.
+- Added in-app links to the existing terminal, graph, and network views.
+- Changed the private phone link, Home Screen manifest, and first setup text to open `/phone`. Setup checks the phone home, full board, and logo over private HTTPS before showing the link.
+- Added bundle and browser tests for the six-key layout, video asset, in-app navigation, and preserved board access. The packaged 0.7.1 UI passed isolated WebKit checks at 375×667 and 393×852, including video playback and board return. A physical iPhone test of this new UI has not been recorded.
 
 ## 0.7.0 — unsigned pilot (2026-09-28)
 

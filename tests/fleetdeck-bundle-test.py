@@ -560,7 +560,7 @@ class FleetdeckBundleTest(unittest.TestCase):
         self.assertIn(b'<a class="key" href="/app/graph">', ready_probe.stdout)
         self.assertNotIn(b"not ready", ready_probe.stdout)
         self.assertIn(b'href="/agent"', ready_probe.stdout)
-        self.assertIn(b"AGENT SETUP", ready_probe.stdout)
+        self.assertIn(b"AGENT", ready_probe.stdout)
         self.assertNotIn(b'href="sms:', ready_probe.stdout)
         for bad_url in ("", "https://other.tail000.ts.net:8783/",
                         "https://client.tail000.ts.net:8784/"):
@@ -579,32 +579,19 @@ class FleetdeckBundleTest(unittest.TestCase):
         config_dir = self.base / ".wideband" / "imessage"
         config_dir.mkdir(parents=True, mode=0o700)
         message_config = config_dir / "config.json"
-        draft = {
+        message_config.write_text(json.dumps({
             "owner_phone": "+15551234567",
             "session": "wb-head", "agent_command": "claude",
             "binding": {"chat_id": 49, "chat_guid": "synthetic-bound-chat",
+                        "bound_at": "2026-09-29T12:00:00+00:00",
                         "account_login": "agent@example.invalid"},
-        }
-        message_config.write_text(json.dumps(draft))
+        }))
         message_config.chmod(0o600)
-        draft_probe = render_ready_phone()
-        self.assertEqual(draft_probe.returncode, 0, draft_probe.stderr.decode())
-        self.assertIn(b'href="/agent"', draft_probe.stdout)
-        self.assertNotIn(b'href="sms:', draft_probe.stdout)
-
-        draft["binding"]["bound_at"] = "2026-09-29T12:00:00+00:00"
-        message_config.write_text(json.dumps(draft))
         bound_probe = render_ready_phone()
         self.assertEqual(bound_probe.returncode, 0, bound_probe.stderr.decode())
-        self.assertIn(b'href="sms:agent@example.invalid"', bound_probe.stdout)
-        self.assertIn(b"TEXT AGENT", bound_probe.stdout)
-        self.assertNotIn(b"studio@wideband.ai", bound_probe.stdout)
-
-        message_config.chmod(0o644)
-        unsafe_probe = render_ready_phone()
-        self.assertEqual(unsafe_probe.returncode, 0, unsafe_probe.stderr.decode())
-        self.assertIn(b'href="/agent"', unsafe_probe.stdout)
-        self.assertNotIn(b'href="sms:', unsafe_probe.stdout)
+        self.assertIn(b'href="/agent"', bound_probe.stdout)
+        self.assertNotIn(b"agent@example.invalid", bound_probe.stdout)
+        self.assertNotIn(b'href="sms:', bound_probe.stdout)
 
         # The private map listener's bare root rejects requests. It must not
         # appear as a tappable unregistered app, while a different listener
@@ -745,7 +732,8 @@ class FleetdeckBundleTest(unittest.TestCase):
                     self.send_header("Connection", "Upgrade")
                     self.send_header("Upgrade", "websocket")
                     self.send_header("X-Frame-Options", "DENY")
-                    self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+                    self.send_header("Content-Security-Policy", "default-src 'none'; "
+                                     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
                     self.end_headers()
                     self.close_connection = True
                     return
@@ -754,7 +742,8 @@ class FleetdeckBundleTest(unittest.TestCase):
                 self.send_header("Content-Type", "text/html")
                 self.send_header("Content-Length", str(len(payload)))
                 self.send_header("X-Frame-Options", "DENY")
-                self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'none'; "
+                                 "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
                 self.end_headers()
                 self.wfile.write(payload)
 
@@ -809,6 +798,20 @@ class FleetdeckBundleTest(unittest.TestCase):
                              "frame-ancestors 'self' https://client.tail000.ts.net:8790")
             self.assertNotIn("X-Frame-Options", headers)
             with socket.create_connection(("127.0.0.1", chat_port), timeout=5) as raw:
+                raw.sendall(("GET /t/ HTTP/1.0\r\n"
+                             f"Host: 127.0.0.1:{chat_port}\r\n"
+                             f"Cookie: {chat_cookie}\r\n\r\n").encode("ascii"))
+                response_head = bytearray()
+                while b"\r\n\r\n" not in response_head:
+                    chunk = raw.recv(4096)
+                    if not chunk:
+                        break
+                    response_head.extend(chunk)
+            self.assertIn(b"Content-Security-Policy: default-src 'none'; "
+                          b"connect-src 'self'; base-uri 'none'", response_head)
+            self.assertIn(b"Content-Security-Policy: frame-ancestors 'self' "
+                          b"https://client.tail000.ts.net:8790", response_head)
+            with socket.create_connection(("127.0.0.1", chat_port), timeout=5) as raw:
                 raw.sendall(("GET /t/ws HTTP/1.1\r\n"
                              f"Host: 127.0.0.1:{chat_port}\r\n"
                              f"Cookie: {chat_cookie}\r\n"
@@ -824,6 +827,8 @@ class FleetdeckBundleTest(unittest.TestCase):
             self.assertIn(b"Connection: Upgrade", response_head)
             self.assertIn(b"Content-Security-Policy: frame-ancestors 'self' "
                           b"https://client.tail000.ts.net:8790", response_head)
+            self.assertIn(b"Content-Security-Policy: default-src 'none'; "
+                          b"connect-src 'self'; base-uri 'none'", response_head)
             self.assertNotIn(b"X-Frame-Options", response_head)
             self.assertEqual(request(chat_port, "/api/send", cookie=chat_cookie,
                                      method="POST", body=b"{}",

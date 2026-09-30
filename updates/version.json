@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-09-28T18:59:05Z",
+  "generated_at": "2026-09-30T00:32:24Z",
   "latest": {
-    "version": "0.7.0",
-    "build_id": "0.7.0-20260928185839",
-    "published_at": "2026-09-28T18:59:05Z",
+    "version": "0.7.1",
+    "build_id": "0.7.1-20260930003207",
+    "published_at": "2026-09-30T00:32:24Z",
     "minimum_macos": "13.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.7.0/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.7.0",
-    "sha256": "659b97a1129ecbdaa1cbb66b47e07c008b2981da3cff64ab4774d317c258f759",
-    "size_bytes": 16917281,
-    "summary": "Real iMessage first-text onboarding and the private Fleetdeck board with live terminals, Knowledge Graph, and Notes beta."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.7.1/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.7.1",
+    "sha256": "0aa8f27473b6a462334f6e2027576065b63bb36dfe16558ff8a6cfd5aa8e9754",
+    "size_bytes": 17027194,
+    "summary": "Fleetdeck phone home with Wideband logo, full board key, and in-app terminals, graph, network, and Notes."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }

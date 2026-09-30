@@ -73,40 +73,6 @@ PAGE = (PAGE.replace("__SIMPLE_CLASS__", "")
         .replace("__SIMPLE_TITLE__", "Switch to the simple screen"))
 
 
-def customer_agent_address():
-    """Read the bound agent account, never a host/operator address or a draft."""
-    path = os.path.expanduser("~/.wideband/imessage/config.json")
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        with os.fdopen(fd, "r", encoding="utf-8") as source:
-            info = os.fstat(source.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or info.st_nlink != 1 or info.st_mode & 0o077
-                    or info.st_size > 64 * 1024):
-                return ""
-            config = json.load(source)
-    except (OSError, UnicodeError, ValueError):
-        return ""
-    if not isinstance(config, dict) or not isinstance(config.get("binding"), dict):
-        return ""
-    binding = config["binding"]
-    if (config.get("session") != "wb-head" or config.get("agent_command") != "claude"
-            or type(binding.get("chat_id")) is not int or binding["chat_id"] < 1
-            or not isinstance(binding.get("chat_guid"), str) or not binding["chat_guid"]
-            or not isinstance(binding.get("bound_at"), str) or not binding["bound_at"]):
-        return ""
-    account = binding.get("account_login", "")
-    owner = config.get("owner_phone", "")
-    if (not isinstance(account, str) or not isinstance(owner, str)
-            or not re.fullmatch(r"\+[1-9][0-9]{7,14}", owner) or account == owner):
-        return ""
-    if re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", account):
-        return account
-    if re.fullmatch(r"\+[1-9][0-9]{7,14}", account):
-        return account
-    return ""
-
-
 def customer_service_url(app_id, services):
     """Accept only the installed terminal or graph HTTPS destination."""
     service = services.get(app_id, {})
@@ -189,10 +155,6 @@ class CustomerHandler(Handler):
                 keys.append('<span class="key">%s<span>%s</span>'
                             '<span class="st">not ready</span></span>' % (svg, esc_html(label)))
 
-        account = customer_agent_address()
-        call_href = "sms:" + account if account else "/agent"
-        call_label = "TEXT AGENT" if account else "AGENT SETUP"
-        call_sub = "opens Messages" if account else "connection details"
         phone = PHONE_PAGE.replace(
             '<img src="/trace-192.png" alt="" class="face">',
             '<img src="/icon-192.png" alt="" class="face">', 1)
@@ -201,9 +163,9 @@ class CustomerHandler(Handler):
                 .replace("__MARK__", '<a class="mark" href="/board" aria-label="Full board">'
                          + MARK_VIDEO + "</a>")
                 .replace("__KEYS__", "".join(keys))
-                .replace("__CALL_HREF__", esc_html(call_href))
-                .replace("__CALL_LABEL__", call_label)
-                .replace("__CALL_SUB__", call_sub)
+                .replace("__CALL_HREF__", "/agent")
+                .replace("__CALL_LABEL__", "AGENT")
+                .replace("__CALL_SUB__", "connection details")
                 .replace("__N__", str(len(services)))
                 .replace("__HOME_TOGGLE__", "private phone home"))
         return self._send(200, page, "text/html; charset=utf-8")

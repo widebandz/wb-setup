@@ -8,27 +8,32 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Release: **0.7.0**. The owner chose an explicitly unsigned public pilot;
+- Release: **0.7.1**. This is an unsigned phone UI pilot. The owner selected
+  the phone home with a full-board key for client Home Screen installs.
   Developer ID signing and notarization remain future production work.
 - Real-stack functional checkpoint: `434970f` (`feat: pilot real Fleetdeck phone
   stack in setup`).
 - Platform: Apple silicon; macOS 14 or newer for the iMessage client path (the general operator path can run on macOS 13).
 - Preferred private setup port: `8803`, with automatic loopback fallback when
   that port is occupied.
-- Distribution: one DMG; the current pilot is ad-hoc signed and intentionally
+- Distribution: one DMG; the pilot is ad-hoc signed and intentionally
   labeled `unsigned` until Wideband supplies its Developer ID and notarization
   credentials.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery status on 2026-09-28: the v0.7.0 GitHub prerelease and its
-  unsigned DMG/checksums are public. The Pages workflow succeeded;
-  `https://os.wideband.ai/version` advertised the exact 0.7.0 build and SHA-256
-  from the VM network. A fresh public DMG download matched that SHA-256.
+- Update delivery baseline: the v0.7.0 GitHub prerelease and its
+  unsigned DMG/checksums were published, and the Pages feed and fresh public
+  download matched on 2026-09-28. For 0.7.1, confirm the exact GitHub asset,
+  Pages feed, and a fresh download before telling clients it is available.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and
   owner iPhone proof are recorded below.
+- Local 0.7.1 preparation checkpoint: a pre-version candidate build
+  `0.7.0-20260930000358` passed isolated WebKit phone-layout, video, private
+  access, board-return, and PWA metadata checks on a copied bundle with
+  synthetic services. The exact 0.7.1 DMG is audited separately before release.
 
 Generated build IDs and hashes belong to artifacts, not source. Read
 `dist/Wideband Setup.app/Contents/Resources/build-id.txt` and
@@ -323,9 +328,9 @@ Screen icon. Owner-only setup texts are queued through the guarded iMessage
 outbox only after the real phone reply and this phone-board confirmation.
 The first-goal runner does not create a public Funnel link.
 
-### Unreleased customer phone home (after 0.7.0)
+### 0.7.1 customer phone home (September 30, 2026 UTC)
 
-The current isolated working tree gives the customer portal a dedicated
+The 0.7.1 source gives the customer portal a dedicated
 clock-and-key `/phone` page while `/board` remains the full registry-driven
 Fleetdeck board. The phone page reuses Fleetdeck's responsive `PHONE_PAGE`
 layout with six customer keys: `BOARD`, `PROJECT`, `TERMINALS`, `GRAPH`,
@@ -352,10 +357,6 @@ origin checks remain in place.
 An existing 0.7.0 Home Screen icon may keep its saved `/p/<token>/board` URL.
 That link remains the full board; the owner must open the new `/phone` link
 and add it to the Home Screen to change the icon's destination.
-The call key uses `sms:` for the agent account only after an exact, completed
-`wb-head`/Claude iMessage binding is read from a private regular config file.
-If that proof is absent or unsafe, it leads to `/agent` as `AGENT SETUP`.
-
 The bundled Wideband mark is one tracked, size-bounded MP4 at
 `assets/wb-logo-256.mp4`; the portal serves `/wb-logo-256.mp4` only after
 owner-session authorization. Setup's phone-link check now requires both phone
@@ -364,11 +365,15 @@ authenticated MP4 response. The first handoff text names the phone home and
 full board separately; all eight direct Fleetdeck links fit across the two
 guarded texts even with long valid names. Local tests exercise the rendered
 six keys, disabled service states, asset gate, manifest, managed bundle
-upgrade/restore, safe Messages fallback, phone-link readiness, and handoff
-rejection paths. A local unsigned candidate has passed package integrity
-checks. No published release DMG, clean client installation, physical iPhone
-proof, or 0.4.4 migration test has yet been recorded for this unreleased
-change.
+upgrade/restore, phone-link readiness, and handoff
+rejection paths. A local unsigned pre-version candidate passed package
+integrity checks. Headless WebKit on a copied bundle verified 375×667 and
+393×852 phone layouts, video decode, six keys, owner-cookie/private-route
+behavior, and the four-square return from the full board in a simulated
+standalone context. This does not prove a physical iPhone or installed PWA.
+The exact 0.7.1 DMG passed source and embedded self-tests, signature and disk
+image checks, the packaged installer browser E2E, and isolated WebKit phone
+checks. A physical iPhone check and a VM install of this new UI were not run.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
