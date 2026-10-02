@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-10-02T20:58:51Z",
+  "generated_at": "2026-10-02T21:54:29Z",
   "latest": {
-    "version": "0.8.1",
-    "build_id": "0.8.1-20261002205106",
-    "published_at": "2026-10-02T20:58:51Z",
+    "version": "0.8.2",
+    "build_id": "0.8.2-20261002215109",
+    "published_at": "2026-10-02T21:54:29Z",
     "minimum_macos": "14.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.1/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.1",
-    "sha256": "9e4d8366f4204759a823fa6e1d87863110b67349746a61f4f94647463478188d",
-    "size_bytes": 95932284,
-    "summary": "Fixes private tool verification after Python imports so local Fleetdeck, Claude setup, tmux, and imsg remain available. Unsigned pilot; verify permissions and phone delivery onsite."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.2/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.2",
+    "sha256": "bacc83d2fb62b5dd197e75a3645627def99158a29801cbcdd69058677c685c54",
+    "size_bytes": 96223054,
+    "summary": "Fixes fresh-Mac Fleetdeck installation when no tmux session exists, restarts the map service on retry, and makes the retry visible."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }

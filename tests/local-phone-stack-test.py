@@ -64,9 +64,14 @@ class LocalPhoneStackTest(unittest.TestCase):
             }))
             jobs = {}
             registered = []
+            calls = []
 
             def ensure_job(label, content):
                 jobs[label] = plistlib.loads(content)
+
+            def call(*argv, **_kwargs):
+                calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, "", "")
 
             def get_json(url, *, host=None):
                 if url.endswith("/api/fleet-map"):
@@ -92,6 +97,7 @@ class LocalPhoneStackTest(unittest.TestCase):
                  mock.patch.object(stack, "prepare_graph", return_value="/usr/bin/node"), \
                  mock.patch.object(stack, "read_token", return_value="a" * 64), \
                  mock.patch.object(stack, "ensure_job", side_effect=ensure_job), \
+                 mock.patch.object(stack, "call", side_effect=call), \
                  mock.patch.object(stack, "get_json", side_effect=get_json), \
                  mock.patch.object(stack, "wait_ready", side_effect=wait_ready), \
                  mock.patch.object(stack, "refresh_graph_index"), \
@@ -100,6 +106,8 @@ class LocalPhoneStackTest(unittest.TestCase):
                 stack.run()
 
             serve.assert_not_called()
+            self.assertIn(("launchctl", "kickstart", "-k",
+                           f"gui/{os.getuid()}/com.wideband.test.fleetdeck-map"), calls)
             self.assertEqual(jobs[portal_label]["EnvironmentVariables"]["FLEETDECK_HOST"],
                              "wideband.localhost")
             self.assertEqual(jobs[portal_label]["EnvironmentVariables"]["PATH"],

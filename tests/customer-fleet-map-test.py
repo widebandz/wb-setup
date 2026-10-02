@@ -185,6 +185,9 @@ class CollectorTests(unittest.TestCase):
                              ["host:sample"])
             self.assertFalse(any(n["type"] == "session" and n["observed"] is True
                                  for n in safe["nodes"]))
+            self.assertEqual(safe["summary"]["live_sessions"], 0)
+            self.assertEqual(next(source["status"] for source in safe["sources"]
+                                  if source["id"] == "tmux"), "available")
             self.assertNotIn(home, completed.stdout)
             with mock.patch.dict(os.environ, env):
                 projected = validate_snapshot(reader.collect_local_snapshot())

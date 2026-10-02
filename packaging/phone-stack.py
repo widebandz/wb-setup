@@ -368,6 +368,9 @@ def run() -> None:
         "FLEETDECK_FLEET_HOST_ID": "local" if local_only else name.split(".", 1)[0],
         "FLEETDECK_BOARD_ORIGIN": board_origin,
     }))
+    # The plist may be unchanged across a Setup upgrade while its Python
+    # collector code changed. Reopen this read-only service before probing it.
+    call("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{map_label}")
     graph_plist = plist(graph_label, [node, "engine/serve.mjs", "--port", "4180"], GRAPH, {
         "GLITCHCAT_PACK": "wideband-pilot", "GLITCHCAT_DB": str(GRAPH / ".data" / "kg.db"),
     })

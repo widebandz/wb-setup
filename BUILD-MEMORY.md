@@ -8,7 +8,7 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.1** unsigned pilot. The 0.8.0 DMG passed local package
+- Source target: **0.8.2** unsigned pilot. The 0.8.0 DMG passed local package
   gates and is being published without a 0.8.0 VM or phone run at the owner's
   direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
@@ -34,6 +34,13 @@ build without reconstructing decisions from chat history.
   download matched the tested SHA-256 on 2026-10-02. The onsite Mac is the
   first real-machine upgrade gate for this hotfix; no VM, restart, iMessage,
   or phone-board proof has been recorded for this exact build.
+- The exact 0.8.2 build `0.8.2-20261002215109` passed source and packaged
+  self-tests (97/97 each), the packaged browser E2E, recursive ad-hoc
+  signature verification, arm64 binary inspection, and `hdiutil verify`.
+  Its DMG SHA-256 is
+  `bacc83d2fb62b5dd197e75a3645627def99158a29801cbcdd69058677c685c54`.
+  A real 0.8.2 VM/reboot, physical iMessage, and iPhone board proof have not
+  been recorded.
 - October 2 onsite defect: a packaged 0.8.0 private Python import wrote new
   `__pycache__` files into the manifest-protected standard library. The next
   resolver reported `invalid_manifest` and all private tools appeared missing.
@@ -52,6 +59,18 @@ build without reconstructing decisions from chat history.
   The exact packaged private tool payload remained at 2,642 files after
   imports, resolver recheck, and same-build activation. The 0.8.1 VM, reboot,
   iMessage, and iPhone checks have not been run.
+- October 2 fresh-Mac Fleetdeck defect: the client map answered HTTP 200 with
+  `status=partial` and `summary.live_sessions=null` while no tmux server had
+  ever been started. The 0.8.1 phone-stack installer required an integer count
+  and stopped before its chat/ttyd step. The 0.8.2 candidate recognizes only
+  tmux's exact missing-server response as zero observed sessions; unrelated
+  command failures remain unknown. A source regression uses an isolated tmux
+  socket and asserts a zero count. The 0.8.1 client guide also hid its phone
+  install retry button for `needs_attention`; 0.8.2 exposes an explicit retry.
+  The retry restarts the map LaunchAgent before the data probe so an unchanged
+  plist cannot keep an older map process running after a Setup update.
+  The 8790 portal, 4181 graph proxy, and 18790 map were listening on the
+  client, but their full data and phone handoff were not yet verified.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and

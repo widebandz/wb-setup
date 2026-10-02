@@ -143,7 +143,18 @@ def tmux_query(socket: str | None, *args: str) -> list[str] | None:
         result = subprocess.run(cmd, text=True, capture_output=True, timeout=10, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
-    return result.stdout.splitlines() if result.returncode == 0 else None
+    if result.returncode == 0:
+        return result.stdout.splitlines()
+    # A fresh login has no tmux server or sessions yet. The exact missing-
+    # socket response means zero live sessions; other failures stay unknown.
+    if args and args[0] == "list-sessions" and result.returncode == 1 and not result.stdout:
+        error = result.stderr.strip()
+        if (error.startswith("error connecting to ")
+                and error.endswith(("(No such file or directory)", "(Connection refused)"))):
+            return []
+        if error.startswith("no server running on "):
+            return []
+    return None
 
 
 def tab_fields(lines: list[str] | None, count: int) -> list[list[str]]:
@@ -262,8 +273,16 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
 
     socket = os.environ.get("TM_TMUX_SOCKET")
     sessions_raw = tmux_query(socket, "list-sessions", "-F", "#{session_name}\t#{session_created}\t#{session_activity}")
-    windows_raw = tmux_query(socket, "list-windows", "-a", "-F", "#{session_name}\t#{window_index}\t#{window_active}") if sessions_raw is not None else None
-    panes_raw = tmux_query(socket, "list-panes", "-a", "-F", "#{session_name}\t#{window_index}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_dead}\t#{pane_current_command}\t#{pane_current_path}") if windows_raw is not None else None
+    if sessions_raw == []:
+        windows_raw = []
+        panes_raw = []
+    elif sessions_raw is None:
+        windows_raw = None
+        panes_raw = None
+    else:
+        windows_raw = tmux_query(socket, "list-windows", "-a", "-F", "#{session_name}\t#{window_index}\t#{window_active}")
+        panes_raw = (tmux_query(socket, "list-panes", "-a", "-F", "#{session_name}\t#{window_index}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_dead}\t#{pane_current_command}\t#{pane_current_path}")
+                     if windows_raw is not None else None)
     if sessions_raw is None:
         unknown("source_unavailable", "tmux", "Local tmux sessions could not be listed; live status is unknown.")
     elif windows_raw is None or panes_raw is None:

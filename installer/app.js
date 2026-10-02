@@ -471,12 +471,16 @@ function renderFirstGoal() {
   const portalCheck = $("#phone-portal-check");
   const portalConnect = $("#phone-portal-connect");
   const localBoard = $("#local-board-link");
+  const phoneInstallNeedsRetry = phoneRun?.status === "needs_attention";
   portalLink.hidden = true;
   portalCopy.hidden = true;
   localBoard.hidden = true;
   portalCheck.hidden = !phoneInstalled;
   portalCheck.disabled = phonePortalCheckActive;
-  portalConnect.hidden = !phoneInstalled || recentProof?.status === "ready";
+  portalConnect.hidden = (!phoneInstalled && !phoneInstallNeedsRetry)
+    || (phoneInstalled && recentProof?.status === "ready");
+  portalConnect.textContent = phoneInstallNeedsRetry
+    ? "Retry Fleetdeck installation" : "Reconnect Fleetdeck after Tailscale sign-in";
   if (recentProof?.status === "ready") {
     try {
       const url = new URL(recentProof.url);

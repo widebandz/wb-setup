@@ -3,6 +3,14 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.8.2 — unsigned pilot (2026-10-02 UTC)
+
+- Treat the exact tmux missing-server response on a fresh login as zero live sessions. Other tmux errors remain unknown. The Live Terminal Network now has a truthful empty state, allowing Fleetdeck installation to continue to the terminal and graph checks.
+- Show a **Retry Fleetdeck installation** button when its local install needs attention. The 0.8.1 guide hid the retry behind a successful install state.
+- Restart the existing read-only map LaunchAgent during the retry so an unchanged plist cannot keep the 0.8.1 collector code running after the package upgrade.
+- Full Disk Access reporting remains a separate onsite diagnostic; this release does not change the Wideband Agent permission binary or its macOS grant.
+- The exact package passed source and embedded self-tests (97/97 each), packaged browser E2E, recursive ad-hoc signature, arm64, and DMG checks. VM, reboot, physical iMessage, and iPhone board checks remain onsite pilot gates.
+
 ## 0.8.1 — unsigned pilot (2026-10-02 UTC)
 
 - Keep the bundled Python standard library immutable after staging. Ordinary imports in 0.8.0 created bytecode files outside the signed tool manifest, so subsequent checks blocked Python, tmux, imsg, and Claude sign-in. The new build stages a fresh private version and verifies that repeated imports leave the manifest intact.

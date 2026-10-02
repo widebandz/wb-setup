@@ -233,6 +233,15 @@ try {
     throw new Error("unverified provider exposed iMessage binding");
   }
 
+  const fleetdeckRetry = await evaluate(`(() => {
+    snapshot.state.action_runs.run_first_goal_apply = { status: "complete" };
+    snapshot.state.action_runs.run_phone_install = { status: "needs_attention" };
+    renderFirstGoal();
+    const button = document.querySelector("#phone-portal-connect");
+    return !button.hidden && button.textContent === "Retry Fleetdeck installation";
+  })()`);
+  if (!fleetdeckRetry) throw new Error("failed local Fleetdeck install has no visible retry");
+
   // Exercise explicit phone-handoff consent in-browser with mocked API responses.
   // The real setup server receives no handoff POST and no text is sent.
   const handoff = await evaluate(`(async () => {
