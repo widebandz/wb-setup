@@ -28,6 +28,12 @@ build without reconstructing decisions from chat history.
   and a fresh public DMG download matched the exact build and SHA-256 on
   2026-10-02. The skipped VM and physical phone gates remain onsite pilot
   checks, not completed release evidence.
+- v0.8.1 is also a public GitHub prerelease. The Pages workflow for source
+  `1d667db` succeeded, `https://os.wideband.ai/version` advertised build
+  `0.8.1-20261002205106` and its exact checksum, and a fresh public DMG
+  download matched the tested SHA-256 on 2026-10-02. The onsite Mac is the
+  first real-machine upgrade gate for this hotfix; no VM, restart, iMessage,
+  or phone-board proof has been recorded for this exact build.
 - October 2 onsite defect: a packaged 0.8.0 private Python import wrote new
   `__pycache__` files into the manifest-protected standard library. The next
   resolver reported `invalid_manifest` and all private tools appeared missing.
