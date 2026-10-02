@@ -3,7 +3,7 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
-## 0.8.0 — unsigned pilot (release validation in progress)
+## 0.8.0 — unsigned pilot (2026-10-02 UTC)
 
 ### Private tools and account-free local setup
 
@@ -12,7 +12,7 @@ recorded here.
 - Kept iMessage activation behind a separate agent Apple Account, exact owner-chat binding, permission checks, and a physical send-and-reply proof. The guide no longer presents an unverified text route as complete.
 - Deferred Claude Code installation to the selected Claude sign-in action. Client bootstrap leaves `.zshrc` and operator Claude files untouched; the sign-in action downloads the official installer to a private file and checks the fetch and script before execution. Preview providers remain pending.
 - Updated the managed Fleetdeck adapter from the current reviewed source. Local-only preview uses a guarded `wideband.localhost` capability; private iPhone access still needs Tailscale Serve and owner confirmation.
-- Added isolated toolchain tamper/rollback tests, preflight tests, local phone-stack checks, and customer map/graph tests. Exact DMG, VM, and phone results are recorded separately after release validation.
+- Added isolated toolchain tamper/rollback tests, preflight tests, local phone-stack checks, and customer map/graph tests. The exact DMG passed source and packaged self-tests (97/97 each), the packaged Setup browser journey, signature and checksum checks. This build has no VM, reboot, physical iMessage, or iPhone board result yet; each pilot install must complete those proofs onsite.
 - Tightened an owned `~/.wideband` directory before activating private tools, including on installs created by older Setup versions. Launcher failures now identify the preparation stage instead of implying that no files changed.
 
 ## 0.7.1 — unsigned pilot (2026-09-30 UTC)

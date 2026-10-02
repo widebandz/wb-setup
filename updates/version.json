@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-09-30T00:32:24Z",
+  "generated_at": "2026-10-02T20:00:49Z",
   "latest": {
-    "version": "0.7.1",
-    "build_id": "0.7.1-20260930003207",
-    "published_at": "2026-09-30T00:32:24Z",
-    "minimum_macos": "13.0",
+    "version": "0.8.0",
+    "build_id": "0.8.0-20261002150746",
+    "published_at": "2026-10-02T20:00:49Z",
+    "minimum_macos": "14.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.7.1/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.7.1",
-    "sha256": "0aa8f27473b6a462334f6e2027576065b63bb36dfe16558ff8a6cfd5aa8e9754",
-    "size_bytes": 17027194,
-    "summary": "Fleetdeck phone home with Wideband logo, full board key, and in-app terminals, graph, network, and Notes."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.0/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.0",
+    "sha256": "1fbba4cc830e26b41b70112a951b39d4faa54c744c445e2a9e18e1b3c617cf6a",
+    "size_bytes": 96597824,
+    "summary": "Private tools and local-first Fleetdeck with current phone UI, live terminal, graph, and guarded iMessage setup. Unsigned pilot; complete physical phone and reboot checks onsite."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }

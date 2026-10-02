@@ -8,8 +8,9 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.0** unsigned pilot, pending exact DMG and VM validation.
-  The last public release is 0.7.1. The owner selected the phone home with a
+- Source target: **0.8.0** unsigned pilot. The exact DMG passed local package
+  gates and is being published without a 0.8.0 VM or phone run at the owner's
+  direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
   notarization remain future production work.
 - Real-stack functional checkpoint: `434970f` (`feat: pilot real Fleetdeck phone
@@ -23,10 +24,9 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery status: the v0.7.1 GitHub prerelease, unsigned DMG, and
-  checksums are public. The Pages workflow succeeded; the branded feed and a
-  fresh public DMG download matched the exact 0.7.1 build and SHA-256 from the
-  host network on 2026-09-30. See the delivery record below.
+- Update delivery status: v0.7.1 public delivery was verified on 2026-09-30.
+  The v0.8.0 artifact and local tests are recorded below; verify its GitHub
+  asset, Pages feed, and fresh download before distributing its link.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and
