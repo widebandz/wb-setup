@@ -52,6 +52,11 @@ build without reconstructing decisions from chat history.
   `1e3ca3f3f50d5bc8fcdcf92c4ed75e1023ad25ba6f8806e046680631bf954554`.
   No 0.8.3 VM/reboot, physical iMessage reply, or iPhone board proof is
   recorded; those remain onsite pilot gates.
+- v0.8.3 is a public GitHub prerelease at source commit `d35ed48`. Pages
+  workflow `37072996600` succeeded; `https://os.wideband.ai/version`
+  advertised the exact 0.8.3 build and SHA-256, and a fresh public DMG
+  download matched that hash on 2026-10-02. The client's local retry,
+  physical iMessage reply, and phone board are still unverified.
 - October 2 onsite defect: a packaged 0.8.0 private Python import wrote new
   `__pycache__` files into the manifest-protected standard library. The next
   resolver reported `invalid_manifest` and all private tools appeared missing.
