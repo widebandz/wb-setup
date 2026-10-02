@@ -8,7 +8,7 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.2** unsigned pilot. The 0.8.0 DMG passed local package
+- Source target: **0.8.3** unsigned pilot. The 0.8.0 DMG passed local package
   gates and is being published without a 0.8.0 VM or phone run at the owner's
   direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
@@ -46,6 +46,12 @@ build without reconstructing decisions from chat history.
   advertised the exact 0.8.2 build and SHA-256, and a fresh public DMG
   download matched that hash on 2026-10-02. Onsite retry, VM/reboot,
   physical iMessage, and iPhone board proofs are still pending for this build.
+- The exact 0.8.3 build `0.8.3-20261002222812` passed source and packaged
+  self-tests (97/97 each), packaged browser E2E, recursive ad-hoc signature,
+  arm64 binary inspection, and `hdiutil verify`. Its DMG SHA-256 is
+  `1e3ca3f3f50d5bc8fcdcf92c4ed75e1023ad25ba6f8806e046680631bf954554`.
+  No 0.8.3 VM/reboot, physical iMessage reply, or iPhone board proof is
+  recorded; those remain onsite pilot gates.
 - October 2 onsite defect: a packaged 0.8.0 private Python import wrote new
   `__pycache__` files into the manifest-protected standard library. The next
   resolver reported `invalid_manifest` and all private tools appeared missing.
@@ -76,6 +82,24 @@ build without reconstructing decisions from chat history.
   plist cannot keep an older map process running after a Setup update.
   The 8790 portal, 4181 graph proxy, and 18790 map were listening on the
   client, but their full data and phone handoff were not yet verified.
+- After 0.8.2 cleared the map gate onsite, `:8783` and its ttyd child `:8784`
+  both listened, but the client terminal probe failed with no tmux server.
+  The reviewed customer chat server called tmux `list-sessions` from its
+  health request and returned 500 for the exact missing-server response.
+  The 0.8.3 candidate reports an empty terminal list for only that response,
+  retains errors for other tmux failures, and restarts the managed chat job
+  on retry. Owner-chat binding uses `imsg` chats/group/history under Wideband
+  Agent and does not call tmux; its earlier failure remains a separate gate.
+  The onsite report also found ttyd's internal basic-auth argument in a chat
+  log with mode 0644. The 0.8.3 candidate prepares managed logs mode 0600,
+  discards ttyd child output, rotates the installer-generated internal ttyd
+  credential, and clears the older chat log during retry. Customized auth
+  stops for review. The bind handoff now records only an allowlisted failure
+  code; its raw stdout/stderr remain temporary and private. The installed
+  Wideband Agent can remain at its older build when the normalized source
+  revision is unchanged; the different embedded CDHash alone does not call
+  for replacement or a new macOS grant. A bare 8790 request returning 403 is
+  the intended owner access boundary, not a portal outage.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and

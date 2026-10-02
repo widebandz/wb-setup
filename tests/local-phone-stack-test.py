@@ -6,6 +6,7 @@ import json
 import os
 import plistlib
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,29 @@ spec.loader.exec_module(stack)
 
 
 class LocalPhoneStackTest(unittest.TestCase):
+    def test_chat_log_is_private_and_generated_ttyd_secret_rotates(self):
+        with tempfile.TemporaryDirectory(prefix="wb-local-chat-secret-") as directory:
+            root = Path(directory)
+            fleetdeck = root / "fleetdeck"
+            logs = root / "setup"
+            fleetdeck.mkdir()
+            logs.mkdir()
+            credential = fleetdeck / "auth"
+            credential.write_text("fleet:" + "a" * 24)
+            credential.chmod(0o600)
+            log = logs / "com.wideband.test.fleetdeck-chat.log"
+            log.write_text("old ttyd credential might be here")
+            log.chmod(0o644)
+            with mock.patch.multiple(stack, FD=fleetdeck, LOG_DIR=logs):
+                stack.rotate_internal_ttyd_credential("com.wideband.test.fleetdeck-chat")
+                self.assertNotEqual(credential.read_text(), "fleet:" + "a" * 24)
+                self.assertEqual(log.read_text(), "")
+                self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(logs.stat().st_mode), 0o700)
+                credential.write_text("custom-secret")
+                with self.assertRaisesRegex(ValueError, "customized"):
+                    stack.rotate_internal_ttyd_credential("com.wideband.test.fleetdeck-chat")
+
     def test_runtime_tools_must_share_one_verified_bin(self):
         with tempfile.TemporaryDirectory(prefix="wb-local-tools-") as directory:
             base = Path(directory)
@@ -95,6 +119,7 @@ class LocalPhoneStackTest(unittest.TestCase):
                  mock.patch.dict(os.environ, os.environ.copy()), \
                  mock.patch.object(stack, "toolchain_bin", return_value=root / "tools"), \
                  mock.patch.object(stack, "prepare_graph", return_value="/usr/bin/node"), \
+                 mock.patch.object(stack, "rotate_internal_ttyd_credential"), \
                  mock.patch.object(stack, "read_token", return_value="a" * 64), \
                  mock.patch.object(stack, "ensure_job", side_effect=ensure_job), \
                  mock.patch.object(stack, "call", side_effect=call), \
@@ -108,6 +133,8 @@ class LocalPhoneStackTest(unittest.TestCase):
             serve.assert_not_called()
             self.assertIn(("launchctl", "kickstart", "-k",
                            f"gui/{os.getuid()}/com.wideband.test.fleetdeck-map"), calls)
+            self.assertIn(("launchctl", "kickstart", "-k",
+                           f"gui/{os.getuid()}/com.wideband.test.fleetdeck-chat"), calls)
             self.assertEqual(jobs[portal_label]["EnvironmentVariables"]["FLEETDECK_HOST"],
                              "wideband.localhost")
             self.assertEqual(jobs[portal_label]["EnvironmentVariables"]["PATH"],

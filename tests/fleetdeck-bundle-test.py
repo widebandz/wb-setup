@@ -503,6 +503,8 @@ class FleetdeckBundleTest(unittest.TestCase):
         self.assertIn("def scan():", portal_source)
         self.assertIn("CustomerHandler", portal_source)
         self.assertIn("FLEETDECK_CUSTOMER_TERMINALS", chat_source)
+        self.assertIn("subprocess.Popen(ttyd_argv(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
+                      chat_source)
         self.assertNotIn('self.path.startswith("/?key=")', chat_source)
         self.assertIsNone(bundler.STATIC_IDENTITY.search(portal_source.encode()))
         self.assertIsNone(bundler.PHONE_IDENTITY.search(portal_source.encode()))
@@ -527,6 +529,28 @@ class FleetdeckBundleTest(unittest.TestCase):
                "FLEETDECK_NOTES_PATH": str(self.base / "notes-beta.json"),
                "FLEETDECK_HOST": "client.tail000.ts.net",
                "FLEETDECK_MAP_ORIGIN": "https://client.tail000.ts.net:18970"}
+
+        # The terminal must present an honest empty fleet before any agent or
+        # tmux server exists. Unrelated tmux errors must remain failures.
+        empty_fleet_probe = "\n".join((
+            "import subprocess, sys",
+            "from unittest import mock",
+            "sys.path.insert(0, sys.argv[1])",
+            "import chat_server as chat",
+            "missing = subprocess.CompletedProcess(['tmux'], 1, '', 'error connecting to /tmp/tmux-1/default (No such file or directory)')",
+            "with mock.patch.object(chat.subprocess, 'run', return_value=missing):",
+            "    assert chat.tmux('list-sessions') == ''",
+            "    assert chat.snapshot() == []",
+            "denied = subprocess.CompletedProcess(['tmux'], 1, '', 'permission denied')",
+            "with mock.patch.object(chat.subprocess, 'run', return_value=denied):",
+            "    try: chat.tmux('list-sessions')",
+            "    except RuntimeError: pass",
+            "    else: raise AssertionError('unrelated tmux failure was hidden')",
+        ))
+        empty_fleet = subprocess.run([sys.executable, "-c", empty_fleet_probe,
+                                      str(bundle)], env={**env, "HOME": str(self.base)},
+                                     capture_output=True, text=True, timeout=10)
+        self.assertEqual(empty_fleet.returncode, 0, empty_fleet.stderr)
 
         # A real service scan enables only the two dynamic keys; an empty
         # registry must never make them look live on the client's phone.

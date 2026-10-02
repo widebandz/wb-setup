@@ -15,8 +15,10 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import secrets
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -185,10 +187,71 @@ def plist(label: str, argv: list[str], cwd: Path, env: dict[str, str]) -> bytes:
     return plistlib.dumps(data, sort_keys=True)
 
 
+def prepare_service_log(label: str) -> None:
+    """Keep launchd and child output private, including older 0644 logs."""
+    if LOG_DIR.is_symlink():
+        raise ValueError("Fleetdeck service log directory is a symlink")
+    LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory = LOG_DIR.lstat()
+    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.getuid():
+        raise ValueError("Fleetdeck service log directory has another owner")
+    os.chmod(LOG_DIR, 0o700)
+    path = LOG_DIR / f"{label}.log"
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(path, flags, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise ValueError(f"Fleetdeck service log has another owner: {label}")
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+
+
+def rotate_internal_ttyd_credential(label: str) -> None:
+    """Retire any credential an older ttyd child could have written to its log."""
+    if FD.is_symlink():
+        raise ValueError("Fleetdeck directory is a symlink")
+    directory = FD.lstat()
+    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != os.getuid():
+        raise ValueError("Fleetdeck directory has another owner")
+    auth = FD / "auth"
+    fd = os.open(auth, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise ValueError("Fleetdeck ttyd credential has another owner")
+        old = os.read(fd, 128).decode("ascii")
+        if not re.fullmatch(r"fleet:[A-Za-z0-9_-]{24}", old):
+            raise ValueError("Fleetdeck ttyd credential is customized; review before rotation")
+    finally:
+        os.close(fd)
+    prepare_service_log(label)
+    staged = FD / ".auth.wideband-new"
+    if staged.exists() or staged.is_symlink():
+        raise ValueError("Fleetdeck credential staging path is occupied")
+    new = ("fleet:" + secrets.token_urlsafe(18)).encode("ascii")
+    fd = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, new)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(staged, auth)
+    log = LOG_DIR / f"{label}.log"
+    fd = os.open(log, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise ValueError("Fleetdeck chat log has another owner")
+        os.ftruncate(fd, 0)
+    finally:
+        os.close(fd)
+
+
 def ensure_job(label: str, content: bytes) -> None:
     LA.mkdir(parents=True, exist_ok=True)
-    LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(LOG_DIR, 0o700)
+    prepare_service_log(label)
     dest = LA / f"{label}.plist"
     if dest.is_symlink():
         raise ValueError(f"LaunchAgent {label} is a symlink")
@@ -447,12 +510,16 @@ def run() -> None:
     chat = FD / "chat_server.py"
     if not chat.is_file() or "FLEETDECK_CUSTOMER_TERMINALS" not in chat.read_text(encoding="utf-8"):
         raise ValueError("reviewed customer tmux chat server is missing")
+    rotate_internal_ttyd_credential(chat_label)
     ensure_job(chat_label, plist(chat_label, [python, str(chat)], FD, {
         "PORT": "8783", "TTYD_PORT": "8784", "BIND": "127.0.0.1",
         "FLEETDECK_CUSTOMER_TERMINALS": "1",
         "FLEETDECK_HOST": host,
         "FLEETDECK_LOCAL_ONLY": "1" if local_only else "0",
     }))
+    # Reload the reviewed server after a Setup upgrade even when its plist
+    # did not change; otherwise launchd keeps the old Python process alive.
+    call("launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{chat_label}")
     def chat_ready() -> bool:
         try:
             urllib.request.urlopen("http://127.0.0.1:8783/", timeout=3)

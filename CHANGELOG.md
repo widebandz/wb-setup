@@ -3,6 +3,15 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.8.3 — unsigned pilot (2026-10-02 UTC)
+
+- Treat tmux's exact missing-server response as an empty terminal list in the customer Live terminals service. Other tmux failures remain errors. A fresh Mac can now complete Fleetdeck activation before any agent tmux session exists.
+- Restart the existing authenticated terminal LaunchAgent after the customer bundle upgrade so retry uses the new server code even when its plist is unchanged.
+- Keep managed service logs mode 0600, suppress ttyd child output that can echo its internal basic-auth argument, rotate the generated internal ttyd credential on phone-stack retry, and clear its older chat log. A customized credential stops for review.
+- Preserve a reviewed, content-free reason code when the owner-chat bind fails. The prior generic result discarded the Agent's actual failure, while raw Messages output still must not enter Setup state or support bundles.
+- The owner-chat bind remains a separate Messages/imsg gate; this change does not alter Wideband Agent Full Disk Access or text routing. The older installed Agent can be intentionally preserved when its source revision is unchanged, even though the new package embeds a differently signed build.
+- The exact package passed source and embedded self-tests (97/97 each), packaged browser E2E, recursive ad-hoc signature, arm64, and DMG checks. VM, reboot, physical iMessage, and iPhone board checks remain onsite pilot gates.
+
 ## 0.8.2 — unsigned pilot (2026-10-02 UTC)
 
 - Treat the exact tmux missing-server response on a fresh login as zero live sessions. Other tmux errors remain unknown. The Live Terminal Network now has a truthful empty state, allowing Fleetdeck installation to continue to the terminal and graph checks.

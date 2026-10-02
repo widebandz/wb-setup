@@ -53,13 +53,24 @@ class BindHandoffTest(unittest.TestCase):
 
     def test_exact_runtime_success_from_private_app_output(self):
         for marker in setup.BIND_SUCCESS_OUTPUT:
-            self.assertTrue(self.invoke(marker + "\n"))
+            self.assertEqual(self.invoke(marker + "\n"), (True, "bound"))
 
     def test_open_exit_zero_without_app_success_fails_closed(self):
-        self.assertFalse(self.invoke(""))
-        self.assertFalse(self.invoke("some other success\n"))
-        self.assertFalse(self.invoke(next(iter(setup.BIND_SUCCESS_OUTPUT)) + "\n", "Messages access denied\n"))
-        self.assertFalse(self.invoke(next(iter(setup.BIND_SUCCESS_OUTPUT)) + "\n", returncode=1))
+        self.assertEqual(self.invoke(""), (False, "agent_task_failed"))
+        self.assertEqual(self.invoke("some other success\n"), (False, "agent_task_failed"))
+        self.assertEqual(self.invoke(next(iter(setup.BIND_SUCCESS_OUTPUT)) + "\n", "Messages access denied\n"),
+                         (False, "agent_task_failed"))
+        self.assertEqual(self.invoke(next(iter(setup.BIND_SUCCESS_OUTPUT)) + "\n", returncode=1),
+                         (False, "agent_task_failed"))
+
+    def test_known_failure_is_saved_as_code_without_raw_output(self):
+        self.assertEqual(self.invoke("", "Wideband iMessage: expected one exact owner-only iMessage chat; found 0\n", 1),
+                         (False, "no_owner_chat_match"))
+        self.assertEqual(self.invoke("", "Wideband iMessage: send a fresh text from the owner's phone, then bind again\n", 1),
+                         (False, "fresh_owner_text_missing"))
+        self.assertEqual(self.invoke("", "Wideband iMessage: cannot read Messages chats; approve Full Disk Access for Wideband Agent\n", 1),
+                         (False, "messages_chat_read_failed"))
+        self.assertEqual(setup.bind_failure_code("private handle or token"), "agent_task_failed")
 
     def test_failed_handoff_does_not_load_services_or_store_raw_output(self):
         job_id = "bind-test"
@@ -68,7 +79,7 @@ class BindHandoffTest(unittest.TestCase):
             "started_at": setup.now(), "finished_at": None, "exit_code": None, "output": "",
         }
         with mock.patch.object(setup, "resolved_tool_path", return_value=PRIVATE_PYTHON), \
-             mock.patch.object(self.runner, "_bind_via_agent_app", return_value=False), \
+             mock.patch.object(self.runner, "_bind_via_agent_app", return_value=(False, "agent_task_failed")), \
              mock.patch.object(setup.subprocess, "Popen") as popen:
             self.runner._run(job_id)
         popen.assert_not_called()
@@ -76,6 +87,7 @@ class BindHandoffTest(unittest.TestCase):
         self.assertEqual(job["status"], "needs_attention")
         self.assertNotIn("Messages access denied", job["output"])
         self.assertNotIn("Loading the bound", job["output"])
+        self.assertIn("Private bind diagnostic: agent_task_failed", job["output"])
 
 
 if __name__ == "__main__":

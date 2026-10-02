@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-10-02T21:54:29Z",
+  "generated_at": "2026-10-02T22:31:12Z",
   "latest": {
-    "version": "0.8.2",
-    "build_id": "0.8.2-20261002215109",
-    "published_at": "2026-10-02T21:54:29Z",
+    "version": "0.8.3",
+    "build_id": "0.8.3-20261002222812",
+    "published_at": "2026-10-02T22:31:12Z",
     "minimum_macos": "14.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.2/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.2",
-    "sha256": "bacc83d2fb62b5dd197e75a3645627def99158a29801cbcdd69058677c685c54",
-    "size_bytes": 96223054,
-    "summary": "Fixes fresh-Mac Fleetdeck installation when no tmux session exists, restarts the map service on retry, and makes the retry visible."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.3/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.3",
+    "sha256": "1e3ca3f3f50d5bc8fcdcf92c4ed75e1023ad25ba6f8806e046680631bf954554",
+    "size_bytes": 96058727,
+    "summary": "Fixes fresh-Mac terminal readiness before tmux starts, secures terminal logs and credentials, and records safe owner-chat bind diagnostics."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }

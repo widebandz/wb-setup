@@ -163,6 +163,38 @@ def customer_chat_tools(source: str) -> str:
         return source  # Minimal source fixtures omit the upstream resolver.
     source = replace_assignment(source, "TMUX", '_bin("tmux")')
     source = replace_assignment(source, "TTYD", '_bin("ttyd")')
+    if "def tmux(" not in source:
+        return source  # Minimal tool-resolution fixtures omit the tmux wrapper.
+    # The upstream terminal treats an absent tmux server as an exception, so
+    # /healthz returns 500 on a fresh login. Only the exact missing-server
+    # response means an empty fleet; other tmux failures stay errors.
+    old = ('    if r.returncode != 0:\n'
+           '        raise RuntimeError((r.stderr or r.stdout or "tmux failed").strip()[:200])\n'
+           '    return r.stdout\n')
+    new = ('    if r.returncode != 0:\n'
+           '        error = r.stderr.strip()\n'
+           '        if (args and args[0] == "list-sessions" and r.returncode == 1\n'
+           '                and not r.stdout and (\n'
+           '                    (error.startswith("error connecting to ")\n'
+           '                     and error.endswith(("(No such file or directory)",\n'
+           '                                         "(Connection refused)")))\n'
+           '                    or error.startswith("no server running on "))):\n'
+           '            return ""\n'
+           '        raise RuntimeError((r.stderr or r.stdout or "tmux failed").strip()[:200])\n'
+           '    return r.stdout\n')
+    if source.count(old) != 1:
+        raise ValueError("Fleetdeck chat tmux command handling changed")
+    source = source.replace(old, new, 1)
+    spawn = '            proc = subprocess.Popen(ttyd_argv())\n'
+    if source.count(spawn) != 1:
+        raise ValueError("Fleetdeck ttyd child logging changed")
+    # ttyd may echo its -c basic-auth argument during startup. The parent
+    # reports child PID and exit status without persisting that secret.
+    source = source.replace(
+        spawn,
+        '            proc = subprocess.Popen(ttyd_argv(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n',
+        1,
+    )
     return source
 
 

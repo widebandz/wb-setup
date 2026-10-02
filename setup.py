@@ -94,6 +94,29 @@ BIND_SUCCESS_OUTPUT = {
     "owner chat bound and first message queued; run installer to activate services",
     "existing owner chat binding verified",
 }
+
+
+def bind_failure_code(stderr: str | None) -> str:
+    """Retain only a reviewed reason code, never raw Messages or tool output."""
+    if stderr is None:
+        return "agent_output_unavailable"
+    value = stderr.strip()
+    known = {
+        "Wideband iMessage: cannot read Messages chats; approve Full Disk Access for Wideband Agent":
+            "messages_chat_read_failed",
+        "Wideband iMessage: send a fresh text from the owner's phone, then bind again":
+            "fresh_owner_text_missing",
+        "Wideband iMessage: saved chat binding no longer matches the live chat":
+            "saved_binding_mismatch",
+        "Wideband iMessage: verified imsg tool is unavailable":
+            "verified_imsg_unavailable",
+    }
+    if value in known:
+        return known[value]
+    match = re.fullmatch(r"Wideband iMessage: expected one exact owner-only iMessage chat; found (\d+)", value)
+    if match:
+        return "no_owner_chat_match" if int(match.group(1)) == 0 else "ambiguous_owner_chats"
+    return "agent_task_failed"
 TOOLCHAIN_PYTHON = "@wideband-toolchain/python3"
 _UI_TOOLCHAIN_CACHE: dict[str, Any] = {}
 
@@ -676,7 +699,7 @@ class JobRunner:
         except (OSError, UnicodeError):
             return None
 
-    def _bind_via_agent_app(self, env: dict[str, str], base_command: list[str] | None = None) -> bool:
+    def _bind_via_agent_app(self, env: dict[str, str], base_command: list[str] | None = None) -> tuple[bool, str]:
         """Launch through the app identity that owns Messages Full Disk Access."""
         # Running Contents/MacOS/Wideband Agent directly from the Terminal-hosted
         # engine inherits Terminal's TCC context. LaunchServices gives the app
@@ -702,12 +725,13 @@ class JobRunner:
                     timeout=180, check=False,
                 )
             except (OSError, subprocess.SubprocessError):
-                return False
+                return False, "agent_launch_failed"
             output = self._private_handoff_text(stdout_path)
             errors = self._private_handoff_text(stderr_path)
-            return (launched.returncode == 0 and output is not None
-                    and output.strip() in BIND_SUCCESS_OUTPUT and errors is not None
-                    and not errors.strip())
+            verified = (launched.returncode == 0 and output is not None
+                        and output.strip() in BIND_SUCCESS_OUTPUT and errors is not None
+                        and not errors.strip())
+            return (True, "bound") if verified else (False, bind_failure_code(errors))
 
     def _run(self, job_id: str) -> None:
         with self.lock:
@@ -734,12 +758,14 @@ class JobRunner:
                     "agent_command": require_active_provider(names),
                 }) + "\n"
             if action == "run_imessage_bind":
-                verified = self._bind_via_agent_app(env, command)
+                verified, bind_reason = self._bind_via_agent_app(env, command)
                 self._append(job_id, (
                     "Owner-only iMessage chat verified by Wideband Agent.\n" if verified else
                     "Wideband Agent could not verify the owner chat. Check Messages, Full Disk Access, "
                     "and the fresh owner text, then retry.\n"
                 ))
+                if not verified:
+                    self._append(job_id, f"Private bind diagnostic: {bind_reason}\n")
                 code = 0 if verified else 1
             else:
                 process = subprocess.Popen(
