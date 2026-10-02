@@ -24,9 +24,10 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
-- Update delivery status: v0.7.1 public delivery was verified on 2026-09-30.
-  The v0.8.0 artifact and local tests are recorded below; verify its GitHub
-  asset, Pages feed, and fresh download before distributing its link.
+- Update delivery status: v0.8.0 is a public GitHub prerelease. Its Pages feed
+  and a fresh public DMG download matched the exact build and SHA-256 on
+  2026-10-02. The skipped VM and physical phone gates remain onsite pilot
+  checks, not completed release evidence.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and
@@ -433,7 +434,11 @@ tests passed with a private toolchain fixture. The app passed recursive code
 signature validation, the arm64 checks, mounted DMG inspection, and DMG
 checksum verification. No VM install, reboot, physical phone message, or
 physical iPhone board test was run for this build at the owner's direction;
-this is a local candidate, not a completed public release gate.
+these remain client pilot gates. Tag `v0.8.0` points to source commit `dd58163`.
+GitHub published the unsigned DMG, ZIP, and checksums as a prerelease. Pages
+workflow `37058200837` passed; `https://os.wideband.ai/version` returned this
+build and SHA-256; a fresh public DMG download had the same SHA-256. The link
+was sent through the existing owner-only Trace outbox, which marked it sent.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
