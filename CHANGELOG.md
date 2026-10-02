@@ -13,6 +13,7 @@ recorded here.
 - Deferred Claude Code installation to the selected Claude sign-in action. Client bootstrap leaves `.zshrc` and operator Claude files untouched; the sign-in action downloads the official installer to a private file and checks the fetch and script before execution. Preview providers remain pending.
 - Updated the managed Fleetdeck adapter from the current reviewed source. Local-only preview uses a guarded `wideband.localhost` capability; private iPhone access still needs Tailscale Serve and owner confirmation.
 - Added isolated toolchain tamper/rollback tests, preflight tests, local phone-stack checks, and customer map/graph tests. Exact DMG, VM, and phone results are recorded separately after release validation.
+- Tightened an owned `~/.wideband` directory before activating private tools, including on installs created by older Setup versions. Launcher failures now identify the preparation stage instead of implying that no files changed.
 
 ## 0.7.1 — unsigned pilot (2026-09-30 UTC)
 

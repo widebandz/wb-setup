@@ -389,6 +389,12 @@ and free space before it changes the user's files. The launcher stages the
 payload under `~/.wideband/toolchain/versions/<build-id>` with private
 permissions, verifies the complete copy, and atomically switches the mode-0600
 `active` build pointer. Previous versions remain available for rollback.
+After preflight proves that the current login owns its install paths, the
+launcher changes an existing owned `~/.wideband` parent to mode 0700 before
+private-tool activation. Earlier Setup builds could leave that parent at 0755,
+which the new toolchain correctly rejects. The launcher reports its failing
+preparation stage so an operator can distinguish this from a native preflight
+or Messages failure.
 An invalid active private toolchain fails closed; it never silently selects
 another profile's Homebrew. Only an explicitly marked 0.7.0/0.7.1 install may
 use its own independently verified healthy Homebrew during migration. No
@@ -415,6 +421,19 @@ Source self-tests, isolated private-payload startup, complete-manifest
 tampering, and rollback tests are local development evidence. Record the exact
 DMG build ID, source/embedded test counts, UTM state, browser results, and
 physical phone results below only after running them against that artifact.
+
+October 2 local 0.8.0 candidate: exact DMG build
+`0.8.0-20261002150746`, SHA-256
+`1fbba4cc830e26b41b70112a951b39d4faa54c744c445e2a9e18e1b3c617cf6a`.
+Source and packaged self-tests each passed 97/97; the packaged setup browser
+E2E passed in an isolated profile. The Fleetdeck bundle check passed against
+reviewed source `092d6be`, including the phone, board, logo, owner access,
+and `/app` routes. The iMessage runtime and disabled-LaunchAgent recovery
+tests passed with a private toolchain fixture. The app passed recursive code
+signature validation, the arm64 checks, mounted DMG inspection, and DMG
+checksum verification. No VM install, reboot, physical phone message, or
+physical iPhone board test was run for this build at the owner's direction;
+this is a local candidate, not a completed public release gate.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 

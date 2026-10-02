@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise recovery from launchd's persistent disabled state in isolation."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -77,6 +78,32 @@ class DisabledLaunchAgentsTest(unittest.TestCase):
             script = self.bin / name
             script.write_text("#!/bin/sh\n" + body, encoding="utf-8")
             script.chmod(0o755)
+        # Scoped installs now require an integrity-checked private toolchain.
+        # Keep the fixture small while exercising the real resolver path.
+        private_root = self.home / ".wideband"
+        toolchain = private_root / "toolchain"
+        versions = toolchain / "versions"
+        private_bin = versions / "test-build" / "bin"
+        private_bin.mkdir(parents=True)
+        for directory in (private_root, toolchain, versions, private_bin.parent, private_bin):
+            directory.chmod(0o700)
+        hashes = []
+        for name, body in (("python3", "exec /usr/bin/python3 \"$@\"\n"),
+                           ("tmux", "exit 0\n"), ("imsg", "exit 0\n")):
+            script = private_bin / name
+            script.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+            script.chmod(0o700)
+            hashes.append(f"{hashlib.sha256(script.read_bytes()).hexdigest()}  bin/{name}\n")
+        private_launchctl = private_bin / "launchctl"
+        private_launchctl.write_bytes(launchctl.read_bytes())
+        private_launchctl.chmod(0o700)
+        hashes.append(f"{hashlib.sha256(private_launchctl.read_bytes()).hexdigest()}  bin/launchctl\n")
+        manifest = private_bin.parent / "manifest.sha256"
+        manifest.write_text("".join(hashes), encoding="ascii")
+        manifest.chmod(0o600)
+        active = toolchain / "active"
+        active.write_text("test-build\n", encoding="ascii")
+        active.chmod(0o600)
         self.env = dict(
             os.environ, HOME=str(self.home),
             PATH=str(self.bin) + ":" + os.environ.get("PATH", ""),

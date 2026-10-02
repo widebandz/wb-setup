@@ -184,6 +184,11 @@ if bash "$HERE/tests/toolchain-install-test.sh" >/dev/null 2>&1; then
 else
   no "packaged toolchain activation or rollback failed"
 fi
+if bash "$HERE/tests/app-launcher-private-root-test.sh" >/dev/null 2>&1; then
+  ok "launcher prepares a private toolchain parent on fresh and older installs"
+else
+  no "launcher leaves a toolchain parent unusable or exposed"
+fi
 
 # ── 2. status line fidelity ──────────────────────────────────────────────────
 # The argument for shipping this as a file rather than regenerating it from a
@@ -1162,6 +1167,12 @@ PY
   else
     no "iMessage bind can mistake open's status for the app's result"
   fi
+  if python3 "$HERE/tests/imessage-runtime-test.py" >/dev/null 2>&1 \
+     && python3 "$HERE/tests/imessage-launchagent-enable-test.py" >/dev/null 2>&1; then
+    ok "bound iMessage runtime installs and recovers only its guarded jobs"
+  else
+    no "iMessage runtime or LaunchAgent recovery failed"
+  fi
 
   tmp="$(mktemp)"
   bash "$HERE/verify.sh" --quick --json > "$tmp" 2>/dev/null || true
@@ -1187,6 +1198,7 @@ for s in bootstrap.sh install.sh verify.sh selftest.sh doctor.sh setup.sh \
          packaging/claude-sign-in.sh \
          lib/bootstrap-homebrew.sh lib/toolchain-path lib/install-toolchain.sh \
          lib/native-preflight.sh tests/toolchain-path-test.sh tests/toolchain-install-test.sh \
+         tests/app-launcher-private-root-test.sh \
          skills/agent-session-memory/scripts/selfcheck.sh; do
   [ -f "$HERE/$s" ] || { no "$s missing"; continue; }
   bash -n "$HERE/$s" 2>/dev/null && ok "$s parses" || no "$s has a syntax error"

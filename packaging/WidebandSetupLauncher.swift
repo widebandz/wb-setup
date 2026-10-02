@@ -201,7 +201,7 @@ private final class SetupAppDelegate: NSObject, NSApplicationDelegate, WKNavigat
         process.terminationHandler = { [weak self] finished in
             DispatchQueue.main.async {
                 guard let self, finished.terminationStatus != 0, self.dashboardURL == nil else { return }
-                self.showFailure("Wideband could not prepare the local setup engine. Your existing configuration was not changed. Reopen the app to retry or contact Wideband.")
+                self.showFailure("Wideband stopped while preparing the local setup engine. Check the earlier stage alert, then reopen the app to retry or contact Wideband.")
             }
         }
         do {
