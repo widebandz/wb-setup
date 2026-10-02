@@ -8,7 +8,7 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.0** unsigned pilot. The exact DMG passed local package
+- Source target: **0.8.1** unsigned pilot. The 0.8.0 DMG passed local package
   gates and is being published without a 0.8.0 VM or phone run at the owner's
   direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
@@ -28,6 +28,24 @@ build without reconstructing decisions from chat history.
   and a fresh public DMG download matched the exact build and SHA-256 on
   2026-10-02. The skipped VM and physical phone gates remain onsite pilot
   checks, not completed release evidence.
+- October 2 onsite defect: a packaged 0.8.0 private Python import wrote new
+  `__pycache__` files into the manifest-protected standard library. The next
+  resolver reported `invalid_manifest` and all private tools appeared missing.
+  This reproduced with the exact released payload: 2,642 manifest files became
+  2,711 files after ordinary imports, with 69 new `.pyc` files. The 0.8.1
+  candidate stages Python's standard-library directories without owner write
+  permission; the same import sequence leaves 2,642 files and resolves again.
+  A newer build ID stages alongside the old version and activates a fresh
+  private version without changing Homebrew. This is not evidence that the
+  onsite Full Disk Access grant is present or absent.
+- The exact 0.8.1 candidate build `0.8.1-20261002205106` passed source and
+  packaged self-tests (97/97 each), packaged Setup browser E2E, recursive
+  ad-hoc signature validation, arm64 binary inspection, and `hdiutil verify`.
+  Its DMG SHA-256 is
+  `9e4d8366f4204759a823fa6e1d87863110b67349746a61f4f94647463478188d`.
+  The exact packaged private tool payload remained at 2,642 files after
+  imports, resolver recheck, and same-build activation. The 0.8.1 VM, reboot,
+  iMessage, and iPhone checks have not been run.
 - Last release Apple Silicon VM checkpoint: 2026-09-28. The exact 0.7.0 DMG
   upgraded the earlier clean UTM pilot and recovered its private board, map,
   graph, terminal, Notes, and setup link. The earlier clean-install/reboot and

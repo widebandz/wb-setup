@@ -3,6 +3,13 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.8.1 — unsigned pilot (2026-10-02 UTC)
+
+- Keep the bundled Python standard library immutable after staging. Ordinary imports in 0.8.0 created bytecode files outside the signed tool manifest, so subsequent checks blocked Python, tmux, imsg, and Claude sign-in. The new build stages a fresh private version and verifies that repeated imports leave the manifest intact.
+- Replace stale client-guide copy that said Homebrew was installing; the packaged client uses its own private tools.
+- Full Disk Access on the onsite Mac remains a separate macOS permission check. A failed Setup indicator alone does not prove a denied grant.
+- Source and packaged suites passed 97/97; the exact packaged payload survived Python imports and a second activation with all 2,642 manifest files unchanged. The packaged browser E2E, ad-hoc signature, and DMG checksum checks passed. VM, reboot, iMessage, and physical phone board checks remain onsite pilot gates.
+
 ## 0.8.0 — unsigned pilot (2026-10-02 UTC)
 
 ### Private tools and account-free local setup

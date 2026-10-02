@@ -57,6 +57,9 @@ DEST="$VERSIONS/$BUILD_ID"
 STAGE=""
 cleanup() {
   if [ -n "$STAGE" ] && [ -d "$STAGE" ] && [ ! -L "$STAGE" ]; then
+    if [ -d "$STAGE/lib/python3.11" ]; then
+      /usr/bin/find "$STAGE/lib/python3.11" -type d -exec /bin/chmod u+w {} +
+    fi
     /bin/rm -rf -- "$STAGE"
   fi
 }
@@ -77,6 +80,12 @@ else
   /usr/bin/ditto "$SOURCE" "$STAGE"
   /usr/bin/find "$STAGE" -type d -exec /bin/chmod 700 {} +
   /usr/bin/find "$STAGE" -type f -exec /bin/chmod 600 {} +
+  # Python silently writes new __pycache__ files during ordinary imports.
+  # Extra files invalidate the complete payload manifest on the next resolve.
+  # Keep the bundled standard library readable but immutable for this login.
+  if [ -d "$STAGE/lib/python3.11" ]; then
+    /usr/bin/find "$STAGE/lib/python3.11" -type d -exec /bin/chmod 500 {} +
+  fi
   for tool in python3 tmux imsg node npm ttyd; do
     [ -f "$STAGE/bin/$tool" ] && [ ! -L "$STAGE/bin/$tool" ] \
       || { echo "bundled tool is missing" >&2; exit 1; }

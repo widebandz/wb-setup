@@ -1013,7 +1013,7 @@ function renderMachineState() {
             ? "Complete the Wideband setup popup currently on screen."
             : bootstrapStatus === "needs_attention"
               ? "The core tool install needs review in Terminal."
-              : "Homebrew and the core tools are installing in Terminal.",
+              : "Wideband is preparing its private core tools for this login.",
       !bootstrapDone && !["unsupported_macos", "needs_admin_password", "needs_developer_tools", "needs_developer_tools_selection", "needs_developer_tools_update", "needs_homebrew_ownership", "needs_independent_toolchain", "collecting_identity", "needs_attention"].includes(bootstrapStatus),
     ),
     machineRow(installDone, "Wideband text foundation", installDone ? "Wideband Agent and the messaging foundation are installed." : deactivated ? "Managed services are deactivated; Repair Wideband can restore them." : ["run_install", "run_imessage_install"].includes(running?.action) ? "Installing automatically now." : attention ? "An operator will review the installation output." : "Available after the separate agent Apple Account is ready; local Fleetdeck can continue.", ["run_install", "run_imessage_install"].includes(running?.action)),

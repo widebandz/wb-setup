@@ -4,16 +4,21 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURE="$(/usr/bin/mktemp -d /tmp/wb-tool-install.XXXXXX)"
-trap '/bin/rm -rf "$FIXTURE"' EXIT
+cleanup() {
+  /usr/bin/find "$FIXTURE" -type d -exec /bin/chmod u+w {} +
+  /bin/rm -rf "$FIXTURE"
+}
+trap cleanup EXIT
 HOME_DIR="$FIXTURE/home"
 SOURCE="$FIXTURE/source"
-/bin/mkdir -m 700 "$HOME_DIR" "$SOURCE" "$SOURCE/bin" "$SOURCE/lib"
+/bin/mkdir -m 700 "$HOME_DIR" "$SOURCE" "$SOURCE/bin" "$SOURCE/lib" "$SOURCE/lib/python3.11"
 
 for tool in python3 tmux imsg node npm ttyd; do
   printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$tool" > "$SOURCE/bin/$tool"
   /bin/chmod 755 "$SOURCE/bin/$tool"
 done
 printf 'runtime resource\n' > "$SOURCE/lib/resource.dat"
+printf 'stdlib resource\n' > "$SOURCE/lib/python3.11/module.py"
 /bin/chmod 644 "$SOURCE/lib/resource.dat"
 /usr/bin/find "$SOURCE" -type f ! -name manifest.sha256 -print | /usr/bin/sort | while IFS= read -r file; do
   relative="${file#"$SOURCE"/}"
@@ -27,6 +32,7 @@ ACTIVE="$HOME_DIR/.wideband/toolchain/active"
 SELECTED="$(HOME="$HOME_DIR" WB_TC_REQUIRE_PRIVATE=1 "$ROOT/lib/toolchain-path" python3)"
 [ "$SELECTED" = "$HOME_DIR/.wideband/toolchain/versions/0.8.0-first/bin/python3" ]
 [ "$("$SELECTED")" = python3 ]
+[ "$(/usr/bin/stat -f '%Lp' "$HOME_DIR/.wideband/toolchain/versions/0.8.0-first/lib/python3.11")" = 500 ]
 
 # A second package can stage and switch without deleting the previous one.
 HOME="$HOME_DIR" /bin/bash "$ROOT/lib/install-toolchain.sh" "$SOURCE" 0.8.0-second >/dev/null

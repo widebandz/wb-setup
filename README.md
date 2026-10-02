@@ -1,11 +1,12 @@
 # wb-setup
 
 The current public pilot is the
-[v0.8.0 unsigned DMG](https://github.com/widebandz/wb-setup/releases/tag/v0.8.0).
+[v0.8.1 unsigned DMG](https://github.com/widebandz/wb-setup/releases/tag/v0.8.1).
+It fixes private tool verification after Python imports.
 It includes a private toolchain, so a client profile can prepare the local
 Fleetdeck stack without using another profile's Homebrew or waiting for an
 agent Apple Account. The exact package passed source, packaged, and browser
-checks. A 0.8.0 VM install, reboot, physical iMessage reply, and iPhone board
+checks. A 0.8.1 VM install, reboot, physical iMessage reply, and iPhone board
 check have not been run; complete those checks on each pilot client Mac.
 
 The source bootstrap below builds the operator foundation but does not include
@@ -15,7 +16,7 @@ those bundled customer phone apps:
 curl -fsSL https://raw.githubusercontent.com/widebandz/wb-setup/main/bootstrap.sh | bash
 ```
 
-**Current release:** 0.8.0. This unsigned pilot requires the documented
+**Current release:** 0.8.1. This unsigned pilot requires the documented
 Privacy & Security **Open Anyway** step.
 Start with [BUILD-MEMORY.md](BUILD-MEMORY.md)
 for the complete architecture, security boundaries, release procedure, and

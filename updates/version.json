@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-10-02T20:00:49Z",
+  "generated_at": "2026-10-02T20:58:51Z",
   "latest": {
-    "version": "0.8.0",
-    "build_id": "0.8.0-20261002150746",
-    "published_at": "2026-10-02T20:00:49Z",
+    "version": "0.8.1",
+    "build_id": "0.8.1-20261002205106",
+    "published_at": "2026-10-02T20:58:51Z",
     "minimum_macos": "14.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.0/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.0",
-    "sha256": "1fbba4cc830e26b41b70112a951b39d4faa54c744c445e2a9e18e1b3c617cf6a",
-    "size_bytes": 96597824,
-    "summary": "Private tools and local-first Fleetdeck with current phone UI, live terminal, graph, and guarded iMessage setup. Unsigned pilot; complete physical phone and reboot checks onsite."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.1/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.1",
+    "sha256": "9e4d8366f4204759a823fa6e1d87863110b67349746a61f4f94647463478188d",
+    "size_bytes": 95932284,
+    "summary": "Fixes private tool verification after Python imports so local Fleetdeck, Claude setup, tmux, and imsg remain available. Unsigned pilot; verify permissions and phone delivery onsite."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }
