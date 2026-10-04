@@ -2,21 +2,21 @@
   "schema_version": 1,
   "product": "wideband-setup",
   "channel": "pilot",
-  "generated_at": "2026-10-02T22:31:12Z",
+  "generated_at": "2026-10-04T19:28:09Z",
   "latest": {
-    "version": "0.8.3",
-    "build_id": "0.8.3-20261002222812",
-    "published_at": "2026-10-02T22:31:12Z",
+    "version": "0.8.4",
+    "build_id": "0.8.4-20261004180108",
+    "published_at": "2026-10-04T19:28:09Z",
     "minimum_macos": "14.0",
     "architecture": "arm64",
     "trust": "ad-hoc",
     "requires_gatekeeper_exception": true,
     "artifact_name": "Wideband-Setup-unsigned.dmg",
-    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.3/Wideband-Setup-unsigned.dmg",
-    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.3",
-    "sha256": "1e3ca3f3f50d5bc8fcdcf92c4ed75e1023ad25ba6f8806e046680631bf954554",
-    "size_bytes": 96058727,
-    "summary": "Fixes fresh-Mac terminal readiness before tmux starts, secures terminal logs and credentials, and records safe owner-chat bind diagnostics."
+    "download_url": "https://github.com/widebandz/wb-setup/releases/download/v0.8.4/Wideband-Setup-unsigned.dmg",
+    "release_notes_url": "https://github.com/widebandz/wb-setup/releases/tag/v0.8.4",
+    "sha256": "05e19fbcf97aacae3fdec659fdc710ac65f6766ee71c13d1e375f6959ef4c07c",
+    "size_bytes": 372133861,
+    "summary": "Adds real agent creation, shared head routing, live network process tracking, and bundled Playwright browser tools. Manual-test pilot."
   },
   "history_url": "https://github.com/widebandz/wb-setup/releases"
 }
