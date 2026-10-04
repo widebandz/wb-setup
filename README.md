@@ -97,7 +97,7 @@ uncertain send is held for review and never retried automatically. Reopening
 an older completed setup offers a manual send control instead of sending old handoff
 texts automatically.
 
-The unreleased 0.8.4 candidate adds **Agent fleet** at port 8783. **Create agent**
+The 0.8.4 manual-test prerelease adds **Agent fleet** at port 8783. **Create agent**
 records a private role and workspace, prepares its instructions and tools, and
 launches Claude Code after that login is signed in. Existing project directories
 can be selected without replacing their instruction files or npm dependencies.

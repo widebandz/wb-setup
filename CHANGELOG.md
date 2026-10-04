@@ -3,7 +3,7 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
-## 0.8.4 — local candidate (2026-10-04 UTC)
+## 0.8.4 — manual-test prerelease (2026-10-04 UTC)
 
 - Create agents from Fleetdeck at 8783 through one shared provisioner: private roster, role and workspace, provider launch, resumable context, and current process evidence in the Live Terminal Network.
 - Give agents private role instructions, Python and Node scripting, native provider search, and bundled Playwright with matching Chromium. Preserve existing project instructions, dependencies, browser profiles, and operator configuration.

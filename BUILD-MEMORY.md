@@ -8,8 +8,8 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.4** local unsigned candidate; agent provisioning changes
-  are awaiting the owner's manual test. The 0.8.0 DMG passed local package
+- Source target: **0.8.4** unsigned manual-test prerelease; agent provisioning
+  changes are awaiting the owner's manual test. The 0.8.0 DMG passed local package
   gates and is being published without a 0.8.0 VM or phone run at the owner's
   direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
@@ -593,7 +593,14 @@ runtime, installer, and environment helpers matched their final source. The
 Playwright bundle contains 909 manifest files. Automated functional tests,
 browser launches, VM installs, reboot, Messages binding, and physical phone
 reply were not run. The previous 0.8.3 local artifacts are retained under
-`dist/archive/0.8.3-20261002222812/`; this 0.8.4 artifact is not a public release.
+`dist/archive/0.8.3-20261002222812/`.
+
+At the owner's request, GitHub prerelease `v0.8.4` now hosts that exact DMG and
+checksums. The tag points to source commit `7768ff4`; GitHub reports the same
+DMG SHA-256 and byte size, and the public direct download returned HTTP 200.
+The public release is for manual testing. The automatic update feed still
+advertises the earlier pilot; no new functional or physical-phone proof was
+added by uploading the file.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
