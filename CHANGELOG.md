@@ -3,6 +3,14 @@
 All notable product and release-engineering changes to Wideband Setup are
 recorded here.
 
+## 0.8.4 — local candidate (2026-10-04 UTC)
+
+- Create agents from Fleetdeck at 8783 through one shared provisioner: private roster, role and workspace, provider launch, resumable context, and current process evidence in the Live Terminal Network.
+- Give agents private role instructions, Python and Node scripting, native provider search, and bundled Playwright with matching Chromium. Preserve existing project instructions, dependencies, browser profiles, and operator configuration.
+- Launch the local head after provider sign-in, before Messages setup. Reuse that head for exact owner-chat binding and guarded iMessage replies; show the actual messaging route in the network.
+- Keep local OS installation independent of an owner phone number or Apple Account, and reconcile the managed Fleetdeck bundle when a new installer build opens.
+- Automated functional, browser, VM, reboot, and physical phone testing is deferred to the owner's manual testing for this candidate.
+
 ## 0.8.3 — unsigned pilot (2026-10-02 UTC)
 
 - Treat tmux's exact missing-server response as an empty terminal list in the customer Live terminals service. Other tmux failures remain errors. A fresh Mac can now complete Fleetdeck activation before any agent tmux session exists.

@@ -9,11 +9,17 @@ import ipaddress
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 from tm_fleet_common import resolve_sessions_conf
+
+# The reader invokes this collector by absolute script path, so its sibling
+# package directory is not automatically on sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import customer_agent_provision
 
 VERSION = "1.0.0"
 SCHEMA = "agent-fleet.snapshot.v1"
@@ -79,6 +85,38 @@ def read_json(path: Path) -> dict | None:
     except json.JSONDecodeError:
         return None
     return value if isinstance(value, dict) else None
+
+
+def imessage_binding(path: Path) -> dict | None:
+    """Project only safe routing metadata from the private customer transport."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "r", encoding="utf-8") as source:
+            info = os.fstat(source.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077 or info.st_size > 64 * 1024):
+                return None
+            value = json.load(source)
+        if (not isinstance(value, dict) or value.get("schema_version") != 1
+                or value.get("session") != "wb-head"
+                or value.get("agent_command") not in {"claude", "codex"}
+                or not isinstance(value.get("owner_phone"), str)
+                or not re.fullmatch(r"\+[1-9][0-9]{7,14}", value["owner_phone"])
+                or value.get("first_goal") not in {None, "research", "website", "proposal"}):
+            return None
+        binding = value.get("binding")
+        if binding is None:
+            return {"session": "wb-head", "provider": value["agent_command"], "bound": False}
+        if (not isinstance(binding, dict) or type(binding.get("chat_id")) is not int
+                or binding["chat_id"] < 0
+                or not isinstance(binding.get("chat_guid"), str) or not binding["chat_guid"]
+                or not isinstance(binding.get("account_login"), str) or not binding["account_login"]):
+            return None
+        # Addresses, chat identifiers, account identity and queue content stay
+        # private. A saved binding is a declaration, not evidence of delivery.
+        return {"session": "wb-head", "provider": value["agent_command"], "bound": True}
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return None
 
 
 def frontmatter(text: str) -> dict:
@@ -216,7 +254,11 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
     memory_path = Path(os.environ.get("TM_MEMORY_DIR") or home / ".config/agent-session-memory")
     routing_path = Path(os.environ.get("TM_ROUTING") or home / ".imsg-routing.json")
     chatbind_path = Path(os.environ.get("TM_CHATBIND") or home / ".imsg-chatbind.json")
+    runtime_path = home / ".wideband" / "imessage" / "config.json"
     diagnostics = [source_status(path, ref) for ref, path in (("sessions_conf", standard_path), ("devices_conf", devices_path), ("identity_cards", memory_path / "identity"), ("state_cards", memory_path / "state"), ("routing_descriptions", routing_path), ("chatbind", chatbind_path))]
+    runtime_binding = imessage_binding(runtime_path)
+    if runtime_path.exists():
+        diagnostics.append(source_status(runtime_path, "imessage_runtime"))
     unknowns: list[dict] = []
 
     def unknown(kind: str, source: str, detail: str, ident: str | None = None):
@@ -235,8 +277,10 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
     if routing is None:
         unknown("source_unavailable", "routing_descriptions", "Router config could not be read; description links are unknown.")
     chatbind = read_json(chatbind_path)
-    if chatbind is None:
+    if chatbind is None and runtime_binding is None:
         unknown("source_unavailable", "chatbind", "Bound-chat config could not be read; bindings are unknown.")
+    if runtime_path.exists() and runtime_binding is None:
+        unknown("source_unavailable", "imessage_runtime", "Private owner-chat binding could not be checked.")
 
     identity_dir = memory_path / "identity"
     state_dir = memory_path / "state"
@@ -301,7 +345,20 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
     if not isinstance(bound, list):
         bound = []
         unknown("invalid_metadata", "chatbind", "Bound chat entries were not a list.")
+    if runtime_binding is not None:
+        # The customer transport is authoritative for its own head, including
+        # an explicitly unbound state. Do not revive an older legacy binding.
+        bound = [entry for entry in bound if not isinstance(entry, dict)
+                 or entry.get("session") != runtime_binding["session"]]
+    try:
+        roster = customer_agent_provision.list_agents(check_provider=False)
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        roster = None
+        unknown("source_unavailable", "agent_roster", "Private agent roster could not be checked.")
     names = set(observed_sessions) | set(declared or {}) | set(identities or {}) | set(states or {})
+    names.update(agent["name"] for agent in roster or [])
+    if runtime_binding and runtime_binding["bound"]:
+        names.add(runtime_binding["session"])
     for entry in bound:
         if isinstance(entry, dict) and safe_name(entry.get("session")):
             names.add(entry["session"])
@@ -354,7 +411,54 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
             refs.append("identity_cards")
         if state:
             refs.append("state_cards")
-        node({"id": f"session:{name}", "type": "session", "label": name, "parent_id": f"host:{args.host_id}", "declared": name in declared if declared is not None else None, "observed": name in observed_sessions if sessions_raw is not None else None, "standard": {"present": name in declared if declared is not None else None, "source_mtime": mtime(standard_path)}, "runtime": {"window_count": by_session_windows.get(name, 0) if windows_raw is not None and live else None, "created_at": epoch(live[1]) if live else None, "last_activity_at": epoch(live[2]) if live else None}, "identity": {"card_present": identity is not None if identities is not None else None, "stable_session_id": f"session:{name}", "role": role, "card_updated_date": card.get("updated") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(card.get("updated", ""))) else None, "card_file_mtime": mtime(identity[1]) if identity else None, "verified_agent_id": None}, "state": {"card_present": state is not None if states is not None else None, "status": status, "updated_date": state_card.get("updated") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(state_card.get("updated", ""))) else None}, "root_evidence": {"card_vs_standard_match": root_match, "observed_cwd_within_card": cwd_in_card, "observed_cwd_within_standard": cwd_in_standard, "source_refs": [r for r in ("identity_cards" if card_root else None, "sessions_conf" if standard_root else None, "tmux" if active_cwds.get(name) else None) if r], "as_of": stamp}, "source_refs": refs, "observed_at": stamp if live else None})
+        rostered = any(agent["name"] == name for agent in roster or [])
+        if rostered:
+            refs.append("agent_roster")
+        if runtime_binding and runtime_binding["session"] == name:
+            refs.append("imessage_runtime")
+        node({"id": f"session:{name}", "type": "session", "label": name, "parent_id": f"host:{args.host_id}", "declared": rostered or (name in declared if declared is not None else False), "observed": name in observed_sessions if sessions_raw is not None else None, "standard": {"present": name in declared if declared is not None else None, "source_mtime": mtime(standard_path)}, "runtime": {"window_count": by_session_windows.get(name, 0) if windows_raw is not None and live else None, "created_at": epoch(live[1]) if live else None, "last_activity_at": epoch(live[2]) if live else None}, "identity": {"card_present": identity is not None if identities is not None else None, "stable_session_id": f"session:{name}", "role": role, "card_updated_date": card.get("updated") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(card.get("updated", ""))) else None, "card_file_mtime": mtime(identity[1]) if identity else None, "verified_agent_id": None}, "state": {"card_present": state is not None if states is not None else None, "status": status, "updated_date": state_card.get("updated") if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(state_card.get("updated", ""))) else None}, "root_evidence": {"card_vs_standard_match": root_match, "observed_cwd_within_card": cwd_in_card, "observed_cwd_within_standard": cwd_in_standard, "source_refs": [r for r in ("identity_cards" if card_root else None, "sessions_conf" if standard_root else None, "tmux" if active_cwds.get(name) else None) if r], "as_of": stamp}, "source_refs": refs, "observed_at": stamp if live else None})
+
+    for agent in roster or []:
+        name = agent["name"]
+        ident = f"agent:{name}"
+        observed = agent["state"] == "process_observed"
+        node({"id": ident, "type": "agent", "label": name, "parent_id": None,
+              "declared": True, "observed": observed,
+              "registry": {"agent_id": name, "state": "process_observed" if observed else "planned", "host_id": args.host_id,
+                           "session_name": name},
+              "source_refs": ["agent_roster"] + (["tmux"] if observed else []),
+              "observed_at": stamp if observed else None})
+        nodes[f"session:{name}"]["registry"] = dict(nodes[ident]["registry"])
+        edge(ident, f"session:{name}",
+             "launch_binding" if observed else "planned_binding",
+             "observed" if observed else "declared",
+             "agent_roster", "Recorded launch has a current provider process; task readiness unverified" if observed else
+             "Agent requested; current occupant identity unverified",
+             source_time=mtime(customer_agent_provision.ROSTER))
+
+    for capability, label, section in (
+        ("web-search", "Web search", "web_search"),
+        ("playwright", "Playwright", "browser"),
+        ("python", "Python scripting", "scripting"),
+        ("node", "Node scripting", "scripting"),
+    ):
+        requested = [agent for agent in roster or []
+                     if section in agent.get("capabilities", ("web_search", "browser", "scripting"))]
+        if not requested:
+            continue
+        installed = any(isinstance(agent.get("tools"), dict)
+                        and isinstance(agent["tools"].get(section), dict)
+                        and agent["tools"][section].get("state") == "installed"
+                        for agent in requested)
+        tool_id = f"tool:{capability}"
+        node({"id": tool_id, "type": "tool", "label": label, "parent_id": None,
+              "declared": True, "observed": True if installed else None,
+              "status": "installed_files" if installed else "declared",
+              "source_refs": ["agent_roster"], "observed_at": stamp if installed else None})
+        for agent in requested:
+            edge(f"agent:{agent['name']}", tool_id, "uses_tool", "declared", "agent_roster",
+                 "Standard agent template capability; invocation and task outcome unverified",
+                 source_time=mtime(customer_agent_provision.ROSTER))
 
     for name, index, active in windows:
         if f"session:{name}" not in nodes:
@@ -373,6 +477,16 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
         node({"id": f"pane:{name}:{pane_id}", "type": "pane", "label": f"Pane {pane_index}", "parent_id": window_id, "declared": False, "observed": True, "pane_id": pane_id, "pane_index": int(pane_index) if pane_index.isdigit() else None, "active": active == "1", "dead": dead == "1", "process": process(command, agents, shells), "observed_cwd_scope": root_scope, "observed_cwd_within_card": in_card, "observed_cwd_within_standard": in_standard, "verified_agent_id": None, "source_refs": ["tmux", "tm_memory_classification_rule"], "observed_at": stamp})
         if nodes[window_id]["runtime"]["pane_count"] is not None:
             nodes[window_id]["runtime"]["pane_count"] += 1
+
+    for agent in roster or []:
+        if agent["state"] != "process_observed":
+            continue
+        name = agent["name"]
+        current = [pane for pane in panes if pane[0] == name]
+        if len(current) == 1:
+            edge(f"agent:{name}", f"pane:{name}:{current[0][2]}",
+                 "occupies", "launcher_attested", "agent_roster",
+                 "Current pane matches the recorded agent launch", "observed-now")
 
     excluded = {x.lower() for x in routing.get("exclude", []) if isinstance(x, str)} if routing and isinstance(routing.get("exclude"), list) else set()
     if routing is not None and sessions_raw is not None:
@@ -421,6 +535,35 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
             if name not in observed_sessions and sessions_raw is not None:
                 unknown("target_not_live", "chatbind", "A bound chat targets a session that is not currently live.")
 
+    if runtime_binding and runtime_binding["bound"]:
+        name = runtime_binding["session"]
+        chat_id = "chat:owner-imessage"
+        node({"id": chat_id, "type": "chat", "label": "Owner iMessage", "parent_id": None,
+              "declared": True, "observed": None, "source_refs": ["imessage_runtime"],
+              "observed_at": None})
+        edge(chat_id, f"session:{name}", "chat_routes_to", "declared", "imessage_runtime",
+             "Saved exact owner-chat binding; live account and delivery checked by the transport",
+             source_time=mtime(runtime_path))
+        active = [pane for pane in panes if pane[0] == name and pane[4:6] == ["1", "0"]
+                  and (name, pane[1]) in active_windows]
+        ready = None
+        if panes_raw is not None:
+            allowed = {"claude", "node"} if runtime_binding["provider"] == "claude" else {"codex"}
+            ready = len(active) == 1 and (active[0][6] in allowed or (
+                runtime_binding["provider"] == "claude" and VERSION_COMMAND.fullmatch(active[0][6]) is not None))
+        nodes[f"session:{name}"]["router"] = {
+            "addressable": name in observed_sessions if sessions_raw is not None else None,
+            "agent_pane_ready": ready, "policy_basis": "saved_owner_binding",
+            "active_process_policy_verified": False, "as_of": stamp,
+            "source_refs": ["imessage_runtime", "tmux"],
+        }
+        if ready:
+            edge(chat_id, f"session:{name}", "router_agent_pane_ready", "computed",
+                 "imessage_runtime", "Active pane matches the configured phone provider; delivery unobserved",
+                 "snapshot-computed")
+        if name not in observed_sessions and sessions_raw is not None:
+            unknown("target_not_live", "imessage_runtime", "Saved owner-chat binding targets a head session that is not live.")
+
     omitted_resource_fragments = 0
     if identities is not None:
         for name, (card, path) in identities.items():
@@ -463,9 +606,11 @@ def collect(args: argparse.Namespace) -> tuple[dict, list[dict]]:
         return entry["status"]
 
     sources = [{"id": entry["source"], "status": safe_source_status(entry), "as_of": stamp, "source_mtime": mtime(Path(entry["path"]))} for entry in diagnostics]
+    sources.append({"id": "agent_roster", "status": "available" if roster is not None else "unavailable",
+                    "as_of": stamp, "source_mtime": mtime(customer_agent_provision.ROSTER)})
     sources.append({"id": "tmux", "status": "unavailable" if sessions_raw is None else "partial" if windows_raw is None or panes_raw is None else "available", "as_of": stamp, "source_mtime": None})
     degraded = any(item["kind"] == "source_unavailable" for item in unknowns)
-    result = {"schema_version": SCHEMA, "collected_at": stamp, "nodes": sorted(nodes.values(), key=lambda n: n["id"]), "edges": sorted(edges.values(), key=lambda e: e["id"]), "sources": sources, "summary": {"source_health": "degraded" if degraded else "complete", "hosts": len([n for n in nodes.values() if n["type"] == "host"]), "remote_hosts_unchecked": sum(alias != args.host_id for alias in device_aliases) if device_aliases is not None else None, "declared_sessions": len(declared) if declared is not None else None, "live_sessions": len(observed_sessions) if sessions_raw is not None else None, "identity_cards": len(identities) if identities is not None else None, "windows": len(windows) if windows_raw is not None else None, "panes": len(panes) if panes_raw is not None else None, "verified_agent_nodes": 0, "bound_chat_declarations": len([e for e in edges.values() if e["type"] == "chat_routes_to"]) if chatbind is not None else None, "routing_descriptions": len([e for e in edges.values() if e["type"] == "describes_session"]) if routing is not None else None, "semantic_edges": len(edges)}, "unknowns": unknowns}
+    result = {"schema_version": SCHEMA, "collected_at": stamp, "nodes": sorted(nodes.values(), key=lambda n: n["id"]), "edges": sorted(edges.values(), key=lambda e: e["id"]), "sources": sources, "summary": {"source_health": "degraded" if degraded else "complete", "hosts": len([n for n in nodes.values() if n["type"] == "host"]), "remote_hosts_unchecked": sum(alias != args.host_id for alias in device_aliases) if device_aliases is not None else None, "declared_sessions": len(declared) if declared is not None else None, "live_sessions": len(observed_sessions) if sessions_raw is not None else None, "identity_cards": len(identities) if identities is not None else None, "windows": len(windows) if windows_raw is not None else None, "panes": len(panes) if panes_raw is not None else None, "planned_agent_nodes": sum(a["state"] != "process_observed" for a in roster or []), "process_observed_agent_nodes": sum(a["state"] == "process_observed" for a in roster or []), "verified_agent_nodes": 0, "bound_chat_declarations": len([e for e in edges.values() if e["type"] == "chat_routes_to"]) if chatbind is not None or runtime_binding is not None else None, "routing_descriptions": len([e for e in edges.values() if e["type"] == "describes_session"]) if routing is not None else None, "semantic_edges": len(edges)}, "unknowns": unknowns}
     return result, diagnostics
 
 

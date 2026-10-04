@@ -49,11 +49,12 @@ loopback port and embeds that exact private surface. Clients should always
 reopen Wideband Setup rather than manually typing a localhost address. The UI
 polls saved state, performs focused permission checks while a permission guide
 is open, displays real proof timestamps, and gives a persistent recovery banner
-if its engine disconnects. The app includes an arm64 engine, so the guide
-appears even before a bare Mac has Homebrew, Command Line Tools, or Python. It
-checks and activates the bundled private toolchain before local setup, and continues updating while
-those tools install. Once the foundation exists, later launches run quietly
-inside the branded app without requiring Terminal or browser knowledge.
+if its engine disconnects. In the current source revision, each new packaged
+build opens a visible Terminal CLI first. It verifies the private Python,
+Node, tmux, ttyd, and imsg toolchain and the saved identity, then opens the
+guide. A failed or canceled CLI run stops before the guide; reopening the app
+resumes it. Once that build's foundation passes, later launches run quietly
+inside the branded app. This CLI gate is not part of the public 0.8.3 DMG.
 
 ## Shareable client app
 
@@ -95,6 +96,21 @@ page before queueing. The handoff card shows guarded outbox delivery; an
 uncertain send is held for review and never retried automatically. Reopening
 an older completed setup offers a manual send control instead of sending old handoff
 texts automatically.
+
+The unreleased 0.8.4 candidate adds **Agent fleet** at port 8783. **Create agent**
+records a private role and workspace, prepares its instructions and tools, and
+launches Claude Code after that login is signed in. Existing project directories
+can be selected without replacing their instruction files or npm dependencies.
+The standard template includes native provider search, Python and Node scripting,
+and private Playwright/Chromium browser automation. The Live Terminal Network
+shows the requested agent and its current process separately; a shell or stopped
+process remains visibly unverified or inactive.
+
+Setup launches the local head after provider sign-in, before Messages connection.
+The exact owner-chat router later uses that same head and its guarded outbox.
+The phone number, separate Apple Account, macOS permissions, fresh incoming text,
+and real phone reply remain guided connection steps. This candidate is prepared
+for the owner's manual testing; no automated functional or VM results are claimed.
 
 The phone view opens a six-key Fleetdeck home at `/phone` with Board, Project,
 Terminals, Graph, Network, and Notes beta. Keys for unavailable services remain
@@ -161,11 +177,13 @@ repository, fill it with that client's approved build identity, then build:
 ```
 
 The unsigned pilot produces `dist/Wideband-Setup-unsigned.dmg`; a fully trusted
-release produces `dist/Wideband-Setup.dmg`. Either is one shareable file. The
-generic client build asks for the owner's phone number in one native macOS
-dialog; the guided UI collects the OS name, agent name, and first goal. A
-personalized build seeds its approved identity values into `~/.sop-vars` once
-and skips the phone question. An existing identity file is never overwritten.
+release produces `dist/Wideband-Setup.dmg`. Either is one shareable file. In
+the current unreleased working tree, the generic client build defers the
+owner's phone number until the iMessage connection step; the guided UI
+collects the OS name, agent name, and first goal.
+A personalized build seeds its approved identity values into `~/.sop-vars` once;
+its owner phone may also be left empty until messaging setup.
+An existing identity file is never overwritten during bootstrap.
 The profile contains client identity data—not credentials—and is embedded only
 in the intended client's app. Do not reuse one client's DMG for another client.
 Every package build also writes `dist/SHA256SUMS.txt`; compare the recipient's
@@ -234,8 +252,8 @@ does before you run it.
    source/operator path may install or use an owned Homebrew after its health
    checks.
 5. **Establishes the build identity** in `~/.sop-vars`. A personalized client
-   package preloads approved values; a generic client package asks only for
-   the owner's phone number. GitHub, commit identity, work repository, and
+   package preloads approved values; a generic client package can leave the
+   owner's phone number empty until messaging setup. GitHub, commit identity, work repository, and
    extra graph packs can be filled in after local setup. An existing
    identity file is left alone.
 6. **Keeps operator files separate** — the packaged client leaves `.zshrc`

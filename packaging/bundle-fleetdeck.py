@@ -39,7 +39,11 @@ SOURCE_FILES = LEGACY_SOURCE_FILES | {
     "glyphs.json", "make-icons.py", "assets/icon-180.png",
     "launchagents/fleetdeck-chat.plist.tmpl", "ttyd-index.html",
 }
-GENERATED_FILES = LEGACY_GENERATED_FILES | {"chat_server.py", "customer_access.py"}
+PREVIOUS_REQUIRED = SOURCE_FILES | LEGACY_GENERATED_FILES | {
+    "chat_server.py", "customer_access.py",
+}
+GENERATED_FILES = LEGACY_GENERATED_FILES | {"chat_server.py", "customer_access.py",
+                                            "customer_agent_provision.py"}
 REQUIRED = SOURCE_FILES | GENERATED_FILES
 UPGRADE_FILES = GENERATED_FILES | {"glyphs.json", "make-icons.py", "assets/icon-180.png"}
 BRAND_VIDEO = "assets/wb-logo-256.mp4"
@@ -48,6 +52,7 @@ PORTAL_NAME = "portal_server.py"
 CHAT_NAME = "chat_server.py"
 AUTH_ADAPTER_SOURCE = Path(__file__).with_name("fleetdeck-customer-auth.pyinc")
 ACCESS_SOURCE = Path(__file__).with_name("fleetdeck-customer-access.py")
+PROVISION_SOURCE = Path(__file__).with_name("customer_agent_provision.py")
 PRIVATE_NAMES = {".git", "auth", "config.json", "services.json", ".fleetdeck-notes.json"}
 PRIVATE_DIRS = {"backup", "backups", "notes"}
 STATIC_IDENTITY = re.compile(
@@ -61,6 +66,197 @@ NOTES_AGE_PILOT = (" function ago(ts){\n"
                    "   var s = Math.max(0, Math.floor(Date.now()/1000 - ts));")
 UPSTREAM_PORTAL_PATH = "__HOME__/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 INITIAL_PORTAL_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+CUSTOMER_AGENT_STYLE = r"""
+#head{flex-wrap:wrap}
+#new{color:var(--neon);letter-spacing:0;font-size:11px;white-space:nowrap;background:transparent;font-family:inherit}
+#agent-notice{display:none;padding:10px 13px;border-bottom:1px solid var(--line);
+  color:#a6b9c9;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+#agent-notice.show{display:block}
+#agent-notice.error{color:#ffbcaa}
+#agent-dialog{width:min(560px,calc(100vw - 24px));max-height:90dvh;margin:auto;
+  padding:22px;background:var(--panel);color:var(--txt);border:1px solid #2b4353;
+  border-radius:14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+#agent-dialog::backdrop{background:#000b}
+#agent-dialog h2{margin:0 0 8px;color:#e6f1f8;font-size:19px;font-weight:500}
+#agent-dialog p{margin:0 0 16px;color:#9aafbf;font-size:12px}
+#agent-dialog label.field{display:flex;flex-direction:column;gap:6px;margin:14px 0;
+  color:#b6c9d8;font-size:12px}
+#agent-dialog [hidden]{display:none}
+#agent-dialog input[type=text],#agent-dialog select{width:100%;min-height:42px;
+  border:1px solid #2b4353;border-radius:8px;padding:9px;background:#0f1720;
+  color:var(--txt);font:16px ui-monospace,SFMono-Regular,Menlo,monospace}
+#agent-dialog input:focus,#agent-dialog select:focus{outline:1px solid var(--neon)}
+#agent-dialog input[readonly]{color:var(--dim)}
+#agent-dialog small{color:#8fa4b5;font-size:11px}
+#agent-dialog fieldset{margin:16px 0;padding:12px;border:1px solid #223140;border-radius:8px}
+#agent-dialog legend{padding:0 6px;font-size:12px}
+#agent-dialog .capability{display:flex;gap:9px;align-items:center;padding:5px 0}
+#agent-dialog .capability input{accent-color:var(--neon);width:16px;height:16px}
+#agent-result{margin:12px 0;color:#ffcf4e;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+#agent-result.error{color:#ffbcaa}
+#agent-dialog .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+#agent-dialog button{min-height:42px;padding:9px 14px;border:1px solid #2b4353;
+  border-radius:8px;background:#0f1720;color:var(--txt);font:13px ui-monospace,SFMono-Regular,Menlo,monospace;
+  cursor:pointer}
+#agent-dialog button[type=submit]{background:#0c2a2a;border-color:#14484a;color:var(--neon)}
+#agent-dialog button:disabled{opacity:.55;cursor:wait}
+"""
+
+CUSTOMER_AGENT_FORM = r"""
+<dialog id="agent-dialog" aria-labelledby="agent-form-title">
+  <form id="agent-form">
+    <h2 id="agent-form-title">Create agent</h2>
+    <p>Give your agent a role and workspace. Wideband prepares its instructions and starts Claude when this Mac is signed in.</p>
+    <label class="field">Agent name
+      <input id="agent-name" type="text" required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_\-]{0,31}"
+        placeholder="my-agent" autocapitalize="off" autocomplete="off" spellcheck="false">
+      <small>Start with a letter; use letters, numbers, underscores or hyphens.</small>
+    </label>
+    <label class="field">Role
+      <select id="agent-role"><option value="general">General</option><option value="head">Head agent</option>
+        <option value="website">Website</option><option value="research">Research</option><option value="qa">QA</option></select>
+      <small id="agent-role-hint">The role sets the agent's starting instructions.</small>
+    </label>
+    <label class="field">Provider
+      <select id="agent-provider"><option value="claude">Claude</option></select>
+      <small>Complete Claude sign-in in Wideband Setup. Return here to retry activation.</small>
+    </label>
+    <label class="field">Workspace
+      <select id="agent-workspace-choice"><option value="">Create a private agent workspace</option>
+        <option value="__path__">Use an existing directory</option></select>
+      <small id="agent-workspace-hint">The private workspace is created in your wideband directory.</small>
+    </label>
+    <label class="field" id="agent-workspace-field" hidden>Existing directory path
+      <input id="agent-workspace" type="text" maxlength="400" placeholder="~/srv/my-project"
+        autocapitalize="off" autocomplete="off" spellcheck="false">
+      <small>Your existing project files and instructions stay in place.</small>
+    </label>
+    <fieldset><legend>Standard capabilities</legend>
+      <label class="capability"><input type="checkbox" name="capability" value="web_search" checked>Web search</label>
+      <label class="capability"><input type="checkbox" name="capability" value="browser" checked>Browser automation with Playwright</label>
+      <label class="capability"><input type="checkbox" name="capability" value="scripting" checked>Python and JavaScript scripting</label>
+      <small>Available tools are checked when the agent starts.</small>
+    </fieldset>
+    <div id="agent-result" role="status" aria-live="polite"></div>
+    <div class="actions"><button id="agent-cancel" type="button">Cancel</button>
+      <button id="agent-submit" type="submit">Create and start agent</button></div>
+  </form>
+</dialog>
+"""
+
+CUSTOMER_AGENT_SCRIPT = r"""
+let agentBusy=false, agentWorkspaces=[];
+const agentDisplayState=agent=>agent.state==='planned'&&agent.provider_ready===false
+  &&agent.next_action==='sign_in'?'awaiting_sign_in':agent.state;
+const agentState=agent=>({process_observed:'Running',planned:'Ready to activate',
+  awaiting_sign_in:'Awaiting Claude sign-in',awaiting_project:'Choose an existing project',
+  session_unverified:'Session needs review',launch_pending:'Starting agent'}[agentDisplayState(agent)]||'Agent needs attention');
+const agentMessage=agent=>agent.message||({process_observed:'Running in its workspace. The Live Terminal Network updates from the observed process.',
+  planned:'Select this agent to activate it.',awaiting_sign_in:'Sign in to Claude in Wideband Setup, then select this agent to retry.',
+  awaiting_project:'Choose your existing website project before starting this agent.',
+  session_unverified:'This session is not a verified agent launch. Review it before activation.',
+  launch_pending:'The agent is starting. Its running status appears after the process is observed.'}[agentDisplayState(agent)]||agent.next_action||'Review this agent in Wideband Setup.');
+function agentNotice(message,error=false){
+  $('agent-notice').textContent=message;
+  $('agent-notice').classList.toggle('show',!!message);
+  $('agent-notice').classList.toggle('error',error);
+}
+async function agentRequest(path,payload){
+  const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload||{})});
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||'Request failed ('+response.status+')');
+  return data;
+}
+function agentWorkspaceFields(){
+  const role=$('agent-role').value, choice=$('agent-workspace-choice');
+  choice.options[0].disabled=role==='website';
+  if(role==='website'&&!choice.value)choice.value='__path__';
+  const existing=!!choice.value;
+  $('agent-workspace-field').hidden=!existing;
+  $('agent-workspace').required=existing;
+  if(choice.value&&choice.value!=='__path__')$('agent-workspace').value=choice.value;
+  $('agent-workspace-hint').textContent=role==='website'
+    ? 'Website agents use the actual existing project directory.'
+    : existing?'Use an owned existing project directory on this Mac.':'Wideband creates a private workspace for this agent.';
+  $('agent-role-hint').textContent=role==='head'
+    ? 'The head agent uses the name wb-head and coordinates your team.'
+    : 'The role sets the agent\'s starting instructions.';
+}
+function agentWorkspaceOptions(selected='',selectedChoice=null){
+  const choice=$('agent-workspace-choice');
+  choice.replaceChildren();
+  for(const [value,label] of [['','Create a private agent workspace'],['__path__','Use an existing directory'],
+    ...agentWorkspaces.map(item=>[item.path,item.label||item.path])]){
+    const option=document.createElement('option');option.value=value;option.textContent=label;choice.append(option);
+  }
+  choice.value=selectedChoice===null?(selected?agentWorkspaces.some(item=>item.path===selected)?selected:'__path__':''):selectedChoice;
+  $('agent-workspace').value=selected;
+  agentWorkspaceFields();
+}
+async function showAgentForm(agent=null){
+  if(agentBusy)return;
+  $('agent-form').reset();
+  $('agent-form-title').textContent=agent?'Start '+agent.name:'Create agent';
+  $('agent-name').value=agent?.name||'';
+  $('agent-name').readOnly=!!agent;
+  $('agent-role').value=agent?.role||'general';
+  $('agent-role').disabled=!!agent;
+  $('agent-provider').value=agent?.provider||'claude';
+  for(const input of document.querySelectorAll('#agent-form input[name=capability]')){
+    input.checked=(agent?.capabilities||['web_search','browser','scripting']).includes(input.value);
+    input.disabled=!!agent&&agent.state==='process_observed';
+  }
+  $('agent-result').textContent=agent?agentMessage(agent):'';
+  $('agent-result').classList.remove('error');
+  $('agent-submit').textContent=agent&&agent.workspace?'Start agent':'Create and start agent';
+  $('agent-submit').disabled=false;
+  agentWorkspaceOptions(agent?.workspace||'');
+  if(!$('agent-dialog').open)$('agent-dialog').showModal();
+  try{
+    const response=await fetch('/api/workspaces');
+    if(response.ok){agentWorkspaces=await response.json();
+      if($('agent-dialog').open&&!agentBusy){
+        const choice=$('agent-workspace-choice').value;
+        agentWorkspaceOptions(choice?$('agent-workspace').value:'',choice==='__path__'?'__path__':null);
+      }}
+  }catch(error){/* A typed owned project path remains available. */}
+  if(!agent&&$('agent-dialog').open)$('agent-name').focus();
+}
+$('agent-role').onchange=()=>{
+  if($('agent-role').value==='head')$('agent-name').value='wb-head';
+  else if($('agent-name').value==='wb-head')$('agent-name').value='';
+  agentWorkspaceFields();
+};
+$('agent-workspace-choice').onchange=agentWorkspaceFields;
+$('agent-cancel').onclick=()=>{if(!agentBusy)$('agent-dialog').close();};
+$('agent-dialog').addEventListener('cancel',event=>{if(agentBusy)event.preventDefault();});
+$('agent-form').onsubmit=async event=>{
+  event.preventDefault();if(agentBusy)return;
+  agentBusy=true;$('agent-submit').disabled=true;$('agent-cancel').disabled=true;
+  $('agent-result').textContent='Preparing and starting your agent…';$('agent-result').classList.remove('error');
+  const name=$('agent-name').value.trim();
+  try{
+    const data=await agentRequest('/api/agents',{name,role:$('agent-role').value,
+      workspace:$('agent-workspace-choice').value?$('agent-workspace').value.trim():'',
+      provider:$('agent-provider').value,
+      capabilities:[...document.querySelectorAll('#agent-form input[name=capability]:checked')].map(input=>input.value),
+      activate:true});
+    await load();
+    const message=name+': '+agentState(data)+'. '+agentMessage(data);
+    agentNotice(message);$('agent-result').textContent=message;
+    if(data.state==='process_observed'){$('agent-dialog').close();await open_(name);}
+    else $('agent-submit').textContent='Retry activation';
+  }catch(error){$('agent-result').textContent=error.message;$('agent-result').classList.add('error');await load();}
+  finally{agentBusy=false;$('agent-submit').disabled=false;$('agent-cancel').disabled=false;}
+};
+$('new').onclick=()=>showAgentForm();
+if(location.hash==='#agents'){
+  history.replaceState(null,'',location.pathname+location.search);
+  showAgentForm();
+}
+"""
 
 
 def optional_assets(paths: set[str]) -> set[str]:
@@ -199,7 +395,7 @@ def customer_chat_tools(source: str) -> str:
 
 
 def customer_chat(source: str) -> str:
-    """Preserve the current chat UI for later opt-in, closed under customer mode."""
+    """Add private agent provisioning to Fleetdeck's observed terminal list."""
     source = customer_chat_tools(source)
     tree = ast.parse(source)
     handler = next((node for node in tree.body if isinstance(node, ast.ClassDef)
@@ -232,6 +428,109 @@ def customer_chat(source: str) -> str:
     for node in sorted(funcs, key=lambda item: item.lineno, reverse=True):
         lines[node.lineno - 1:node.end_lineno] = [methods[node.name]]
     source = "".join(lines)
+    get_sessions = '            if path == "/api/sessions":\n                return self.reply(200, snapshot(qs.get("open") or None))\n'
+    if source.count(get_sessions) != 1:
+        raise ValueError("Fleetdeck chat session API changed")
+    source = source.replace(get_sessions, get_sessions +
+        '            if path == "/api/agents":\n'
+        '                return self.reply(200, customer_agent_provision.list_agents())\n'
+        '            if path == "/api/workspaces":\n'
+        '                return self.reply(200, customer_agent_provision.list_workspaces())\n', 1)
+    post_sessions = '            if path == "/api/send":\n'
+    if source.count(post_sessions) != 1:
+        raise ValueError("Fleetdeck chat input API changed")
+    source = source.replace(post_sessions,
+        '            if path == "/api/agents":\n'
+        '                if not customer_access.same_origin_post(\n'
+        '                        self.headers.get("Origin"), self.headers.get("Host"), PORT):\n'
+        '                    return self.reply(403, {"error": "forbidden origin"})\n'
+        '                if not 0 <= int(self.headers.get("Content-Length") or 0) <= 4096:\n'
+        '                    raise ValueError("agent request is too large")\n'
+        '                agent = customer_agent_provision.create_agent(self.body_json())\n'
+        '                with _lock:\n'
+        '                    _snap["at"] = 0.0\n'
+        '                return self.reply(201, agent)\n'
+        '            match = re.fullmatch(r"/api/agents/([A-Za-z][A-Za-z0-9_-]{0,31})/activate", path)\n'
+        '            if match:\n'
+        '                if not customer_access.same_origin_post(\n'
+        '                        self.headers.get("Origin"), self.headers.get("Host"), PORT):\n'
+        '                    return self.reply(403, {"error": "forbidden origin"})\n'
+        '                if not 0 <= int(self.headers.get("Content-Length") or 0) <= 4096:\n'
+        '                    raise ValueError("agent request is too large")\n'
+        '                self.body_json()\n'
+        '                agent = customer_agent_provision.activate_agent(match.group(1))\n'
+        '                with _lock:\n'
+        '                    _snap["at"] = 0.0\n'
+        '                return self.reply(200, agent)\n'
+        + post_sessions, 1)
+    old_new = '''$('new').onclick=()=>{
+  const n=(prompt('new session name')||'').trim();
+  if(!n)return;
+  if(!/^[A-Za-z0-9_.-]{1,32}$/.test(n)){alert('letters, digits, . _ - only');return;}
+  rows.unshift({name:n,color:'#28e0d0',title:'',cmd:'',path:'',preview:'new',
+                changed:Math.floor(Date.now()/1000),active:true,unread:false,clients:0,size:''});
+  open_(n);
+};'''
+    if source.count(old_new) != 1:
+        raise ValueError("Fleetdeck chat new-session control changed")
+    source = source.replace(old_new, CUSTOMER_AGENT_SCRIPT, 1)
+    style_marker = "</style></head><body>"
+    form_marker = "<script>\nconst $=id=>document.getElementById(id);"
+    list_marker = '  <div id="rows"></div>'
+    button_marker = '<span class="btn" id="new" title="new session">+</span>'
+    if any(source.count(marker) != 1 for marker in (
+            style_marker, form_marker, list_marker, button_marker)):
+        raise ValueError("Fleetdeck chat agent-form layout changed")
+    source = source.replace(style_marker, CUSTOMER_AGENT_STYLE + style_marker, 1)
+    source = source.replace(form_marker, CUSTOMER_AGENT_FORM + form_marker, 1)
+    source = source.replace(list_marker,
+        '  <div id="agent-notice" role="status" aria-live="polite"></div>\n' + list_marker, 1)
+    source = source.replace(button_marker,
+        '<button class="btn" id="new" type="button" title="Create an agent">Create agent</button>', 1)
+    old_load = "    if(!r.ok)throw new Error(r.status); rows=await r.json(); paint();"
+    new_load = """    const a=await fetch('/api/agents');
+    if(!r.ok||!a.ok)throw new Error(!r.ok?r.status:a.status);
+    const sessions=await r.json(), agents=await a.json();
+    rows=sessions.map(item=>{
+      const roster=agents.find(agent=>agent.name===item.name)||null;
+      return {...item,roster,active:roster?roster.state==='process_observed':item.active,
+        preview:roster?agentState(roster)+(roster.state==='process_observed'?' · '+item.preview:' · '+agentMessage(roster)):item.preview};
+    });
+    for(const agent of agents) if(!rows.some(item=>item.name===agent.name)) rows.push({
+      name:agent.name,color:agent.state==='process_observed'?'#28e0d0':'#5d7183',
+      title:agent.role+' · '+agent.provider,cmd:'',path:agent.workspace||'',
+      preview:agentState(agent)+' · '+agentMessage(agent),changed:0,
+      active:agent.state==='process_observed',unread:false,clients:0,size:'',roster:agent});
+    paint();"""
+    if source.count(old_load) != 1:
+        raise ValueError("Fleetdeck chat session poll changed")
+    source = source.replace(old_load, new_load, 1)
+    old_open = "function open_(n){\n  if(cur===n)return;"
+    new_open = """async function open_(n){
+  const item=rows.find(row=>row.name===n);
+  if(item?.roster && item.roster.state!=='process_observed'){
+    if(item.roster.state==='awaiting_project'){await showAgentForm(item.roster);return;}
+    if(item.roster.state==='session_unverified'){agentNotice(n+': '+agentMessage(item.roster),true);return;}
+    if(agentBusy)return;
+    agentBusy=true;agentNotice('Starting '+n+'…');
+    try{
+      const data=await agentRequest('/api/agents/'+encodeURIComponent(n)+'/activate');
+      await load();
+      agentNotice(n+': '+agentState(data)+'. '+agentMessage(data));
+      if(data.state!=='process_observed')return;
+    }catch(error){agentNotice(n+': '+error.message,true);return;}
+    finally{agentBusy=false;}
+  }
+  if(cur===n)return;"""
+    if source.count(old_open) != 1:
+        raise ValueError("Fleetdeck chat session-open control changed")
+    source = source.replace(old_open, new_open, 1)
+    source = source.replace(
+        "const ago=ts=>{const s=Math.max(0,Math.floor(Date.now()/1000)-ts);",
+        "const ago=ts=>{if(!ts)return '—';const s=Math.max(0,Math.floor(Date.now()/1000)-ts);", 1)
+    # Opening a terminal may only attach to an existing session. The old
+    # new-session -A URL silently created a bare shell and mislabeled it.
+    source = source.replace("['new-session','-A','-s',n]", "['attach-session','-t',n]", 1)
     query_branch = '        if self.path.startswith("/?key=") and self.try_key():\n            return\n'
     if source.count(query_branch) != 1:
         raise ValueError("Fleetdeck chat query-key branch changed")
@@ -256,7 +555,7 @@ def customer_chat(source: str) -> str:
         '            return\n')
     source = source.replace(query_branch, token_branch, 1)
     source = source.replace("import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat",
-                            "import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat\nimport hmac\nimport customer_access", 1)
+                            "import os, re, io, json, time, base64, socket, colorsys, hashlib, signal, stat\nimport hmac\nimport customer_access\nimport customer_agent_provision", 1)
     origin_guard = '''def customer_board_origin():
     """Trust the configured tailnet host or dedicated loopback preview."""
     host = os.environ.get("FLEETDECK_HOST", "")
@@ -419,7 +718,8 @@ def check_source(root: Path, *, legacy: bool = False) -> None:
 
 def check_bundle(root: Path, hashes: dict[str, str]) -> None:
     legacy = set(hashes) == LEGACY_REQUIRED
-    for name in LEGACY_REQUIRED if legacy else REQUIRED:
+    prior = not legacy and set(hashes) == PREVIOUS_REQUIRED | optional_assets(set(hashes))
+    for name in LEGACY_REQUIRED if legacy else PREVIOUS_REQUIRED if prior else REQUIRED:
         if not regular_file(root / name):
             raise ValueError(f"missing bundled Fleetdeck customer file: {name}")
     check_source(root, legacy=legacy)
@@ -513,6 +813,7 @@ def build(source: Path, target: Path) -> None:
             customer_chat((source / CHAT_NAME).read_text(encoding="utf-8")),
             encoding="utf-8")
         shutil.copy2(ACCESS_SOURCE, target / "customer_access.py")
+        shutil.copy2(PROVISION_SOURCE, target / "customer_agent_provision.py")
         (target / "config.example.json").write_text(json.dumps({
             "brand": "fleetdeck", "machine": "", "label_prefix": "com.example",
             "ports": {"portal": 8790, "chat": 8783, "ttyd": 8784, "adopt": 8793},
@@ -548,9 +849,8 @@ def verify_managed(root: Path) -> dict[str, str]:
         raise ValueError("unsupported Fleetdeck source bundle")
     hashes = metadata.get("files")
     if (not isinstance(hashes, dict)
-            or (set(hashes) != LEGACY_REQUIRED and
-                (not REQUIRED.issubset(hashes)
-                 or set(hashes) - REQUIRED != optional_assets(set(hashes))))):
+            or not any(set(hashes) == base | optional_assets(set(hashes))
+                       for base in (LEGACY_REQUIRED, PREVIOUS_REQUIRED, REQUIRED))):
         raise ValueError("Fleetdeck source bundle file list is incomplete")
     if any(not isinstance(name, str) or not safe_name(name) or not isinstance(value, str)
            or len(value) != 64 for name, value in hashes.items()):

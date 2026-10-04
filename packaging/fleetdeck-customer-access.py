@@ -56,6 +56,13 @@ def local_http_request(host: str | None, port: int) -> bool:
             and host == f"wideband.localhost:{port}")
 
 
+def same_origin_post(origin: str | None, host: str | None, port: int) -> bool:
+    if not host or not origin:
+        return False
+    scheme = "http" if local_http_request(host, port) else "https"
+    return origin == f"{scheme}://{host}"
+
+
 def cookie_header(capability: str, *, secure: bool = True) -> str:
     flags = "Secure; " if secure else ""
     return (f"{COOKIE_NAME}={session_value(capability)}; Path=/; "

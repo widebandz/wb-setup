@@ -8,6 +8,7 @@ SIGN_IDENTITY="${WIDEBAND_SIGN_IDENTITY:--}"
 NOTARY_PROFILE="${WIDEBAND_NOTARY_PROFILE:-}"
 FLEETDECK_SOURCE=""
 GRAPH_SOURCE=""
+TOOLCHAIN_SOURCE=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --profile)
@@ -40,8 +41,13 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --graph-source=*) GRAPH_SOURCE="${1#*=}"; shift ;;
+    --toolchain-source)
+      [ "$#" -ge 2 ] || { echo "--toolchain-source requires a built payload path" >&2; exit 2; }
+      TOOLCHAIN_SOURCE="$2"
+      shift 2
+      ;;
     --help|-h)
-      echo "usage: ./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck --graph-source /path/to/glitch-cat [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile]"
+      echo "usage: ./packaging/build-app.sh --fleetdeck-source /path/to/fleetdeck --graph-source /path/to/glitch-cat [--toolchain-source /path/to/built/toolchain] [--profile client-profile.json] [--sign-identity 'Developer ID Application: …'] [--notary-profile keychain-profile]"
       exit 0
       ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -123,6 +129,7 @@ fi
   --exclude '/vendor/fleetdeck/' \
   --exclude '/vendor/glitch-cat-pilot-bundle/' \
   --exclude '/vendor/toolchain/' \
+  --exclude '/vendor/agent-tools/' \
   "$ROOT/" "$PAYLOAD/"
 
 # Copy only reviewed, tracked Fleetdeck and Glitch Cat files. Client phone
@@ -135,7 +142,16 @@ fi
 # Every new client receives the same reviewed tools irrespective of an older
 # profile's Homebrew. Build them from pinned source/releases into the signed
 # app payload; the launcher installs an independently verified private copy.
-/usr/bin/python3 "$ROOT/packaging/build-toolchain.py" "$PAYLOAD/vendor/toolchain"
+if [ -n "$TOOLCHAIN_SOURCE" ]; then
+  /usr/bin/python3 "$ROOT/packaging/copy-toolchain.py" "$TOOLCHAIN_SOURCE" "$PAYLOAD/vendor/toolchain"
+else
+  /usr/bin/python3 "$ROOT/packaging/build-toolchain.py" "$PAYLOAD/vendor/toolchain"
+fi
+
+# Browser automation is shipped with matching Chromium, so client setup does
+# not depend on npm downloads or alter a project's dependencies.
+/usr/bin/python3 "$ROOT/packaging/build-agent-tools.py" \
+  "$PAYLOAD/vendor/agent-tools" "$PAYLOAD/vendor/toolchain/bin/node"
 
 # Bundle the localhost engine so the branded checklist can open immediately on
 # a genuinely bare Mac, before Homebrew or Command Line Tools supplies Python.
@@ -284,7 +300,7 @@ printf '  ZIP: %s\n' "$ZIP_OUT"
 if [ -n "$PROFILE" ]; then
   printf '  Mode: personalized client build\n'
 else
-  printf '  Mode: generic pilot (owner phone collected in one native dialog)\n'
+  printf '  Mode: generic pilot (owner phone deferred until iMessage setup)\n'
 fi
 if [ "$SIGN_IDENTITY" = "-" ]; then
   printf '  Trust: ad-hoc signed pilot (Gatekeeper Open Anyway required)\n'

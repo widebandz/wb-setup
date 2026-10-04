@@ -8,7 +8,8 @@ build without reconstructing decisions from chat history.
 
 - Product: **Wideband Setup**, a guided installer for a custom Wideband AI
   operator workstation.
-- Source target: **0.8.3** unsigned pilot. The 0.8.0 DMG passed local package
+- Source target: **0.8.4** local unsigned candidate; agent provisioning changes
+  are awaiting the owner's manual test. The 0.8.0 DMG passed local package
   gates and is being published without a 0.8.0 VM or phone run at the owner's
   direction. The owner selected the phone home with a
   full-board key for client Home Screen installs. Developer ID signing and
@@ -207,18 +208,22 @@ package copies under the private setup backup area, never overwrites an
 existing client identity, and installs the exact launched app into
 `~/Applications/Wideband Setup.app` so the DMG can be ejected.
 
-On a bare Mac, the native window opens immediately from the bundled arm64
-engine. The 0.8.0 client app checks its complete tool payload, installs a
-private copy in the intended user's home, and does not need Homebrew or Apple
-Command Line Tools to start the local core. Terminal may still host bootstrap
-or recovery; later app launches start the guide quietly in the background.
+On a bare Mac, the native shell opens immediately with a branded waiting
+screen. The client package checks its complete tool payload and installs a
+private copy in the intended user's home without Homebrew or Apple Command
+Line Tools. Each new build then opens Terminal for the resumable CLI
+foundation: bootstrap must reach `ready`, and the installed Python, Node,
+tmux, ttyd, and imsg must resolve from the verified toolchain before the
+private guide starts. `~/.wideband/setup/cli-ready-build` records the exact
+build that passed; later launches of that build start the guide quietly.
+This marker proves only the machine foundation, not Fleetdeck, provider,
+Messages, agent sessions, or a real phone reply.
 
-If bootstrap exits after a canceled owner-phone prompt while the guide remains
-live, reopening the app relaunches Terminal when bootstrap reports
-`needs_attention` and the core foundation is incomplete. An active identity
-prompt keeps its single Terminal session. When Terminal completes bootstrap
-under the native app, its setup handoff passes `--no-open` so Safari does not
-open a second installer window.
+If bootstrap exits after a canceled owner-phone prompt, the guide stays behind
+the native waiting screen. Reopening the app relaunches Terminal to resume
+the incomplete foundation. An active identity prompt keeps its single
+Terminal session. When Terminal completes under the native app, the guide
+starts with `--no-open` so Safari does not open a second installer window.
 
 Before touching Homebrew, `lib/bootstrap-homebrew.sh` independently proves the
 invoking user, UID, home owner, console user, administrator membership,
@@ -474,9 +479,11 @@ which the new toolchain correctly rejects. The launcher reports its failing
 preparation stage so an operator can distinguish this from a native preflight
 or Messages failure.
 An invalid active private toolchain fails closed; it never silently selects
-another profile's Homebrew. Only an explicitly marked 0.7.0/0.7.1 install may
-use its own independently verified healthy Homebrew during migration. No
-installer path changes ownership of a foreign `/opt/homebrew` prefix.
+another profile's Homebrew. A current packaged client's CLI foundation
+requires the private toolchain even when an older 0.7.0/0.7.1 lineage marker
+exists. The separately invoked legacy operator path retains its independently
+verified Homebrew migration support. No installer path changes ownership of a
+foreign `/opt/homebrew` prefix.
 
 The client guide records the selected OS and head-agent names, provider, and
 first job, then may prepare the local first project and real Fleetdeck portal,
@@ -494,6 +501,20 @@ Packaged-client bootstrap also leaves `.zshrc` and operator Claude files alone.
 Selecting Claude and opening its explicit sign-in action downloads the official
 installer to a private file, requires a successful fetch and shell syntax check,
 then runs authentication. Preview provider choices install no provider runtime.
+
+In the current unreleased CLI-first working tree, generic client bootstrap
+also leaves `OPERATOR_PHONE` empty. The later Messages guide saves an E.164
+owner number through the authenticated loopback API into the mode-0600
+identity file, after a private backup. It fills only an empty slot; an
+existing different number, duplicate assignment, or existing iMessage runtime
+identity requires operator review. Automatic head-agent staging waits for a
+saved number. Exact-chat binding and physical phone reply gates are unchanged.
+A disposable 0.8.3 VM login ran the updated bootstrap with an empty number and
+reported `ready`; scoped Fleetdeck phone installation also completed with
+the number empty. The scoped iMessage install staged its runtime with the
+number empty and left all four messaging LaunchAgents unloaded pending a
+separate Apple Account and exact binding. This is source/VM evidence, not a
+packaged release or phone-message proof.
 
 Source self-tests, isolated private-payload startup, complete-manifest
 tampering, and rollback tests are local development evidence. Record the exact
@@ -516,6 +537,63 @@ GitHub published the unsigned DMG, ZIP, and checksums as a prerelease. Pages
 workflow `37058200837` passed; `https://os.wideband.ai/version` returned this
 build and SHA-256; a fresh public DMG download had the same SHA-256. The link
 was sent through the existing owner-only Trace outbox, which marked it sent.
+
+### 0.8.4 agent provisioning candidate (October 4, 2026)
+
+The owner requested completion of the unreleased agent-creation flow and
+explicitly deferred automated testing to their manual test. This candidate has
+no new functional, browser, VM, restart, iMessage, or physical phone proof.
+Syntax, source transformation, package manifests, and signatures are build
+consistency checks, not evidence that those user journeys work.
+
+The customer Fleetdeck bundle owns an authenticated Create agent form at 8783.
+It calls `packaging/customer_agent_provision.py`, also used by Setup's
+`run_agent_provision` action and the iMessage keeper. The private roster lives
+at `~/.wideband/fleetdeck/agent-roster.json`; managed role instructions and
+launch receipts preserve agent intent without modifying curated project
+instructions. Creation is idempotent; provider sign-in or project selection
+can remain visibly pending. A launch receipt plus a matching live provider
+process is process observation, not proof of an agent's task completion.
+The map reads those observations and projects the actual saved one-owner
+iMessage route without exposing contact or Messages account identifiers.
+
+`packaging/agent_tools.py` builds and stages pinned Playwright 1.58.2 and its
+matching Chromium browser. npm archives have fixed SHA-512 pins; all packaged
+browser files have a complete per-file manifest under the signed app payload.
+Client copies live under `~/.wideband/agent-tools/versions/`, separate from
+project dependencies and existing browser profiles. The managed terminal and
+head launches receive verified Node/Python paths and the private Playwright
+module/browser paths. Native provider search remains a provider capability;
+the installer does not claim to add a separate search account or credential.
+
+The guide stages the local OS first and launches the supported Claude head
+after provider sign-in, before collecting the owner phone or binding Messages.
+The runtime's dedicated transport instructions preserve existing CLAUDE.md and
+AGENTS.md files. Router prompts explicitly reference the guarded reply path,
+and the keeper uses the shared provisioner to recreate a missing head.
+Regular agents remain declared in the roster after exit and can be resumed
+from Agent fleet. A non-Messages `fleetdeck-agents` LaunchAgent runs once at GUI
+login to resume only previously activated agents; it does not continually
+restart agents that the owner deliberately exits. The terminal attaches only to an existing observed agent;
+opening it does not silently create a shell. A new packaged build reruns the
+scoped Fleetdeck installation to reconcile the managed UI, map, and launch
+environment while keeping client data intact.
+
+For a local candidate, `build-app.sh --toolchain-source` can reuse an already
+built payload only after its complete manifest and current source archive pins
+match. This avoids rebuilding unchanged core binaries for a UI/provisioning
+change. Generated vendor payloads and candidate artifacts stay outside Git.
+
+Local manual-test artifact: build `0.8.4-20261004180108`, generic unsigned
+pilot. Its DMG SHA-256 is
+`05e19fbcf97aacae3fdec659fdc710ac65f6766ee71c13d1e375f6959ef4c07c`.
+The packaging script completed ad-hoc signature checks. Edited source and
+packaged Python/JavaScript passed syntax checks, and the packaged provisioner,
+runtime, installer, and environment helpers matched their final source. The
+Playwright bundle contains 909 manifest files. Automated functional tests,
+browser launches, VM installs, reboot, Messages binding, and physical phone
+reply were not run. The previous 0.8.3 local artifacts are retained under
+`dist/archive/0.8.3-20261002222812/`; this 0.8.4 artifact is not a public release.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 

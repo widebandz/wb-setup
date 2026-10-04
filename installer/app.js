@@ -585,6 +585,49 @@ function renderFirstGoal() {
   } catch (_) { /* No private phone URL yet. */ }
 }
 
+function renderAgentFleet() {
+  const installed = snapshot.state.action_runs.run_phone_install?.status === "complete"
+    && !snapshot.facts.deactivated;
+  $("#agent-fleet-section").hidden = !installed;
+  const link = $("#agent-fleet-link");
+  link.hidden = true;
+  const currentRun = snapshot.state.action_runs.run_phone_install?.finished_at || "complete";
+  const boardURL = localBoardProof?.status === "local_ready" && localBoardProof.run === currentRun
+    ? localBoardProof.local_url
+    : phonePortalProof?.status === "ready" && phonePortalProof.run === currentRun ? phonePortalProof.url : null;
+  if (installed && boardURL) {
+    try {
+      const target = new URL(boardURL);
+      const local = target.protocol === "http:" && target.hostname === "wideband.localhost";
+      const privatePhone = target.protocol === "https:" && target.hostname.endsWith(".ts.net");
+      if ((local || privatePhone) && target.port === "8790"
+          && /^\/p\/[0-9a-f]{64}\/(board|phone)$/.test(target.pathname)
+          && !target.username && !target.password && !target.search && !target.hash) {
+        target.port = "8783";
+        target.pathname = target.pathname.replace(/\/(board|phone)$/, "/chat");
+        target.hash = "agents";
+        link.href = target.href;
+        link.hidden = false;
+      }
+    } catch (_) { /* A capability link must match its known service. */ }
+  }
+  const run = snapshot.state.action_runs.run_agent_provision;
+  const action = $("#head-provision-action");
+  const signedIn = Boolean(snapshot.state.completed["identify.authenticate-agent"]);
+  action.hidden = !installed || selectedAgentProvider() !== "claude" || !signedIn;
+  action.disabled = snapshot.jobs.some(job => job.status === "running");
+  action.textContent = run?.status === "needs_attention" ? "Retry head agent"
+    : run?.status === "complete" ? "Open or resume head agent" : "Launch head agent";
+  $("#head-provision-state").textContent = run?.status === "running"
+    ? "Creating your head agent with its local tools…"
+    : run?.status === "complete"
+      ? "The head agent has been launched. Open Agent fleet for its current state; connect Messages below when ready."
+      : run?.status === "needs_attention"
+        ? "Head-agent launch needs attention. Review the build feed and retry."
+        : signedIn ? "Your head agent will start with your selected provider."
+          : "Finish provider sign-in to launch an agent. Messages can be connected later.";
+}
+
 async function checkPhonePortalLink() {
   if (phonePortalCheckPromise) return await phonePortalCheckPromise;
   const run = snapshot.state.action_runs.run_phone_install;
@@ -603,6 +646,7 @@ async function checkLocalBoardLink() {
   const result = await api("/api/local-board-link");
   localBoardProof = { ...result, run: run.finished_at || "complete", checkedAt: Date.now() };
   renderFirstGoal();
+  renderAgentFleet();
 }
 
 async function performPhonePortalLinkCheck(run) {
@@ -617,6 +661,7 @@ async function performPhonePortalLinkCheck(run) {
   } finally {
     phonePortalCheckActive = false;
     renderFirstGoal();
+    renderAgentFleet();
   }
 }
 
@@ -1119,6 +1164,7 @@ function renderClient() {
   $("#client-greeting").textContent = onboardingValues().agent_name || (name ? `${name}, your AI` : "Your AI");
   renderOnboarding();
   renderFirstGoal();
+  renderAgentFleet();
   renderClientProgress();
   renderFocusCard();
   renderClientQueue();
@@ -1219,6 +1265,13 @@ function openGuide(stepId) {
     : "You confirm the account or action is complete, and the guide saves your place.");
   $("#guide-instructions").replaceChildren(...(guide.instructions || [step.description]).map((item) => element("li", "", item)));
 
+  const ownerPhone = $("#guide-owner-phone");
+  ownerPhone.hidden = !["connect.messages", "connect.imessage-bind"].includes(step.id);
+  $("#guide-owner-phone-input").value = "";
+  $("#guide-owner-phone-state").textContent = snapshot.facts.owner_phone_set
+    ? "Owner number saved privately on this Mac. It is not shown in the guide."
+    : "Add this only when you are ready to connect iMessage; local Fleetdeck does not need it.";
+
   const privacy = $("#guide-privacy");
   privacy.hidden = !guide.privacy;
   privacy.querySelector("p").textContent = guide.privacy || "";
@@ -1284,6 +1337,23 @@ async function invokeGuideAction(action, button, openedMessage = "") {
   } catch (error) {
     message.className = "guide-message error";
     message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveGuideOwnerPhone() {
+  const input = $("#guide-owner-phone-input");
+  const button = $("#guide-owner-phone-save");
+  const status = $("#guide-owner-phone-state");
+  button.disabled = true;
+  try {
+    await api("/api/owner-phone", { method: "POST", body: { phone: input.value.trim() } });
+    input.value = "";
+    await refreshState();
+    status.textContent = "Owner number saved privately on this Mac. Continue with Messages and a fresh text.";
+  } catch (error) {
+    status.textContent = error.message;
   } finally {
     button.disabled = false;
   }
@@ -1424,8 +1494,11 @@ async function runAutomaticMachineWork() {
       await refreshState();
     }
     const phone = snapshot.state.action_runs.run_phone_install;
+    const currentBuild = snapshot.connection?.build_id || "";
+    const phoneNeedsUpgrade = phone?.status === "complete" && currentBuild
+      && phone.build_id !== currentBuild;
     if (snapshot.state.action_runs.run_first_goal_apply?.status === "complete"
-        && (!phone || phone.status === "interrupted")) {
+        && (!phone || phone.status === "interrupted" || phoneNeedsUpgrade)) {
       const job = await api("/api/actions/run_phone_install", { method: "POST", body: {} });
       await waitForJob(job.id, false);
       await refreshState();
@@ -1439,6 +1512,16 @@ async function runAutomaticMachineWork() {
         && Date.now() - phonePortalProof.checkedAt < 60_000;
       if (!currentProof) await checkPhonePortalLink();
     }
+    const head = snapshot.state.action_runs.run_agent_provision;
+    if (installedPhone?.status === "complete" && !snapshot.facts.deactivated
+        && selectedAgentProvider() === "claude"
+        && snapshot.state.completed["identify.authenticate-agent"]
+        && (!head || head.status === "interrupted"
+          || (head.status === "complete" && currentBuild && head.build_id !== currentBuild))) {
+      const job = await api("/api/actions/run_agent_provision", { method: "POST", body: {} });
+      await waitForJob(job.id, false);
+      await refreshState();
+    }
     const install = textInstallRun();
     if (snapshot.state.completed["prepare.create-accounts"]
         && (!install || install.status === "interrupted")) {
@@ -1449,6 +1532,7 @@ async function runAutomaticMachineWork() {
       if (finished.status === "complete") toast("Wideband text foundation installed");
       else toast("Wideband text installation needs review", 5200);
     } else if (snapshot.state.completed["prepare.create-accounts"]
+        && snapshot.facts.owner_phone_set
         && !snapshot.state.last_verification && install?.status === "complete") {
       const job = await api("/api/actions/run_verify_imessage", { method: "POST", body: {} });
       await waitForJob(job.id, false);
@@ -1457,6 +1541,7 @@ async function runAutomaticMachineWork() {
     const init = snapshot.state.action_runs.run_imessage_init;
     if ((snapshot.state.action_runs.run_imessage_install?.status === "complete" || snapshot.state.action_runs.run_install?.status === "complete")
         && selectedAgentProvider() === "claude"
+        && snapshot.facts.owner_phone_set
         && snapshot.state.completed["identify.name-your-system"]
         && snapshot.state.completed["prepare.create-accounts"]
         && (!init || init.status === "interrupted")) {
@@ -2035,10 +2120,12 @@ $("#status-done").addEventListener("click", () => $("#status-dialog").close());
 $("#welcome-begin").addEventListener("click", () => dismissWelcome(true));
 $("#welcome-close").addEventListener("click", () => dismissWelcome(false));
 $("#onboarding-form").addEventListener("submit", saveOnboarding);
+$("#guide-owner-phone-save").addEventListener("click", saveGuideOwnerPhone);
 $("#onboarding-edit").addEventListener("click", openOnboarding);
 $("#phone-portal-check").addEventListener("click", checkPhonePortalLink);
 $("#phone-portal-copy").addEventListener("click", copyPhonePortalLink);
 $("#phone-portal-connect").addEventListener("click", (event) => handleAction("run_phone_install", event.currentTarget));
+$("#head-provision-action").addEventListener("click", event => handleAction("run_agent_provision", event.currentTarget));
 $("#phone-handoff-consent").addEventListener("change", renderFirstGoal);
 $("#phone-handoff-send").addEventListener("click", sendSetupHandoff);
 $("#guide-close").addEventListener("click", () => { stopGuideMonitoring(); $("#guide-dialog").close(); });

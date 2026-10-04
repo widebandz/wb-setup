@@ -163,6 +163,19 @@
         </div>
       </section>
 
+      <section class="first-goal-section" id="agent-fleet-section" hidden aria-labelledby="agent-fleet-title">
+        <div>
+          <p class="overline">Agent fleet</p>
+          <h2 id="agent-fleet-title">Create an agent and open its terminal.</h2>
+          <p id="agent-fleet-detail">Your agents receive a role, workspace, scripting tools, and Playwright browser automation. Their current processes appear in the Live Terminal Network.</p>
+          <p id="head-provision-state" role="status" aria-live="polite"></p>
+        </div>
+        <div class="first-goal-links">
+          <a class="secondary" id="agent-fleet-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open Agent fleet ↗</a>
+          <button class="secondary" id="head-provision-action" type="button" hidden>Launch head agent</button>
+        </div>
+      </section>
+
       <section class="phone-handoff-section" id="phone-handoff-section" hidden aria-labelledby="phone-handoff-title">
         <div>
           <p class="overline">05 / Phone handoff</p>
@@ -307,6 +320,11 @@
         <div><span>Success looks like</span><p id="guide-success"></p></div>
       </div>
       <ol class="guide-instructions" id="guide-instructions"></ol>
+      <div class="guide-owner-phone" id="guide-owner-phone" hidden>
+        <label for="guide-owner-phone-input">Your personal phone number, with country code</label>
+        <div><input id="guide-owner-phone-input" type="tel" inputmode="tel" autocomplete="off" spellcheck="false" placeholder="+15551234567" maxlength="16"><button id="guide-owner-phone-save" type="button">Save number privately</button></div>
+        <small id="guide-owner-phone-state">Needed only when you connect your personal iPhone to the separate agent Apple Account.</small>
+      </div>
       <div class="guide-privacy" id="guide-privacy" hidden><span>●</span><p></p></div>
       <label class="guide-acknowledgment" id="guide-acknowledgment" hidden><input id="guide-acknowledgment-check" type="checkbox"><span id="guide-acknowledgment-label"></span></label>
       <div class="guide-open-actions" id="guide-open-actions"></div>

@@ -58,6 +58,13 @@ core_ready() {
   [ "$WB_TOOLCHAIN_KIND" = private ] || [ "$WB_TOOLCHAIN_KIND" = legacy_homebrew ]
 }
 
+cli_ready() {
+  [ -f "$STATE/cli-ready-build" ] && [ ! -L "$STATE/cli-ready-build" ] \
+    && [ "$(sed -n '1p' "$STATE/cli-ready-build" 2>/dev/null)" = "$BUILD_ID" ] \
+    && core_ready && [ "$WB_TOOLCHAIN_KIND" = private ] \
+    && [ "$WB_TOOLCHAIN_BUILD_ID" = "$BUILD_ID" ]
+}
+
 connection_is_live() {
   [ -f "$STATE/connection.json" ] || return 1
   local pid port token build
@@ -231,13 +238,13 @@ fi
 
 if [ "$NATIVE_ACTIVE" != 1 ] && [ ! -f "$STATE/native-welcome-seen" ]; then
   if [ -f "$RESOURCES/client-profile.env" ]; then
-    WELCOME_DETAIL="Your Wideband build profile is already loaded. The branded setup guide opens immediately and shows live progress while Terminal prepares this Mac."
+    WELCOME_DETAIL="Your Wideband build profile is already loaded. Terminal first verifies this Mac and the private tools; the branded guide opens after those checks pass."
   else
-    WELCOME_DETAIL="This generic pilot asks for your personal phone number in one macOS dialog. The branded guide then helps you name your OS and agent, choose a first job, and shows live progress while Terminal prepares this Mac."
+    WELCOME_DETAIL="Terminal first verifies this Mac and the private tools. The branded guide then helps name your OS and agent and choose a first job. Add your personal phone number later when you connect iMessage."
   fi
   /usr/bin/osascript - "$RESOURCES/AppIcon.icns" "$WELCOME_DETAIL" <<'APPLESCRIPT' >/dev/null 2>&1 || exit 0
 on run argv
-  display dialog (item 2 of argv) & return & return & "Leave Terminal open behind the setup window. If the guide asks for your Mac password, enter it in Terminal; no dots or characters will appear. Wideband never receives that password." with title "Wideband Setup" buttons {"Begin setup"} default button "Begin setup" with icon POSIX file (item 1 of argv)
+  display dialog (item 2 of argv) & return & return & "Leave Terminal open until it reports that the machine foundation is ready. Enter a Mac password only into a visible macOS prompt; Wideband never receives it." with title "Wideband Setup" buttons {"Begin setup"} default button "Begin setup" with icon POSIX file (item 1 of argv)
 end run
 APPLESCRIPT
   ( umask 077; printf '%s\n' "$BUILD_ID" > "$STATE/native-welcome-seen" ) || fail
@@ -269,20 +276,18 @@ LAUNCH_STAGE="local setup engine"
 /usr/bin/ditto --norsrc --noextattr --noqtn "$ENGINE_SOURCE" "$TARGET/.wideband-setup-engine" || fail
 /bin/chmod 700 "$TARGET/.wideband-setup.command" "$TARGET/.wideband-setup-engine" || fail
 
-# A verified toolchain can host the private guide quietly behind the app.
-# A Mac awaiting the private payload gets Terminal to display the exact
-# preflight blocker while the native guide remains available.
+# Each new packaged build first runs its visible, resumable CLI foundation.
+# Once that build has passed, ordinary guide launches stay in the native app.
 LAUNCH_STAGE="private setup guide"
 if connection_is_live; then
-  # The guide can stay live after bootstrap exits at a canceled owner-phone
-  # prompt. In that state a later app launch must reopen Terminal to resume
-  # bootstrap, while an in-progress bootstrap must keep its single prompt.
+  # A prior guide can remain live after an interrupted CLI identity prompt.
+  # Reopen Terminal only when it needs to resume and no prompt is in progress.
   case "$(sed -n '1p' "$STATE/bootstrap-status" 2>/dev/null)" in
     needs_attention|needs_independent_toolchain|needs_homebrew_ownership)
-      if ! core_ready; then launch_terminal || fail; fi
+      if ! cli_ready; then launch_terminal || fail; fi
       ;;
   esac
-elif core_ready; then
+elif cli_ready; then
   launch_background || fail
 else
   launch_terminal || fail

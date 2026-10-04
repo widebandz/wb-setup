@@ -32,8 +32,8 @@ def clean(name: str, value: object) -> str:
     if not isinstance(value, str):
         fail(f"{name} must be a string")
     result = value.strip()
-    if not result or len(result) > 300 or any(ord(char) < 32 for char in result):
-        fail(f"{name} must be a non-empty single-line value")
+    if (not result and name != "OPERATOR_PHONE") or len(result) > 300 or any(ord(char) < 32 for char in result):
+        fail(f"{name} must be a valid single-line value")
     return result
 
 
@@ -46,6 +46,8 @@ def validate(values: dict[str, str]) -> None:
         "GRAPH_PACK": r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
     }
     for name, pattern in rules.items():
+        if name == "OPERATOR_PHONE" and not values[name]:
+            continue
         if not re.fullmatch(pattern, values[name]):
             fail(f"{name} is invalid")
     if "--" in values["GH_USER"]:
@@ -69,13 +71,13 @@ def main() -> None:
         fail(str(exc))
     if not isinstance(raw, dict):
         fail("top-level JSON must be an object")
-    missing = [name for name in FIELDS if name not in raw]
+    missing = [name for name in FIELDS if name not in raw and name != "OPERATOR_PHONE"]
     if missing:
         fail(f"missing fields: {', '.join(missing)}")
     unknown = sorted(set(raw) - set(FIELDS))
     if unknown:
         fail(f"unknown fields: {', '.join(unknown)}")
-    values = {name: clean(name, raw[name]) for name in FIELDS}
+    values = {name: clean(name, raw.get(name, "")) for name in FIELDS}
     validate(values)
     rendered = ["# Personalized by Wideband Setup. Private to the intended client."]
     rendered += [f"export {name}={shlex.quote(values[name])}" for name in FIELDS]

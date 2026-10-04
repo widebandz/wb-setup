@@ -21,9 +21,9 @@ localhost link or technical setup guide.
    https://os.wideband.ai/version when it starts. The check sends no setup
    answers or machine identifiers and can be changed later from the Wideband
    Setup menu.
-6. In a generic build, enter your personal phone number in one macOS dialog.
-   Then use the Wideband guide to name your OS and agent and choose their
-   first job. A build prepared specifically for you skips the phone dialog.
+6. Use the Wideband guide to name your OS and agent and choose their first job.
+   You can prepare local tools and Fleetdeck before adding your personal phone
+   number in the later iMessage connection step.
 7. The guide stays inside the Wideband app and shows live machine progress.
    The client release includes its own verified Python, Node, tmux, terminal,
    and Messages tools. It will not take over a Homebrew installation owned by

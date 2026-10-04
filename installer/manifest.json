@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "release": "0.8.3",
+  "release": "0.8.4",
   "product": "Wideband Setup",
   "description": "A guided, verified build for a custom Wideband operator machine.",
   "stages": [
@@ -437,6 +437,7 @@
             "instructions": [
               "Open Messages and sign in with the separate agent Apple Account. Complete Apple's verification personally.",
               "In Messages settings, confirm the separate account's reachable addresses are enabled.",
+              "Save your personal iPhone number in the private field below. This is needed for exact owner-chat binding, not for local tools or Fleetdeck.",
               "From your personal iPhone, send the agent account one ordinary iMessage and confirm it appears on this Mac. The later two-way agent test proves the runtime."
             ],
             "open_label": "Open Messages",
@@ -461,12 +462,13 @@
             "success": "The live check sees the exact owner chat, a persistent head-agent session, and all four guarded messaging services.",
             "instructions": [
               "Confirm this Mac's Messages app is using the separate agent Apple Account and Wideband has staged the private head-agent workspace.",
+              "If your personal phone number is not saved yet, save it in the private field below, then wait for the head-agent workspace to be staged.",
               "From your personal iPhone, send the agent account a new iMessage now. Use an individual chat, not a group chat, and keep it within ten minutes of binding.",
               "Select Bind my text below. Wideband checks that the sender matches your private owner phone and that there is exactly one eligible chat.",
               "Wait while Wideband loads the listener, router, persistent head agent, and guarded outbox. If a service is blocked, open Login Items & Extensions and allow Wideband in the background.",
               "Select Check connection. A reply on your phone is the next proof."
             ],
-            "privacy": "Binding uses the owner phone already saved in your private build identity. This guide never asks for your Apple password, code, or message contents.",
+            "privacy": "The owner phone is saved on this Mac when you connect messaging. This guide never asks for your Apple password, code, or message contents.",
             "actions": [
               {"action": "run_imessage_bind", "label": "Bind my text"},
               {"action": "open_login_items", "label": "Open Login Items"}

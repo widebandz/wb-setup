@@ -16,6 +16,7 @@ import argparse
 import datetime as dt
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -217,6 +218,85 @@ class Runtime:
             "the owner's edits.\n"
         )
 
+    def ensure_transport_workspace(self, cfg: dict[str, Any]) -> Path:
+        """Add the phone transport alongside an existing, possibly curated head."""
+        workspace = Path(cfg["workspace"])
+        workspace.mkdir(parents=True, exist_ok=True)
+        outbox = workspace / "outbox"
+        pending = self.state / "outbox" / "pending"
+        if (outbox.exists() or outbox.is_symlink()) and outbox.resolve() != pending.resolve():
+            raise ValueError("workspace already has a different outbox; inspect client work before continuing")
+        if not outbox.exists() and not outbox.is_symlink():
+            outbox.symlink_to(pending, target_is_directory=True)
+        sidecar = workspace / "WIDEBAND-IMESSAGE.md"
+        transport = self.legacy_instructions(cfg["agent_name"], cfg["os_name"], outbox)
+        self.reconcile_generated(sidecar, transport)
+        try:
+            fd = os.open(sidecar, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                info = os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 65536:
+                    raise ValueError("head transport instructions must be an owned regular file")
+                os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            raise ValueError("head transport instructions need review before phone binding") from exc
+        return sidecar
+
+    def head_provisioner(self):
+        """Load the shared launcher from the managed payload or standalone source."""
+        candidates = (
+            self.home / "srv" / "wb-setup" / "packaging" / "customer_agent_provision.py",
+            self.home / "srv" / "fleetdeck" / "customer_agent_provision.py",
+            Path(__file__).resolve().parent.parent / "packaging" / "customer_agent_provision.py",
+        )
+        path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if path is None:
+            raise ValueError("shared head provisioner is missing; run the installer to restore it")
+        spec = importlib.util.spec_from_file_location("wideband_customer_agent_provision", path)
+        if spec is None or spec.loader is None:
+            raise ValueError("shared head provisioner could not be loaded")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module, path
+
+    def provision_head(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        """Use the terminal UI's launcher and receipt for every new head session."""
+        module, path = self.head_provisioner()
+        if not hasattr(module, "ensure_head_agent"):
+            raise ValueError("shared head provisioner needs an installer update")
+        tools_path = path.with_name("agent_tools.py")
+        if not tools_path.is_file():
+            raise ValueError("private browser tools installer is missing; restore the installer payload")
+        spec = importlib.util.spec_from_file_location("wideband_agent_tools", tools_path)
+        if spec is None or spec.loader is None:
+            raise ValueError("private browser tools installer could not be loaded")
+        agent_tools = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(agent_tools)
+        node = Path(self.tool_path("node"))
+        python = Path(self.tool_path("python3"))
+        environment = agent_tools.environment(path.parent.parent / "vendor" / "agent-tools", node)
+        environment.update({
+            "FLEETDECK_VERIFIED_TMUX": self.tool_path("tmux"),
+            "FLEETDECK_VERIFIED_PYTHON": str(python),
+            "WB_AGENT_COMMAND": str(path.with_name("agent-command.py")),
+            "PATH": f"{node.parent}:{python.parent}:/usr/bin:/bin:/usr/sbin:/sbin:"
+                    f"{self.home / 'bin'}:{self.home / '.local' / 'bin'}",
+        })
+        prior_environment = {key: os.environ.get(key) for key in environment}
+        os.environ.update(environment)
+        try:
+            return module.ensure_head_agent(
+                cfg["workspace"], transport_instructions=str(self.ensure_transport_workspace(cfg)),
+            )
+        finally:
+            for key, prior in prior_environment.items():
+                if prior is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = prior
+
     @staticmethod
     def architecture(agent_name: str, os_name: str, first_goal: str | None) -> str:
         if first_goal in FIRST_GOALS:
@@ -306,6 +386,14 @@ class Runtime:
         else:
             first_goal = self.setup_first_goal()
         workspace = (self.home / "wideband" / "head").resolve()
+        if not self.config_path.exists() and self.home == Path.home().resolve():
+            # A terminal-created head may precede phone setup. Bind the
+            # transport to that same workspace, preserving its client work.
+            module, _path = self.head_provisioner()
+            if hasattr(module, "head_workspace"):
+                registered_workspace = module.head_workspace()
+                if registered_workspace is not None:
+                    workspace = Path(registered_workspace)
         imsg_path = self.tool_path("imsg")
         if self.config_path.exists():
             existing = self.config()
@@ -317,6 +405,7 @@ class Runtime:
                     "before changing the active agent"
                 )
             self.ensure_private_queues()
+            self.ensure_transport_workspace(existing)
             new_os_name = os_name if "os_name" in values else existing["os_name"]
             new_agent_name = agent_name if "agent_name" in values else existing["agent_name"]
             old_goal = existing.get("first_goal")
@@ -365,14 +454,10 @@ class Runtime:
             "names_pending_restart": False,
         }
         self.ensure_private_queues()
-        workspace.mkdir(parents=True, exist_ok=True)
-        # Keep the file outbox under the workspace for the agent. A symlink
-        # points only into this user's private runtime, never to Messages data.
+        self.ensure_transport_workspace(cfg)
+        # The transport sidecar and outbox coexist with a head created before
+        # Messages binding. Existing client instruction files remain authoritative.
         outbox = workspace / "outbox"
-        if (outbox.exists() or outbox.is_symlink()) and outbox.resolve() != (self.state / "outbox" / "pending").resolve():
-            raise ValueError("workspace already has a different outbox; inspect client work before continuing")
-        if not outbox.exists() and not outbox.is_symlink():
-            outbox.symlink_to(self.state / "outbox" / "pending", target_is_directory=True)
         instructions = self.instructions(agent_name, os_name, outbox)
         for name in ("AGENTS.md", "CLAUDE.md"):
             path = workspace / name
@@ -588,20 +673,17 @@ class Runtime:
         cfg = self.config()
         if not cfg.get("binding"):
             return "waiting for owner chat binding"
+        self.ensure_private_queues()
+        self.ensure_transport_workspace(cfg)
         if self.active_agent_pane(cfg):
             return "head agent running"
         if self.tmux("has-session", "-t", "=" + cfg["session"]).returncode == 0:
             raise ValueError("head session exists without a recognized agent; inspect it before repair")
-        chosen = cfg["agent_command"]
-        binary = self.home / ".local" / "bin" / chosen
-        if not os.access(binary, os.X_OK):
-            resolved = shutil.which(chosen)
-            if not resolved:
-                raise ValueError(f"{chosen} is not installed or authenticated")
-            binary = Path(resolved)
-        result = self.tmux("new-session", "-d", "-s", cfg["session"], "-c", cfg["workspace"], str(binary))
-        if result.returncode != 0:
-            raise ValueError("could not start persistent head session")
+        if cfg["agent_command"] != "claude":
+            raise ValueError("head provider has no verified provisioning and phone-reply path")
+        status = self.provision_head(cfg)
+        if status.get("state") != "process_observed":
+            return "head agent waiting for provider sign-in or browser tools"
         if cfg.get("names_pending_restart"):
             cfg["names_pending_restart"] = False
             atomic_json(self.config_path, cfg)
@@ -650,7 +732,11 @@ class Runtime:
                 # presses. The literal prompt has exactly one final Enter.
                 body = " ".join(str(record["text"]).split())[:MAX_INBOUND]
                 reference = hashlib.sha256(str(record["guid"]).encode("utf-8")).hexdigest()[:12]
-                prompt = f"[Owner iMessage #{reference}] {body}"
+                prompt = (
+                    f"[Owner iMessage #{reference}] {body} "
+                    "[Wideband transport: read WIDEBAND-IMESSAGE.md and write one concise "
+                    "reply file to the workspace outbox; never send Messages directly.]"
+                )
                 if not body or self.tmux("send-keys", "-t", pane, "-l", "--", prompt).returncode != 0:
                     raise ValueError("could not type into head agent pane")
                 if self.tmux("send-keys", "-t", pane, "Enter").returncode != 0:

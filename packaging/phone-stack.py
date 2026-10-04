@@ -25,6 +25,10 @@ import time
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import customer_agent_provision
+import agent_tools
+
 
 ROOT = Path(__file__).resolve().parents[1]
 HOME = Path.home()
@@ -403,6 +407,12 @@ def run() -> None:
     selected_bin = toolchain_bin()
     PATH_ENV = f"{selected_bin}:/usr/bin:/bin:/usr/sbin:/sbin"
     os.environ["PATH"] = PATH_ENV
+    os.environ["FLEETDECK_VERIFIED_TMUX"] = str(selected_bin / "tmux")
+    agent_env = agent_tools.environment(ROOT / "vendor/agent-tools", selected_bin / "node")
+    agent_env["FLEETDECK_VERIFIED_PYTHON"] = str(selected_bin / "python3")
+    agent_env["WB_AGENT_COMMAND"] = str(ROOT / "packaging/agent-command.py")
+    os.environ.update(agent_env)
+    customer_agent_provision.seed_default_roster()
     name = tailscale_name()
     local_only = name is None
     host = "wideband.localhost" if local_only else name
@@ -430,6 +440,8 @@ def run() -> None:
         "FLEETDECK_FLEET_MAP_BIND": "127.0.0.1", "FLEETDECK_FLEET_MAP_PORT": "18790",
         "FLEETDECK_FLEET_HOST_ID": "local" if local_only else name.split(".", 1)[0],
         "FLEETDECK_BOARD_ORIGIN": board_origin,
+        "FLEETDECK_VERIFIED_TMUX": str(selected_bin / "tmux"),
+        **agent_env,
     }))
     # The plist may be unchanged across a Setup upgrade while its Python
     # collector code changed. Reopen this read-only service before probing it.
@@ -516,6 +528,8 @@ def run() -> None:
         "FLEETDECK_CUSTOMER_TERMINALS": "1",
         "FLEETDECK_HOST": host,
         "FLEETDECK_LOCAL_ONLY": "1" if local_only else "0",
+        "FLEETDECK_VERIFIED_TMUX": str(selected_bin / "tmux"),
+        **agent_env,
     }))
     # Reload the reviewed server after a Setup upgrade even when its plist
     # did not change; otherwise launchd keeps the old Python process alive.
@@ -549,9 +563,20 @@ def run() -> None:
     if name:
         ensure_serve(name, 8783, 8783)
 
+    # Resume only agents the owner has previously activated. Run once at GUI
+    # login; an intentional terminal exit must not trigger an endless restart.
+    resume_label = prefix + ".fleetdeck-agents"
+    resume_spec = plistlib.loads(plist(resume_label,
+        [python, str(ROOT / "packaging/resume-agents.py")], ROOT / "packaging", {
+            "FLEETDECK_VERIFIED_TMUX": str(selected_bin / "tmux"),
+            **agent_env,
+        }))
+    resume_spec["KeepAlive"] = False
+    ensure_job(resume_label, plistlib.dumps(resume_spec, sort_keys=True))
+
     register_service({"id": "chat", "group": "fleet", "port": 8783,
-                      "icon": "chat", "name": "Live terminals",
-                      "blurb": "Terminal access to this Mac's current tmux sessions"})
+                      "icon": "chat", "name": "Agent fleet",
+                      "blurb": "Create agents and open their live terminals"})
     register_service({"id": "graph", "group": "fleet", "port": 4181,
                       "icon": "nodes", "name": "Knowledge Graph",
                       "blurb": "Indexed graph of this Mac's projects and operator plane"})

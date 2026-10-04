@@ -68,7 +68,7 @@ for v in ORG BRAND MARK GH_USER GIT_EMAIL OPERATOR_PHONE WORK_REPO GRAPH_PACK; d
     && { echo "  ✗ REFUSING: $v contains a control character in $VARS"; exit 1; }
 done
 required_vars="ORG BRAND GH_USER OPERATOR_PHONE"
-[ "$IMESSAGE_ONLY" = "1" ] && required_vars="ORG OPERATOR_PHONE"
+[ "$IMESSAGE_ONLY" = "1" ] && required_vars="ORG"
 [ "$PHONE_ONLY" = "1" ] && required_vars="ORG BRAND"
 for v in $required_vars; do
   eval "val=\${$v:-}"
@@ -76,7 +76,8 @@ for v in $required_vars; do
 done
 printf '%s' "$ORG" | grep -Eq '^[a-z][a-z0-9-]{0,30}$' \
   || { echo "  ✗ REFUSING: ORG must be a lowercase slug in $VARS"; exit 1; }
-if [ "$PHONE_ONLY" != "1" ] || [ -n "${OPERATOR_PHONE:-}" ]; then
+if { [ "$PHONE_ONLY" != "1" ] && [ "$IMESSAGE_ONLY" != "1" ]; } \
+   || [ -n "${OPERATOR_PHONE:-}" ]; then
   printf '%s' "${OPERATOR_PHONE:-}" | grep -Eq '^\+[1-9][0-9]{7,14}$' \
     || { echo "  ✗ REFUSING: OPERATOR_PHONE must be E.164 in $VARS"; exit 1; }
 fi

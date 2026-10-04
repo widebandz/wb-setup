@@ -644,7 +644,9 @@ PY
 import pathlib, sys
 text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 client = text.split("collect_client_identity() {", 1)[1].split("\nask()", 1)[0]
-assert 'native_ask OPERATOR_PHONE' in client
+assert 'native_ask OPERATOR_PHONE' not in client
+assert 'OPERATOR_PHONE="${OPERATOR_PHONE:-}"' in client
+assert 'GH_USER|GIT_EMAIL|OPERATOR_PHONE|WORK_REPO' in text
 assert 'native_ask GH_USER' not in client and 'native_ask WORK_REPO' not in client
 assert 'collect_client_identity' in text.split('if [ "$CLIENT_MODE" = "1" ] && [ -x /usr/bin/osascript ]; then', 1)[1]
 assert 'BREWFILE="$ROOT/Brewfile.quick"' in text
@@ -659,6 +661,12 @@ PY
     ok "client bootstrap selects validated toolchain without default-prefix fallback"
   else
     no "client bootstrap regressed to default-prefix tool fallback"
+  fi
+
+  if python3 "$HERE/tests/deferred-owner-phone-test.py" >/dev/null 2>&1; then
+    ok "owner phone can be deferred and later saved without replacing curated identity"
+  else
+    no "deferred owner phone can overwrite or block a private identity"
   fi
 
   if python3 "$HERE/tests/bootstrap-handoff-test.py" >/dev/null 2>&1; then
@@ -865,9 +873,14 @@ PY
   fi
 
   if bash "$HERE/tests/app-launcher-resume-test.sh" >/dev/null 2>&1; then
-    ok "Wideband Setup resumes a failed bootstrap without duplicating an active prompt"
+    ok "Wideband Setup opens Terminal until this build's CLI foundation passes"
   else
-    no "Wideband Setup launcher cannot resume a failed bootstrap safely"
+    no "Wideband Setup launcher cannot gate an incomplete CLI foundation"
+  fi
+  if python3 "$HERE/tests/client-cli-launch-test.py" >/dev/null 2>&1; then
+    ok "packaged CLI blocks the guide on failure and resumes after verified tools"
+  else
+    no "packaged CLI can open the guide before verified tools are ready"
   fi
 
   if bash "$HERE/tests/agent-revision-test.sh" >/dev/null 2>&1; then
@@ -1125,6 +1138,12 @@ PY
     ok "customer Fleetdeck closes foreign tool paths before and after portal launch"
   else
     no "customer Fleetdeck can inherit another profile's tool paths"
+  fi
+
+  if python3 "$HERE/tests/customer-agent-provision-test.py" >/dev/null 2>&1; then
+    ok "customer agent creation binds a live provider pane to the fleet map"
+  else
+    no "customer agent provisioning or live fleet binding is broken"
   fi
 
   if python3 "$HERE/tests/customer-graph-proxy-test.py" >/dev/null 2>&1; then

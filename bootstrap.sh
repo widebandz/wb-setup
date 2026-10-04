@@ -16,7 +16,7 @@
 # first and waiting on it — Claude Code is not behind it and never was.
 #
 # TOOL BUDGET: macOS built-ins only until Homebrew lands. Packaged client mode
-# may use /usr/bin/osascript for the owner-phone prompt, and the health guard uses
+# may use /usr/bin/osascript for a local identity prompt, and the health guard uses
 # built-in identity, filesystem, and xcode-select probes. A bare macOS has no
 # usable Git or Python — /usr/bin/git and /usr/bin/python3 can be stubs that pop
 # the Command Line Tools dialog and block. That is why the repo arrives as a
@@ -326,22 +326,21 @@ if [ "$CLIENT_MODE" = 1 ]; then
 else
   step "3/6  Homebrew + Command Line Tools (background)"
 fi
-wb_hb_identity_probe
-wb_hb_clt_probe
-wb_hb_prefix_probe /opt/homebrew
-wb_hb_print_report
-
-# A packaged client uses the versioned private toolchain. Only a machine with
-# prior released package lineage may keep using its own healthy Homebrew. A
-# foreign prefix is never an install target or a source of executable paths.
 if [ "$CLIENT_MODE" = 1 ]; then
-  if wb_tc_resolve; then
-    if [ "$WB_TOOLCHAIN_KIND" = private ]; then
-      DO_BREW=0
-      say "  ✓ private Wideband toolchain $WB_TOOLCHAIN_BUILD_ID passed ownership and SHA-256 checks"
-    else
-      say "  ✓ prior Wideband package may use its own healthy Homebrew"
-    fi
+  say "  = shared Homebrew and Apple developer tools are not required"
+else
+  wb_hb_identity_probe
+  wb_hb_clt_probe
+  wb_hb_prefix_probe /opt/homebrew
+  wb_hb_print_report
+fi
+
+# A current packaged client uses the versioned private toolchain. Its visible
+# CLI foundation never falls back to a shared Homebrew prefix.
+if [ "$CLIENT_MODE" = 1 ]; then
+  if wb_tc_resolve && [ "$WB_TOOLCHAIN_KIND" = private ]; then
+    DO_BREW=0
+    say "  ✓ private Wideband toolchain $WB_TOOLCHAIN_BUILD_ID passed ownership and SHA-256 checks"
   else
     bootstrap_status needs_independent_toolchain
     say "  ✗ no verified private Wideband toolchain is active for this client"
@@ -545,17 +544,18 @@ APPLESCRIPT
 }
 
 collect_client_identity() {
-  # The first client milestone is a working text exchange. GitHub, a work
-  # repository, commit identity, and an organization graph can be chosen after
-  # that proof; invented values here would masquerade as real client answers.
+  # Local tools and Fleetdeck precede messaging. A phone number is collected
+  # later, when the owner chooses to connect an exact iMessage chat.
   ORG="${ORG:-wideband}"; BRAND="${BRAND:-Wideband}"; MARK="${MARK:-◈}"
   GH_USER="${GH_USER:-}"; GIT_EMAIL="${GIT_EMAIL:-}"
   WORK_REPO="${WORK_REPO:-}"; GRAPH_PACK="${GRAPH_PACK:-wideband}"
-  export ORG BRAND MARK GH_USER GIT_EMAIL WORK_REPO GRAPH_PACK
-  if ! valid_value OPERATOR_PHONE "${OPERATOR_PHONE:-}"; then
-    native_ask OPERATOR_PHONE "What is your personal phone number? Include country code (for example +15551234567). Your separate agent Apple Account will text this number." ""
+  OPERATOR_PHONE="${OPERATOR_PHONE:-}"
+  export ORG BRAND MARK GH_USER GIT_EMAIL WORK_REPO GRAPH_PACK OPERATOR_PHONE
+  if [ -n "$OPERATOR_PHONE" ] && ! valid_value OPERATOR_PHONE "$OPERATOR_PHONE"; then
+    say "  ✗ REFUSING: supplied owner phone is invalid: $VALIDATION_ERROR"
+    exit 1
   fi
-  say "  + owner phone saved; optional developer identity deferred"
+  say "  + local identity saved; owner phone and developer identity can follow later"
 }
 
 ask() {  # ask VAR "prompt" "default"
@@ -636,7 +636,7 @@ fi
 for name in ORG BRAND MARK GH_USER GIT_EMAIL OPERATOR_PHONE WORK_REPO GRAPH_PACK; do
   eval "value=\${$name:-}"
   if [ "$CLIENT_MODE" = "1" ] && [ -z "$value" ]; then
-    case "$name" in GH_USER|GIT_EMAIL|WORK_REPO) continue ;; esac
+    case "$name" in GH_USER|GIT_EMAIL|OPERATOR_PHONE|WORK_REPO) continue ;; esac
   fi
   if ! valid_value "$name" "$value"; then
     say "  ✗ REFUSING: $name in $VARS is invalid: $VALIDATION_ERROR"
@@ -701,12 +701,12 @@ fi
 
 if [ "$CLIENT_MODE" = "1" ]; then
   bootstrap_status installing_tools
-  step "6/6  guided setup is next"
+  step "6/6  guided setup follows this CLI check"
   cat <<'QUEUE'
 
-  Leave this Terminal window open behind the browser. Wideband Setup is already
-  showing live machine progress and guides every account and macOS permission
-  one step at a time while the remaining tools install.
+  Leave this Terminal window open until the private tools have passed their
+  final checks. Wideband Setup then opens the guide for account sign-ins,
+  macOS permissions, local Fleetdeck, and the physical phone proof.
 
   Passwords and two-factor codes stay between you and each provider. Wideband
   Setup never asks you to paste them into the installer.
@@ -850,6 +850,15 @@ else
   bootstrap_status needs_attention
 fi
 
+if [ "$CLIENT_MODE" = "1" ]; then
+  cat <<'EOF'
+
+▩ CLI foundation finished. The packaged launcher checks every required tool
+  and opens the guided setup only after this stage is ready. A separate agent
+  Apple Account, a bound owner chat, and a real phone reply are still pending.
+
+EOF
+else
 cat <<EOF
 
 ▩ bootstrap done.
@@ -873,6 +882,7 @@ cat <<EOF
      in order, stopping at anything that needs me."
 
 EOF
+fi
 
 # The guided installer is the normal handoff, not an optional demo. Keep an
 # explicit --no-ui path for unattended runs and for operators who only want the

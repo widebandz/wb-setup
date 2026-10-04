@@ -11,3 +11,6 @@ __pycache__/
 dist/
 packaging/client-profile.json
 packaging/client-profiles/
+
+# Reviewed/generated packaging inputs are rebuilt by the release scripts.
+/vendor/

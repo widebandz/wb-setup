@@ -304,7 +304,7 @@ def validate_snapshot(raw):
             registry = _project_map(item.get("registry"),
                                     text_keys=("agent_id", "host_id", "session_name", "state"))
             if registry:
-                if registry.get("state") not in ("planned", "verified", "retired"):
+                if registry.get("state") not in ("planned", "process_observed", "verified", "retired"):
                     raise SnapshotError("invalid registry binding state")
                 node["registry"] = registry
         elif node_type == "workspace" and "registry" in item:
@@ -336,7 +336,7 @@ def validate_snapshot(raw):
                              "uses_workspace", "reads_file", "executes_file",
                              "chat_routes_to", "describes_session", "bound_chat",
                              "router_addressable", "router_agent_pane_ready",
-                             "planned_binding", "verified_binding", "path_claim", "occupies",
+                             "planned_binding", "launch_binding", "verified_binding", "path_claim", "occupies",
                              "work_lease", "uses", "reads", "declares_service", "runs_service",
                              "schedules_job", "launches", "has_instruction_file", "writes_queue",
                              "consumes_queue", "sends_chat", "handles_bound_chat", "proxy_routes_to",
@@ -580,7 +580,7 @@ def _retain_unavailable_sources(current, previous, unavailable):
     for node_id, old in prior_nodes.items():
         scope_ref = "infra:scope_brief:" + old["label"] if old["type"] == "session" else None
         affected = (any(_from_unavailable(ref, unavailable) for ref in old["source_refs"])
-                    or ("registry" in unavailable and "registry" in old)
+                    or ({"registry", "agent_roster"} & unavailable and "registry" in old)
                     or (scope_ref is not None and "last_known_responsibility_model" in old
                         and _from_unavailable(scope_ref, unavailable)))
         if not affected:
@@ -599,7 +599,7 @@ def _retain_unavailable_sources(current, previous, unavailable):
             if "sessions_conf" in unavailable:
                 kept["last_known_declared"] = kept["declared"]
                 kept["declared"] = None
-            if "tmux" in unavailable or remote_lost:
+            if "tmux" in unavailable or remote_lost or (kept["type"] in {"agent", "tool"} and "agent_roster" in unavailable):
                 kept["last_known_observed"] = kept["observed"]
                 kept["observed"] = None
             elif kept["type"] in ("session", "window", "pane") and kept["observed"] is not None:
@@ -607,6 +607,9 @@ def _retain_unavailable_sources(current, previous, unavailable):
                 # when another source (such as identity cards) failed.
                 kept["last_known_observed"] = kept["observed"]
                 kept["observed"] = False
+            if "agent_roster" in unavailable and "registry" in kept:
+                kept["last_known_registry"] = kept.pop("registry")
+                kept.setdefault("stale_fields", []).append("registry")
             current["nodes"].append(kept)
             current_nodes[node_id] = kept
         elif affected:
@@ -617,7 +620,7 @@ def _retain_unavailable_sources(current, previous, unavailable):
             if ({"state", "state_cards"} & unavailable) and "state" in old:
                 now["last_known_state"] = copy.deepcopy(old["state"])
                 now.setdefault("stale_fields", []).append("state")
-            if "registry" in unavailable and "registry" in old:
+            if {"registry", "agent_roster"} & unavailable and "registry" in old:
                 now["last_known_registry"] = copy.deepcopy(old["registry"])
                 now.setdefault("stale_fields", []).append("registry")
             prior_scope = old.get("responsibility_model") or old.get("last_known_responsibility_model")
@@ -637,7 +640,7 @@ def _retain_unavailable_sources(current, previous, unavailable):
                     now.setdefault("stale_fields", []).append("reachability")
     current_edge_ids = {edge["id"] for edge in current["edges"]}
     for old in previous["edges"]:
-        if old["type"] in ("occupies", "work_lease"):
+        if old["type"] in ("occupies", "launch_binding", "work_lease"):
             # A dated receipt or lease is never a current occupant/lock fact.
             continue
         if old["id"] in current_edge_ids or not _from_unavailable(old["source"], unavailable):

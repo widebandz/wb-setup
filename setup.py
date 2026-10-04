@@ -581,10 +581,12 @@ class JobRunner:
         "run_first_goal_apply": [TOOLCHAIN_PYTHON, str(ROOT / "first_goal" / "runner.py"), "apply"],
         "run_first_goal_check": [TOOLCHAIN_PYTHON, str(ROOT / "first_goal" / "runner.py"), "check"],
         "run_phone_install": ["bash", str(ROOT / "install.sh"), "--phone-only", "--no-verify"],
+        "run_agent_provision": [TOOLCHAIN_PYTHON, str(ROOT / "packaging" / "provision-head.py")],
     }
 
     def __init__(self, store: StateStore):
         self.store = store
+        self.build_id = read_first_line(store.directory / "payload-build")
         self.client_mode = client_package_mode(store.directory)
         self.jobs: dict[str, dict[str, Any]] = {}
         self.job_commands: dict[str, list[str]] = {}
@@ -635,6 +637,16 @@ class JobRunner:
             require_core_tools(self.store.directory)
             if state["action_runs"].get("run_first_goal_apply", {}).get("status") != "complete":
                 raise RuntimeError("prepare the first job before installing the Fleetdeck phone view")
+        if action == "run_agent_provision":
+            state = self.store.read()
+            require_core_tools(self.store.directory)
+            require_active_provider(state["metadata"])
+            if state["action_runs"].get("run_phone_install", {}).get("status") != "complete":
+                raise RuntimeError("install the local Agent fleet before launching the head agent")
+            if "identify.authenticate-agent" not in state["completed"]:
+                raise RuntimeError("finish the provider sign-in before launching the head agent")
+            if (self.store.directory / "deactivated").is_file():
+                raise RuntimeError("resume the local services before launching the head agent")
         command = self.command_for(action)
         with self.lock:
             running = next((job for job in self.jobs.values() if job["status"] == "running"), None)
@@ -743,7 +755,7 @@ class JobRunner:
             command = self.job_commands.get(job_id) or self.command_for(action)
             if action in {"run_install", "run_imessage_install", "run_imessage_init",
                           "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check",
-                          "run_phone_install"}:
+                          "run_phone_install", "run_agent_provision"}:
                 python = resolved_tool_path("python3")
                 env["PATH"] = f"{python.parent}:{env['PATH']}"
             input_data = None
@@ -857,6 +869,7 @@ class JobRunner:
         def remember(data: dict[str, Any]) -> None:
             data["action_runs"][action] = {
                 "status": snapshot["status"],
+                "build_id": self.build_id,
                 "started_at": snapshot["started_at"],
                 "finished_at": snapshot["finished_at"],
                 "exit_code": snapshot["exit_code"],
@@ -1250,6 +1263,54 @@ def read_identity_phone(home: Path) -> str:
             return values[0]
         break
     raise RuntimeError("the Wideband identity file has no valid owner phone")
+
+
+def identity_phone_is_set(home: Path) -> bool:
+    try:
+        read_identity_phone(home)
+        return True
+    except RuntimeError:
+        return False
+
+
+def save_identity_phone(home: Path, backups: Path, phone: str) -> None:
+    """Fill an empty private owner-phone slot without changing curated identity."""
+    if not isinstance(phone, str) or not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
+        raise ValueError("enter a phone number with country code, such as +15551234567")
+    path = home / ".sop-vars"
+    if path.is_symlink() or not path.is_file() or path.stat().st_uid != os.getuid():
+        raise RuntimeError("the private Wideband identity file needs operator review")
+    try:
+        current = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError("the private Wideband identity file cannot be read") from exc
+    lines = current.splitlines()
+    slots = [(index, re.fullmatch(r"\s*export\s+OPERATOR_PHONE=(.*?)\s*", line))
+             for index, line in enumerate(lines)]
+    slots = [(index, match) for index, match in slots if match]
+    if len(slots) > 1:
+        raise RuntimeError("multiple owner-phone values need operator review")
+    if slots:
+        index, match = slots[0]
+        try:
+            existing = shlex.split(match.group(1), posix=True)
+        except ValueError as exc:
+            raise RuntimeError("the existing owner-phone value needs operator review") from exc
+        if len(existing) > 1 or (existing and existing[0] not in ("", phone)):
+            raise RuntimeError("an existing owner phone is preserved; ask the operator to review it")
+        if existing == [phone]:
+            return
+    if (home / ".wideband" / "imessage" / "config.json").exists():
+        raise RuntimeError("an existing iMessage identity is preserved; review it before changing the owner phone")
+    backups.mkdir(parents=True, exist_ok=True)
+    os.chmod(backups, 0o700)
+    write_private(backups / f"sop-vars.before-owner-phone.{time.time_ns()}", current)
+    replacement = f"export OPERATOR_PHONE={shlex.quote(phone)}"
+    if slots:
+        lines[slots[0][0]] = replacement
+    else:
+        lines.append(replacement)
+    write_private(path, "\n".join(lines) + "\n")
 
 
 def private_project_phone_link(home: Path, value: Any, project_port: Any) -> bool:
@@ -2183,7 +2244,9 @@ def deactivate_wideband(
     )]
     labels.append("ai.wideband.first-project")
     for prefix in managed_fleetdeck_prefixes(home, org):
-        labels.extend(f"{prefix}.fleetdeck-{job}" for job in ("portal", "chat", "adopt", "skin"))
+        labels.extend(f"{prefix}.fleetdeck-{job}" for job in (
+            "portal", "chat", "map", "graph", "agents", "adopt", "skin"))
+        labels.append(f"{prefix}.glitch-cat")
 
     for label in dict.fromkeys(labels):
         if run_launchctl and platform.system() == "Darwin":
@@ -2243,7 +2306,7 @@ def deactivate_wideband(
         data["completed"].pop("prove.messaging", None)
         data["last_verification"] = None
         data["live_checks"] = {"generated_at": None, "checks": []}
-        for action in ("run_first_goal_apply", "run_first_goal_check", "run_phone_install"):
+        for action in ("run_first_goal_apply", "run_first_goal_check", "run_phone_install", "run_agent_provision"):
             data["action_runs"].pop(action, None)
         data["action_runs"]["deactivate_wideband"] = {
             "status": "complete",
@@ -2667,6 +2730,7 @@ class Handler(BaseHTTPRequestHandler):
                             "embedded_mode": self.app.embedded_mode,
                             "terminal_hosted": self.app.terminal_hosted,
                             "client_name": str(os.environ.get("CLIENT_NAME", ""))[:120],
+                            "owner_phone_set": identity_phone_is_set(Path.home()),
                             "personalized": private_marker_is(
                                 self.app.store.directory / "client-package-kind", "personalized"
                             ),
@@ -2779,7 +2843,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/onboarding":
                 values = clean_onboarding(body)
                 if any(job["status"] == "running" and job["action"] in {
-                    "run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check", "run_phone_install"
+                    "run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check", "run_phone_install", "run_agent_provision"
                 } for job in self.app.runner.summary()):
                     raise RuntimeError("wait for the current head-agent setup task before changing these choices")
                 guard_bound_provider_change(values["agent_provider"])
@@ -2793,11 +2857,20 @@ class Handler(BaseHTTPRequestHandler):
                         for step_id in ("identify.authenticate-agent", "connect.imessage-bind", "prove.messaging"):
                             data["completed"].pop(step_id, None)
                     if changed:
-                        for action in ("run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check", "run_phone_install"):
+                        for action in ("run_imessage_init", "run_imessage_bind", "run_first_goal_apply", "run_first_goal_check", "run_phone_install", "run_agent_provision"):
                             data["action_runs"].pop(action, None)
 
                 state = self.app.store.update(save_onboarding)
                 self._json(HTTPStatus.OK, {"metadata": state["metadata"]})
+                return
+
+            if path == "/api/owner-phone":
+                if any(job["status"] == "running" and job["action"] in {
+                    "run_imessage_init", "run_imessage_bind", "run_imessage_install"
+                } for job in self.app.runner.summary()):
+                    raise RuntimeError("wait for the current messaging setup task before saving the owner phone")
+                save_identity_phone(Path.home(), self.app.store.backups, body.get("phone"))
+                self._json(HTTPStatus.OK, {"saved": True})
                 return
 
             if path == "/api/deviations":
