@@ -25,6 +25,11 @@ build without reconstructing decisions from chat history.
 - Updates: client-controlled startup or manual checks against
   `https://os.wideband.ai/version`; artifacts and public version history live
   in GitHub Releases. The app never silently installs an update.
+- v0.8.4 is live on the public pilot feed at the owner's request. Pages
+  workflow `37230134503` succeeded for feed commit `189eae6`; the live feed
+  advertises build `0.8.4-20261004180108`, and a fresh public DMG download
+  matches its exact SHA-256 and 372,133,861-byte size. The owner's manual
+  test remains pending; publishing adds no functional or phone proof.
 - Update delivery status: v0.8.0 is a public GitHub prerelease. Its Pages feed
   and a fresh public DMG download matched the exact build and SHA-256 on
   2026-10-02. The skipped VM and physical phone gates remain onsite pilot
@@ -598,9 +603,13 @@ reply were not run. The previous 0.8.3 local artifacts are retained under
 At the owner's request, GitHub prerelease `v0.8.4` now hosts that exact DMG and
 checksums. The tag points to source commit `7768ff4`; GitHub reports the same
 DMG SHA-256 and byte size, and the public direct download returned HTTP 200.
-The public release is for manual testing. The automatic update feed still
-advertises the earlier pilot; no new functional or physical-phone proof was
-added by uploading the file.
+The owner then requested publication on `os.wideband.ai`. Feed commit
+`189eae6` generated the pilot metadata from that exact local app and DMG.
+Pages workflow `37230134503` succeeded; the live homepage and version feed
+match the deployed source, including the exact build, download URL, checksum,
+and 372,133,861-byte size. A fresh public DMG download matches that checksum
+and size. The public release remains for manual testing; publishing adds no
+new functional or physical-phone proof.
 
 ### Canonical live Fleetdeck stack and VM parity gate (September 28, 2026)
 
